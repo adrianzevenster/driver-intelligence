@@ -1,0 +1,35 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+.uv-cache/
+.coverage
+htmlcov/
+
+# IDE
+.idea/
+.vscode/
+
+# Frontend build artefacts
+frontend/node_modules/
+frontend/dist/
+
+# Generated / runtime data
+data/scenarios/*.jsonl
+data/scenarios/regression_report.json
+data/calibration/*.pkl
+data/fastf1_cache/
+
+# Misc
+.codex
