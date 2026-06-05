@@ -31,6 +31,9 @@ jobs:
       - name: Test
         run: uv run pytest
 
+      - name: Generate synthetic scenarios
+        run: uv run python scripts/generate_synthetic_race.py
+
       - name: Regression gate
         run: uv run python scripts/run_replay_regression.py
 

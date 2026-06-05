@@ -8,8 +8,13 @@ from f1di.regression.gates import evaluate_gates
 from f1di.storage.replay import read_windows
 
 
-def run_replay(input_jsonl: Path, output_report: Path) -> dict:
-    orchestrator = InferenceOrchestrator()
+def run_replay(
+    input_jsonl: Path,
+    output_report: Path,
+    orchestrator: InferenceOrchestrator | None = None,
+) -> dict:
+    if orchestrator is None:
+        orchestrator = InferenceOrchestrator()
     insights = [orchestrator.analyze(window) for window in read_windows(input_jsonl)]
     report = evaluate_gates(insights)
     output_report.parent.mkdir(parents=True, exist_ok=True)
