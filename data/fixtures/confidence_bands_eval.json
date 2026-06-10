@@ -1,0 +1,279 @@
+[
+  {
+    "case_id": "band_wear_at_warning_threshold_silverstone",
+    "class": "near_threshold_positive",
+    "profile": "front_left_cliff",
+    "compound": "SOFT",
+    "lap": 22,
+    "stint_lap": 15,
+    "track_id": "silverstone",
+    "driver_id": "NOR",
+    "expected_min_risk": "WARNING",
+    "expected_sources": [
+      "silverstone_track"
+    ],
+    "label": {
+      "rationale": "FL wear at 0.73, wear_pressure just above 0.66 WARNING boundary. System must detect and fire WARNING, not suppress to WATCH.",
+      "labeler": "staff_ml_eval_seed",
+      "labeling_date": "2026-06-06"
+    },
+    "source": {
+      "type": "synthetic_confidence_band",
+      "series": "confidence_bands_v1",
+      "event": "British Grand Prix",
+      "session": "Race",
+      "labeling_date": "2026-06-06",
+      "labeler": "staff_ml_eval_seed"
+    },
+    "expected_policy": "SHOW"
+  },
+  {
+    "case_id": "band_rain_just_above_crossover_spa",
+    "class": "near_threshold_positive",
+    "profile": "rain_crossover",
+    "compound": "MEDIUM",
+    "lap": 25,
+    "stint_lap": 12,
+    "track_id": "spa",
+    "driver_id": "VER",
+    "expected_min_risk": "WARNING",
+    "expected_agents": [
+      "weather"
+    ],
+    "expected_sources": [
+      "spa_track"
+    ],
+    "label": {
+      "rationale": "Rain intensity reaches 0.40 in window (threshold 0.35). Weather agent must fire WARNING. Near-boundary detection test.",
+      "labeler": "staff_ml_eval_seed",
+      "labeling_date": "2026-06-06"
+    },
+    "source": {
+      "type": "synthetic_confidence_band",
+      "series": "confidence_bands_v1",
+      "event": "Belgian Grand Prix",
+      "session": "Race",
+      "labeling_date": "2026-06-06",
+      "labeler": "staff_ml_eval_seed"
+    },
+    "expected_policy": "SHOW"
+  },
+  {
+    "case_id": "band_rain_crossover_barcelona_medium",
+    "class": "near_threshold_positive",
+    "profile": "rain_crossover",
+    "compound": "MEDIUM",
+    "lap": 30,
+    "stint_lap": 18,
+    "track_id": "barcelona",
+    "driver_id": "LEC",
+    "expected_min_risk": "WARNING",
+    "expected_agents": [
+      "weather"
+    ],
+    "expected_sources": [
+      "barcelona_track"
+    ],
+    "label": {
+      "rationale": "Second rain crossover instance at a different circuit to ensure generalisation beyond Spa.",
+      "labeler": "staff_ml_eval_seed",
+      "labeling_date": "2026-06-06"
+    },
+    "source": {
+      "type": "synthetic_confidence_band",
+      "series": "confidence_bands_v1",
+      "event": "Spanish Grand Prix",
+      "session": "Race",
+      "labeling_date": "2026-06-06",
+      "labeler": "staff_ml_eval_seed"
+    },
+    "expected_policy": "SHOW"
+  },
+  {
+    "case_id": "band_ers_depleting_fast_monza",
+    "class": "near_threshold_positive",
+    "profile": "ers_depletion",
+    "compound": "MEDIUM",
+    "lap": 20,
+    "stint_lap": 12,
+    "track_id": "monza",
+    "driver_id": "SAI",
+    "expected_min_risk": "WARNING",
+    "expected_agents": [
+      "battery"
+    ],
+    "expected_sources": [
+      "monza_track"
+    ],
+    "label": {
+      "rationale": "SOC depletes to 0.19 with strongly negative slope. Battery WARNING must fire. Tests ERS depletion detection at a power-sensitive circuit.",
+      "labeler": "staff_ml_eval_seed",
+      "labeling_date": "2026-06-06"
+    },
+    "source": {
+      "type": "synthetic_confidence_band",
+      "series": "confidence_bands_v1",
+      "event": "Italian Grand Prix",
+      "session": "Race",
+      "labeling_date": "2026-06-06",
+      "labeler": "staff_ml_eval_seed"
+    },
+    "expected_policy": "SHOW"
+  },
+  {
+    "case_id": "band_multi_lockups_baku",
+    "class": "near_threshold_positive",
+    "profile": "brake_lockup",
+    "compound": "SOFT",
+    "lap": 31,
+    "stint_lap": 18,
+    "track_id": "baku",
+    "driver_id": "PER",
+    "expected_min_risk": "CRITICAL",
+    "expected_agents": [
+      "telemetry"
+    ],
+    "expected_sources": [
+      "baku_track"
+    ],
+    "label": {
+      "rationale": "Multiple lockups and brake temps exceeding 950 C at Baku. Validates CRITICAL detection at a street circuit with aggressive braking demands.",
+      "labeler": "staff_ml_eval_seed",
+      "labeling_date": "2026-06-06"
+    },
+    "source": {
+      "type": "synthetic_confidence_band",
+      "series": "confidence_bands_v1",
+      "event": "Azerbaijan Grand Prix",
+      "session": "Race",
+      "labeling_date": "2026-06-06",
+      "labeler": "staff_ml_eval_seed"
+    },
+    "expected_policy": "SHOW"
+  },
+  {
+    "case_id": "band_nominal_high_temp_bahrain",
+    "class": "near_threshold_negative",
+    "profile": "nominal",
+    "compound": "MEDIUM",
+    "lap": 15,
+    "stint_lap": 8,
+    "track_id": "bahrain",
+    "driver_id": "HAM",
+    "expected_max_risk": "WATCH",
+    "expected_sources": [],
+    "label": {
+      "rationale": "Nominal window at high-temperature Bahrain. System should not over-read track heat as a degradation signal. False-positive guard.",
+      "labeler": "staff_ml_eval_seed",
+      "labeling_date": "2026-06-06"
+    },
+    "source": {
+      "type": "synthetic_confidence_band",
+      "series": "confidence_bands_v1",
+      "event": "Bahrain Grand Prix",
+      "session": "Race",
+      "labeling_date": "2026-06-06",
+      "labeler": "staff_ml_eval_seed"
+    }
+  },
+  {
+    "case_id": "band_nominal_late_stint_abu_dhabi",
+    "class": "near_threshold_negative",
+    "profile": "nominal",
+    "compound": "HARD",
+    "lap": 48,
+    "stint_lap": 32,
+    "track_id": "abu_dhabi",
+    "driver_id": "VER",
+    "expected_max_risk": "WATCH",
+    "expected_sources": [],
+    "label": {
+      "rationale": "Late-race nominal state: high lap count but wear is within modelled limits. Tests that lap number alone does not inflate risk.",
+      "labeler": "staff_ml_eval_seed",
+      "labeling_date": "2026-06-06"
+    },
+    "source": {
+      "type": "synthetic_confidence_band",
+      "series": "confidence_bands_v1",
+      "event": "Abu Dhabi Grand Prix",
+      "session": "Race",
+      "labeling_date": "2026-06-06",
+      "labeler": "staff_ml_eval_seed"
+    }
+  },
+  {
+    "case_id": "band_high_wear_stable_grip_suzuka",
+    "class": "near_threshold_negative",
+    "profile": "high_wear_stable_grip",
+    "compound": "HARD",
+    "lap": 22,
+    "stint_lap": 15,
+    "track_id": "suzuka",
+    "driver_id": "ALO",
+    "expected_max_risk": "WATCH",
+    "expected_sources": [],
+    "label": {
+      "rationale": "High absolute wear but grip fully stable at 0.76 \u2014 the definitive false-positive guard. wear_pressure 0.60 stays below WARNING threshold.",
+      "labeler": "staff_ml_eval_seed",
+      "labeling_date": "2026-06-06"
+    },
+    "source": {
+      "type": "synthetic_confidence_band",
+      "series": "confidence_bands_v1",
+      "event": "Japanese Grand Prix",
+      "session": "Race",
+      "labeling_date": "2026-06-06",
+      "labeler": "staff_ml_eval_seed"
+    }
+  },
+  {
+    "case_id": "band_damp_no_crossover_budapest",
+    "class": "near_threshold_negative",
+    "profile": "damp_no_crossover",
+    "compound": "SOFT",
+    "lap": 28,
+    "stint_lap": 14,
+    "track_id": "budapest",
+    "driver_id": "HAM",
+    "expected_max_risk": "WATCH",
+    "expected_sources": [],
+    "label": {
+      "rationale": "Damp but sub-threshold rain (max 0.134 < 0.35). Weather agent must not escalate. Tests rain detection lower bound.",
+      "labeler": "staff_ml_eval_seed",
+      "labeling_date": "2026-06-06"
+    },
+    "source": {
+      "type": "synthetic_confidence_band",
+      "series": "confidence_bands_v1",
+      "event": "Hungarian Grand Prix",
+      "session": "Race",
+      "labeling_date": "2026-06-06",
+      "labeler": "staff_ml_eval_seed"
+    }
+  },
+  {
+    "case_id": "band_recovering_battery_barcelona",
+    "class": "near_threshold_negative",
+    "profile": "low_battery_recovering",
+    "compound": "SOFT",
+    "lap": 30,
+    "stint_lap": 18,
+    "track_id": "barcelona",
+    "driver_id": "NOR",
+    "expected_max_risk": "WATCH",
+    "expected_sources": [],
+    "label": {
+      "rationale": "SOC recovers from 0.18 to 0.27 across window (positive slope). Battery WARNING requires negative slope \u2014 should remain at or below WATCH.",
+      "labeler": "staff_ml_eval_seed",
+      "labeling_date": "2026-06-06"
+    },
+    "source": {
+      "type": "synthetic_confidence_band",
+      "series": "confidence_bands_v1",
+      "event": "Spanish Grand Prix",
+      "session": "Race",
+      "labeling_date": "2026-06-06",
+      "labeler": "staff_ml_eval_seed"
+    }
+  }
+]

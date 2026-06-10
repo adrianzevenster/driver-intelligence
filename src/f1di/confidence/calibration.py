@@ -16,17 +16,29 @@ def compute_raw_score(findings: list[AgentFinding]) -> tuple[float, dict[str, fl
         return 0.0, {"agent_agreement": 0.0, "evidence_strength": 0.0, "risk_mean": 0.0}
     risk_values = [RISK_WEIGHT[f.risk] for f in findings]
     mean_risk = sum(risk_values) / len(risk_values)
+    max_risk = max(risk_values)
     dispersion = math.sqrt(sum((x - mean_risk) ** 2 for x in risk_values) / len(risk_values))
     agent_agreement = max(0.0, 1.0 - dispersion)
     model_confidence = sum(f.confidence for f in findings) / len(findings)
     evidence_scores = [e.score for f in findings for e in f.evidence]
     evidence_strength = sum(evidence_scores) / len(evidence_scores) if evidence_scores else 0.35
-    raw = max(0.0, min(1.0, 0.50 * model_confidence + 0.30 * mean_risk + 0.20 * evidence_strength))
+    raw = max(
+        0.0,
+        min(
+            1.0,
+            0.30 * max_risk
+            + 0.25 * model_confidence
+            + 0.20 * mean_risk
+            + 0.15 * evidence_strength
+            + 0.10 * agent_agreement,
+        ),
+    )
     return raw, {
         "agent_agreement": agent_agreement,
         "model_confidence": model_confidence,
         "evidence_strength": evidence_strength,
         "risk_mean": mean_risk,
+        "risk_max": max_risk,
     }
 
 
@@ -37,7 +49,7 @@ class ConfidenceCalibrator:
     def calibrate(self, findings: list[AgentFinding]) -> tuple[float, float, dict[str, float]]:
         raw, features = compute_raw_score(findings)
         if self._model is not None:
-            confidence = float(self._model.predict([features["risk_mean"]])[0])
+            confidence = float(self._model.predict([raw])[0])
         else:
             confidence = raw
         confidence = max(0.0, min(1.0, confidence))

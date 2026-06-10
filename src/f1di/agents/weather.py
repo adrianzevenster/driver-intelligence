@@ -1,4 +1,5 @@
 from f1di.agents.base import RaceAgent, multi_source_evidence
+from f1di.agents import thresholds as _thresh
 from f1di.domain.schemas import AgentFinding, RiskLevel, TelemetryWindow
 from f1di.features.extractor import RaceFeatures
 from f1di.rag.store import HybridMemoryRetriever
@@ -8,6 +9,7 @@ class WeatherAgent(RaceAgent):
     name = "weather"
 
     def analyze(self, window: TelemetryWindow, features: RaceFeatures, retriever: HybridMemoryRetriever) -> AgentFinding:
+        t = _thresh.get(window.track_id)
         evidence = multi_source_evidence(
             retriever,
             window.track_id,
@@ -16,7 +18,7 @@ class WeatherAgent(RaceAgent):
             jolpica_query=f"{window.track_id} race wet rain safety car weather",
         )
 
-        if features.rain_intensity >= 0.35:
+        if features.rain_intensity >= t.rain_warning:
             conf = 0.76
             conf += 0.04 if features.grip_estimate < 0.65 else 0.0
             conf += 0.02 if features.crosswind_proxy > 8 else 0.0
@@ -29,7 +31,7 @@ class WeatherAgent(RaceAgent):
                 features={"rain_intensity": features.rain_intensity, "grip_estimate": features.grip_estimate},
             )
 
-        if features.crosswind_proxy > 12:
+        if features.crosswind_proxy > t.crosswind_watch:
             conf = 0.67
             conf += 0.04 if features.brake_fade_risk > 8 else 0.0
             return AgentFinding(

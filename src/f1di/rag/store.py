@@ -109,10 +109,26 @@ class HybridMemoryRetriever:
 
 def load_markdown_knowledge(path: Path) -> list[KnowledgeDocument]:
     docs: list[KnowledgeDocument] = []
-    for file in sorted(path.glob("*.md")):
+    for file in sorted(path.rglob("*.md")):
         text = file.read_text(encoding="utf-8")
         title = text.splitlines()[0].lstrip("# ") if text.splitlines() else file.stem
-        track_id = file.stem.split("_")[0] if "_" in file.stem else file.stem
-        metadata = {"track_id": track_id, "source": "knowledge"}
-        docs.append(KnowledgeDocument(source_id=file.stem, title=title, text=text, metadata=metadata))
+        rel = file.relative_to(path)
+        subdir = rel.parts[0] if len(rel.parts) > 1 else None
+        parts = file.stem.split("_")
+        track_id = "_".join(parts[:-1]) if len(parts) > 1 else parts[0]
+        source = subdir if subdir else "knowledge"
+        metadata = {"track_id": track_id, "source": source}
+        source_id = str(rel.with_suffix("")).replace("/", "_").replace("\\", "_")
+        docs.append(KnowledgeDocument(source_id=source_id, title=title, text=text, metadata=metadata))
     return docs
+
+
+def save_document_as_markdown(doc: KnowledgeDocument, base_path: Path) -> Path:
+    subdir = doc.metadata.get("source", "knowledge")
+    if subdir in ("knowledge", "unknown"):
+        subdir = "fastf1"
+    out_dir = base_path / subdir
+    out_dir.mkdir(parents=True, exist_ok=True)
+    fname = out_dir / f"{doc.source_id}.md"
+    fname.write_text(doc.text, encoding="utf-8")
+    return fname

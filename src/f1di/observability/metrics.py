@@ -28,3 +28,21 @@ HTTP_REQUEST_LATENCY = Histogram(
     buckets=(5, 10, 25, 50, 100, 250, 500, 1000, 2500),
 )
 READY_CHECK_TOTAL = Counter("f1di_ready_check_total", "Readiness checks", ["status"])
+
+FEATURE_DRIFT_ZSCORE = Gauge(
+    "f1di_feature_drift_zscore",
+    "Rolling Z-score of each telemetry input feature vs. recent baseline",
+    ["feature"],
+)
+DRIFT_ALERT_ACTIVE = Gauge(
+    "f1di_drift_alert_active",
+    "1 if any feature Z-score exceeds the alert threshold, 0 otherwise",
+)
+CALIBRATION_ECE_GAUGE = Gauge(
+    "f1di_calibration_ece",
+    "Current calibration ECE from the live isotonic calibrator",
+)
+CALIBRATION_REGRESSION_BLOCKED = Gauge(
+    "f1di_calibration_regression_blocked",
+    "1 if the most recent retrain was blocked due to ECE regression, 0 otherwise",
+)

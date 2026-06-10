@@ -5,6 +5,12 @@ from f1di.inference.fusion import InferenceOrchestrator
 from f1di.streaming.contracts import decode_window, encode_insight
 
 
+def process_payload(payload: bytes, orchestrator: InferenceOrchestrator) -> bytes:
+    window = decode_window(payload)
+    insight = orchestrator.analyze(window)
+    return encode_insight(insight)
+
+
 class KafkaInsightWorker:
     """Kafka worker shell.
 
@@ -29,7 +35,7 @@ class KafkaInsightWorker:
             msg = self.consumer.poll(1.0)
             if msg is None or msg.error():
                 continue
+            result = process_payload(msg.value(), self.orchestrator)
             window = decode_window(msg.value())
-            insight = self.orchestrator.analyze(window)
-            self.producer.produce(settings.insight_topic, key=window.driver_id, value=encode_insight(insight))
+            self.producer.produce(settings.insight_topic, key=window.driver_id, value=result)
             self.producer.poll(0)

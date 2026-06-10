@@ -1,0 +1,359 @@
+[
+  {
+    "case_id": "critical_cliff_spa_lap_45",
+    "class": "critical_cliff",
+    "profile": "critical_cliff_imminent",
+    "compound": "SOFT",
+    "lap": 45,
+    "stint_lap": 28,
+    "track_id": "spa",
+    "driver_id": "VER",
+    "expected_min_risk": "CRITICAL",
+    "expected_agents": [
+      "tire_strategy"
+    ],
+    "expected_sources": [
+      "spa_track"
+    ],
+    "expected_policy": "SHOW",
+    "label": {
+      "rationale": "Soft-tyre cliff at extended Spa stint: wear_pressure >0.93, grip collapsing to 0.51. Tire agent must fire CRITICAL.",
+      "labeler": "staff_ml_eval_seed",
+      "labeling_date": "2026-06-06"
+    },
+    "source": {
+      "type": "synthetic_edge_case",
+      "series": "edge_cases_v1",
+      "event": "Belgian Grand Prix",
+      "session": "Race",
+      "labeling_date": "2026-06-06",
+      "labeler": "staff_ml_eval_seed"
+    }
+  },
+  {
+    "case_id": "critical_cliff_bahrain_lap_38",
+    "class": "critical_cliff",
+    "profile": "critical_cliff_imminent",
+    "compound": "MEDIUM",
+    "lap": 38,
+    "stint_lap": 22,
+    "track_id": "bahrain",
+    "driver_id": "LEC",
+    "expected_min_risk": "CRITICAL",
+    "expected_agents": [
+      "tire_strategy"
+    ],
+    "expected_sources": [
+      "bahrain_track"
+    ],
+    "expected_policy": "SHOW",
+    "label": {
+      "rationale": "Medium compound past cliff at high-deg Bahrain. Grip at 0.51, wear_pressure 0.93. Tire CRITICAL expected.",
+      "labeler": "staff_ml_eval_seed",
+      "labeling_date": "2026-06-06"
+    },
+    "source": {
+      "type": "synthetic_edge_case",
+      "series": "edge_cases_v1",
+      "event": "Bahrain Grand Prix",
+      "session": "Race",
+      "labeling_date": "2026-06-06",
+      "labeler": "staff_ml_eval_seed"
+    }
+  },
+  {
+    "case_id": "critical_cliff_monza_lap_41",
+    "class": "critical_cliff",
+    "profile": "critical_cliff_imminent",
+    "compound": "HARD",
+    "lap": 41,
+    "stint_lap": 30,
+    "track_id": "monza",
+    "driver_id": "HAM",
+    "expected_min_risk": "CRITICAL",
+    "expected_agents": [
+      "tire_strategy"
+    ],
+    "expected_sources": [
+      "monza_track"
+    ],
+    "label": {
+      "rationale": "Hard compound still reaching cliff at extended Monza stint. Tests that profile fires CRITICAL regardless of compound label.",
+      "labeler": "staff_ml_eval_seed",
+      "labeling_date": "2026-06-06"
+    },
+    "source": {
+      "type": "synthetic_edge_case",
+      "series": "edge_cases_v1",
+      "event": "Italian Grand Prix",
+      "session": "Race",
+      "labeling_date": "2026-06-06",
+      "labeler": "staff_ml_eval_seed"
+    },
+    "expected_policy": "SHOW"
+  },
+  {
+    "case_id": "multi_stress_barcelona_lap_24",
+    "class": "multi_stress",
+    "profile": "multi_stress",
+    "compound": "SOFT",
+    "lap": 24,
+    "stint_lap": 12,
+    "track_id": "barcelona",
+    "driver_id": "NOR",
+    "expected_min_risk": "WARNING",
+    "expected_agents": [
+      "tire_strategy",
+      "weather"
+    ],
+    "expected_sources": [
+      "barcelona_track"
+    ],
+    "label": {
+      "rationale": "Simultaneous tire degradation (wear_pressure 0.69) and rain at crossover (0.41). Both tire_strategy and weather agents must fire at WARNING or above.",
+      "labeler": "staff_ml_eval_seed",
+      "labeling_date": "2026-06-06"
+    },
+    "source": {
+      "type": "synthetic_edge_case",
+      "series": "edge_cases_v1",
+      "event": "Spanish Grand Prix",
+      "session": "Race",
+      "labeling_date": "2026-06-06",
+      "labeler": "staff_ml_eval_seed"
+    },
+    "expected_policy": "SHOW"
+  },
+  {
+    "case_id": "multi_stress_spa_lap_18",
+    "class": "multi_stress",
+    "profile": "multi_stress",
+    "compound": "MEDIUM",
+    "lap": 18,
+    "stint_lap": 10,
+    "track_id": "spa",
+    "driver_id": "PER",
+    "expected_min_risk": "WARNING",
+    "expected_agents": [
+      "tire_strategy",
+      "weather"
+    ],
+    "expected_sources": [
+      "spa_track"
+    ],
+    "label": {
+      "rationale": "Multi-agent stress at Spa: soft rain onset with tire degradation converging. Tests confluence detection.",
+      "labeler": "staff_ml_eval_seed",
+      "labeling_date": "2026-06-06"
+    },
+    "source": {
+      "type": "synthetic_edge_case",
+      "series": "edge_cases_v1",
+      "event": "Belgian Grand Prix",
+      "session": "Race",
+      "labeling_date": "2026-06-06",
+      "labeler": "staff_ml_eval_seed"
+    },
+    "expected_policy": "SHOW"
+  },
+  {
+    "case_id": "cold_restart_silverstone_lap_22",
+    "class": "cold_restart",
+    "profile": "cold_restart",
+    "compound": "MEDIUM",
+    "lap": 22,
+    "stint_lap": 1,
+    "track_id": "silverstone",
+    "driver_id": "SAI",
+    "expected_min_risk": "CRITICAL",
+    "expected_agents": [
+      "telemetry"
+    ],
+    "expected_sources": [
+      "silverstone_track"
+    ],
+    "label": {
+      "rationale": "Safety-car restart on cold mediums: three lockup events in window (idx 1, 2, 4). Telemetry agent must fire CRITICAL from lockup_count >= 2.",
+      "labeler": "staff_ml_eval_seed",
+      "labeling_date": "2026-06-06"
+    },
+    "source": {
+      "type": "synthetic_edge_case",
+      "series": "edge_cases_v1",
+      "event": "British Grand Prix",
+      "session": "Race",
+      "labeling_date": "2026-06-06",
+      "labeler": "staff_ml_eval_seed"
+    },
+    "expected_policy": "SHOW"
+  },
+  {
+    "case_id": "cold_restart_monaco_lap_41",
+    "class": "cold_restart",
+    "profile": "cold_restart",
+    "compound": "HARD",
+    "lap": 41,
+    "stint_lap": 1,
+    "track_id": "monaco",
+    "driver_id": "ALO",
+    "expected_min_risk": "CRITICAL",
+    "expected_agents": [
+      "telemetry"
+    ],
+    "expected_sources": [
+      "monaco_track"
+    ],
+    "label": {
+      "rationale": "Red-flag restart at Monaco on hard compound, tires at 62 C. Multiple early-lap lockups \u2014 a classic restart hazard window.",
+      "labeler": "staff_ml_eval_seed",
+      "labeling_date": "2026-06-06"
+    },
+    "source": {
+      "type": "synthetic_edge_case",
+      "series": "edge_cases_v1",
+      "event": "Monaco Grand Prix",
+      "session": "Race",
+      "labeling_date": "2026-06-06",
+      "labeler": "staff_ml_eval_seed"
+    },
+    "expected_policy": "SHOW"
+  },
+  {
+    "case_id": "brake_lockup_monza_lap_44",
+    "class": "brake_lockup",
+    "profile": "brake_lockup",
+    "compound": "HARD",
+    "lap": 44,
+    "stint_lap": 30,
+    "track_id": "monza",
+    "driver_id": "RUS",
+    "expected_min_risk": "CRITICAL",
+    "expected_agents": [
+      "telemetry",
+      "tire_strategy"
+    ],
+    "expected_sources": [
+      "monza_track"
+    ],
+    "label": {
+      "rationale": "Advanced brake_lockup profile at Monza: front brake temps exceed 950 C and lockup_count >= 2. Cross-circuit check for existing profile.",
+      "labeler": "staff_ml_eval_seed",
+      "labeling_date": "2026-06-06"
+    },
+    "source": {
+      "type": "synthetic_edge_case",
+      "series": "edge_cases_v1",
+      "event": "Italian Grand Prix",
+      "session": "Race",
+      "labeling_date": "2026-06-06",
+      "labeler": "staff_ml_eval_seed"
+    },
+    "expected_policy": "SHOW"
+  },
+  {
+    "case_id": "ers_depletion_austin_lap_35",
+    "class": "ers_depletion",
+    "profile": "ers_depletion",
+    "compound": "MEDIUM",
+    "lap": 35,
+    "stint_lap": 20,
+    "track_id": "austin",
+    "driver_id": "VER",
+    "expected_min_risk": "WARNING",
+    "expected_agents": [
+      "battery"
+    ],
+    "expected_sources": [
+      "austin_ers"
+    ],
+    "label": {
+      "rationale": "ERS depletion at COTA: soc falls to 0.186, slope strongly negative. Battery agent must fire WARNING. Cross-circuit check on existing profile.",
+      "labeler": "staff_ml_eval_seed",
+      "labeling_date": "2026-06-06"
+    },
+    "source": {
+      "type": "synthetic_edge_case",
+      "series": "edge_cases_v1",
+      "event": "United States Grand Prix",
+      "session": "Race",
+      "labeling_date": "2026-06-06",
+      "labeler": "staff_ml_eval_seed"
+    },
+    "expected_policy": "SHOW"
+  },
+  {
+    "case_id": "high_wear_no_alarm_suzuka_lap_15",
+    "class": "hard_negative_tire",
+    "profile": "high_wear_stable_grip",
+    "compound": "HARD",
+    "lap": 15,
+    "stint_lap": 10,
+    "track_id": "suzuka",
+    "driver_id": "VER",
+    "expected_max_risk": "WATCH",
+    "expected_sources": [],
+    "label": {
+      "rationale": "High absolute wear but stable grip \u2014 should NOT escalate beyond WATCH. Hard negative testing false-positive suppression.",
+      "labeler": "staff_ml_eval_seed",
+      "labeling_date": "2026-06-06"
+    },
+    "source": {
+      "type": "synthetic_edge_case",
+      "series": "edge_cases_v1",
+      "event": "Japanese Grand Prix",
+      "session": "Race",
+      "labeling_date": "2026-06-06",
+      "labeler": "staff_ml_eval_seed"
+    }
+  },
+  {
+    "case_id": "damp_no_crossover_interlagos_lap_28",
+    "class": "hard_negative_weather",
+    "profile": "damp_no_crossover",
+    "compound": "MEDIUM",
+    "lap": 28,
+    "stint_lap": 18,
+    "track_id": "interlagos",
+    "driver_id": "HAM",
+    "expected_max_risk": "WATCH",
+    "expected_sources": [],
+    "label": {
+      "rationale": "Damp conditions at Interlagos but rain intensity stays below crossover (0.134). Should not trigger weather WARNING.",
+      "labeler": "staff_ml_eval_seed",
+      "labeling_date": "2026-06-06"
+    },
+    "source": {
+      "type": "synthetic_edge_case",
+      "series": "edge_cases_v1",
+      "event": "Sao Paulo Grand Prix",
+      "session": "Race",
+      "labeling_date": "2026-06-06",
+      "labeler": "staff_ml_eval_seed"
+    }
+  },
+  {
+    "case_id": "single_lockup_recovered_baku_lap_19",
+    "class": "hard_negative_brake",
+    "profile": "single_lockup_recovered",
+    "compound": "SOFT",
+    "lap": 19,
+    "stint_lap": 12,
+    "track_id": "baku",
+    "driver_id": "PER",
+    "expected_max_risk": "WATCH",
+    "expected_sources": [],
+    "label": {
+      "rationale": "One lockup event that self-resolved mid-window. lockup_count = 1 < 2, brake temps normal. Should stay at or below WATCH.",
+      "labeler": "staff_ml_eval_seed",
+      "labeling_date": "2026-06-06"
+    },
+    "source": {
+      "type": "synthetic_edge_case",
+      "series": "edge_cases_v1",
+      "event": "Azerbaijan Grand Prix",
+      "session": "Race",
+      "labeling_date": "2026-06-06",
+      "labeler": "staff_ml_eval_seed"
+    }
+  }
+]

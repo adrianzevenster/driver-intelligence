@@ -3,7 +3,9 @@ import { createRoot } from 'react-dom/client';
 import {
   Activity, ChevronDown, ChevronRight, Gauge, ShieldAlert,
   Cpu, Database, MessageSquare, BarChart2, Send, User, Bot,
-  RefreshCw, BookOpen, Radio, History,
+  RefreshCw, BookOpen, Radio, History, FlaskConical,
+  ThumbsUp, ThumbsDown, TrendingUp, Upload, Table, Search,
+  Mic, LineChart, FileText,
 } from 'lucide-react';
 import './style.css';
 
@@ -21,6 +23,33 @@ const AGENT_LABELS = {
 };
 const COMPOUNDS     = ['SOFT', 'MEDIUM', 'HARD', 'INTERMEDIATE', 'WET'];
 const COMPOUND_COLOR = { SOFT:'#ef4444', MEDIUM:'#eab308', HARD:'#cbd5e1', INTERMEDIATE:'#22c55e', WET:'#3b82f6' };
+const DRIVERS = [
+  { code: 'VER', name: 'Max Verstappen' },
+  { code: 'NOR', name: 'Lando Norris' },
+  { code: 'LEC', name: 'Charles Leclerc' },
+  { code: 'PIA', name: 'Oscar Piastri' },
+  { code: 'SAI', name: 'Carlos Sainz' },
+  { code: 'RUS', name: 'George Russell' },
+  { code: 'HAM', name: 'Lewis Hamilton' },
+  { code: 'ANT', name: 'Kimi Antonelli' },
+  { code: 'ALO', name: 'Fernando Alonso' },
+  { code: 'STR', name: 'Lance Stroll' },
+  { code: 'TSU', name: 'Yuki Tsunoda' },
+  { code: 'LAW', name: 'Liam Lawson' },
+  { code: 'GAS', name: 'Pierre Gasly' },
+  { code: 'DOO', name: 'Jack Doohan' },
+  { code: 'HUL', name: 'Nico Hülkenberg' },
+  { code: 'BEA', name: 'Oliver Bearman' },
+  { code: 'ALB', name: 'Alex Albon' },
+  { code: 'COL', name: 'Franco Colapinto' },
+  { code: 'MAG', name: 'Kevin Magnussen' },
+  { code: 'BOT', name: 'Valtteri Bottas' },
+  { code: 'ZHO', name: 'Guanyu Zhou' },
+  { code: 'RIC', name: 'Daniel Ricciardo' },
+  { code: 'OCO', name: 'Esteban Ocon' },
+  { code: 'PER', name: 'Sergio Perez' },
+];
+
 const TRACKS        = [
   'bahrain', 'jeddah', 'melbourne', 'shanghai', 'miami',
   'imola', 'monaco', 'barcelona', 'montreal', 'spielberg',
@@ -29,6 +58,14 @@ const TRACKS        = [
   'las_vegas', 'lusail', 'abu_dhabi', 'suzuka',
 ];
 const SKIP_KEYS     = new Set(['lap', 'sector', 'lockup_count']);
+const GATE_META = {
+  pass_case_recall:            'Case Recall',
+  pass_nominal_false_positive: 'No False Pos.',
+  pass_agent_activation:       'Agent Activation',
+  pass_evidence:               'Evidence',
+  pass_expected_sources:       'Source Retrieval',
+  pass_policy_correctness:     'Policy',
+};
 const LLM_META = {
   rules:             { label: 'Rules Engine',  color: '#64748b' },
   anthropic:         { label: 'Claude',         color: '#a78bfa' },
@@ -161,8 +198,12 @@ function StatsForm({ stats, onChange }) {
       <Section title="Race Context">
         <div className="context-row">
           <label><span>Driver</span>
-            <input className="text-input" value={stats.driverId}
-              onChange={e => set('driverId', e.target.value.toUpperCase().slice(0, 4))} />
+            <select className="text-input" value={stats.driverId}
+              onChange={e => set('driverId', e.target.value)}>
+              {DRIVERS.map(d => (
+                <option key={d.code} value={d.code}>{d.name}</option>
+              ))}
+            </select>
           </label>
           <label><span>Track</span>
             <select className="text-input" value={stats.trackId} onChange={e => set('trackId', e.target.value)}>
@@ -373,8 +414,124 @@ function InsightPanel({ insight, modelBackend }) {
           </ul>
         </>
       )}
+      <FeedbackWidget insightId={insight.insight_id} />
+      <JudgeScoreWidget insightId={insight.insight_id} />
       <p className="footer-line">{insight.latency_ms.toFixed(1)} ms · session {insight.session_id}</p>
     </>
+  );
+}
+
+function FeedbackWidget({ insightId }) {
+  const [sent, setSent]       = useState(false);
+  const [rating, setRating]   = useState(0);
+  const [correct, setCorrect] = useState(null);
+
+  async function submit() {
+    await fetch('/api/v1/feedback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ insight_id: insightId, rating: rating || 3, correct }),
+    }).catch(() => {});
+    setSent(true);
+  }
+
+  if (sent) return <p style={{ fontSize: 11, color: 'var(--muted)', margin: '6px 0 0' }}>Feedback recorded.</p>;
+
+  const canSubmit = correct !== null || rating > 0;
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+      <span style={{ fontSize: 11, color: 'var(--muted)' }}>Accurate?</span>
+      {[true, false].map(v => (
+        <button key={String(v)} onClick={() => setCorrect(v)}
+          style={{ background: correct === v ? (v ? '#166534' : '#7f1d1d') : 'var(--card-border)',
+                   border: 'none', borderRadius: 4, padding: '2px 6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3 }}>
+          {v ? <ThumbsUp size={11} /> : <ThumbsDown size={11} />}
+        </button>
+      ))}
+      <span style={{ color: 'var(--muted)', fontSize: 11 }}>·</span>
+      {[1,2,3,4,5].map(n => (
+        <button key={n} onClick={() => setRating(n)}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 1px',
+                   color: rating >= n ? '#f59e0b' : 'var(--muted)', fontSize: 13, lineHeight: 1 }}>★</button>
+      ))}
+      {canSubmit && (
+        <button onClick={submit}
+          style={{ background: 'var(--accent)', border: 'none', borderRadius: 4, padding: '2px 8px',
+                   cursor: 'pointer', fontSize: 11, color: '#fff', marginLeft: 4 }}>
+          Send
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ── LLM Judge score widget ────────────────────────────────────────────────
+
+const JUDGE_DIMS = [
+  { key: 'safety',        label: 'Safety',        color: '#ef4444' },
+  { key: 'actionability', label: 'Actionability',  color: '#22c55e' },
+  { key: 'register',      label: 'Register',       color: '#38bdf8' },
+  { key: 'calibration',   label: 'Calibration',    color: '#a78bfa' },
+];
+
+function JudgeScoreWidget({ insightId }) {
+  const [score, setScore]       = useState(null);
+  const [pending, setPending]   = useState(true);
+  const retriesRef               = useRef(0);
+
+  useEffect(() => {
+    if (!insightId) return;
+    let cancelled = false;
+
+    async function poll() {
+      if (cancelled) return;
+      const res = await fetch(`/api/v1/insights/${insightId}/judge`).catch(() => null);
+      if (cancelled) return;
+      if (res && res.ok) {
+        setScore(await res.json());
+        setPending(false);
+        return;
+      }
+      if (res && res.status !== 404) { setPending(false); return; }
+      retriesRef.current += 1;
+      if (retriesRef.current < 8) setTimeout(poll, 2500);
+      else setPending(false);
+    }
+    poll();
+    return () => { cancelled = true; };
+  }, [insightId]);
+
+  if (!score && pending) return (
+    <p style={{ fontSize: 10, color: 'var(--muted)', margin: '6px 0 0' }}>Judge scoring…</p>
+  );
+  if (!score) return null;
+
+  return (
+    <div style={{ marginTop: 10, borderTop: '1px solid var(--card-border)', paddingTop: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
+        <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600, letterSpacing: '0.04em' }}>LLM JUDGE</span>
+        <span style={{ fontSize: 13, fontWeight: 700, color: score.mean_score >= 0.75 ? '#22c55e' : score.mean_score >= 0.55 ? '#f59e0b' : '#ef4444' }}>
+          {(score.mean_score * 100).toFixed(0)}%
+        </span>
+      </div>
+      {JUDGE_DIMS.map(({ key, label, color }) => {
+        const pct = (score[key] ?? 0) * 100;
+        return (
+          <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+            <span style={{ fontSize: 10, color: 'var(--muted)', width: 76, flexShrink: 0 }}>{label}</span>
+            <div style={{ flex: 1, height: 4, borderRadius: 2, background: '#1a2540', overflow: 'hidden' }}>
+              <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: 2 }} />
+            </div>
+            <span style={{ fontSize: 10, color, width: 28, textAlign: 'right' }}>{pct.toFixed(0)}%</span>
+          </div>
+        );
+      })}
+      {score.rationale && (
+        <p style={{ fontSize: 10, color: 'var(--muted)', margin: '5px 0 0', fontStyle: 'italic', lineHeight: 1.4 }}>
+          {score.rationale}
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -388,17 +545,33 @@ const SOURCE_META = {
 };
 
 function KnowledgeBar() {
-  const [status, setStatus]     = useState(null);
-  const [loading, setLoading]   = useState({});   // { openf1: bool, fastf1: bool, jolpica: bool }
-  const [result, setResult]     = useState('');
-  const [years, setYears]       = useState(new Date().getFullYear().toString());
-  const [n, setN]               = useState(8);
+  const [status, setStatus]         = useState(null);
+  const [loading, setLoading]       = useState({});
+  const [result, setResult]         = useState('');
+  const [years, setYears]           = useState(new Date().getFullYear().toString());
+  const [n, setN]                   = useState(8);
+  const [uploading, setUploading]   = useState(false);
+  const [uploadResult, setUploadResult] = useState('');
 
   function refreshStatus() {
     fetch('/api/v1/knowledge/status').then(r => r.ok ? r.json() : null).then(d => { if (d) setStatus(d); }).catch(() => {});
   }
 
   useEffect(() => { refreshStatus(); }, []);
+
+  async function uploadDoc(file) {
+    if (!file) return;
+    setUploading(true); setUploadResult('');
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+      const res = await fetch('/api/v1/documents/ingest', { method: 'POST', body: fd });
+      const data = await res.json();
+      refreshStatus();
+      setUploadResult(`Indexed ${data.chunks_indexed ?? 0} chunks from "${data.filename ?? file.name}"`);
+    } catch (e) { setUploadResult(`Upload error: ${e.message}`); }
+    finally { setUploading(false); }
+  }
 
   async function ingest(source) {
     const meta = SOURCE_META[source];
@@ -449,6 +622,15 @@ function KnowledgeBar() {
         })}
       </div>
       {result && <span className="kb-result">{result}</span>}
+      <div className="kb-right" style={{ marginTop: 4 }}>
+        <label className="kb-btn" style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+          <Upload size={12} className={uploading ? 'spin' : ''} />
+          {uploading ? 'Uploading…' : 'Upload Doc'}
+          <input type="file" accept=".pdf,.txt,.md,.png,.jpg,.jpeg"
+            style={{ display: 'none' }} onChange={e => { uploadDoc(e.target.files[0]); e.target.value = ''; }} />
+        </label>
+        {uploadResult && <span className="kb-result">{uploadResult}</span>}
+      </div>
     </div>
   );
 }
@@ -486,15 +668,83 @@ function ChatBubble({ msg }) {
   );
 }
 
+const RISK_COLOR = { CRITICAL: '#ef4444', WARNING: '#f59e0b', INFO: '#22c55e' };
+
+function DocAnalysisBubble({ msg }) {
+  const a = msg.analysis;
+  const rColor = RISK_COLOR[a?.risk_signal] ?? '#64748b';
+  return (
+    <div className="chat-bubble-row chat-assistant">
+      <div className="chat-avatar"><FileText size={13} /></div>
+      <div className="chat-bubble" style={{ maxWidth: '90%' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+          <span style={{ fontWeight: 700, fontSize: 12 }}>{msg.filename}</span>
+          <span style={{ fontSize: 10, fontWeight: 700, color: rColor, border: `1px solid ${rColor}`, borderRadius: 4, padding: '1px 6px' }}>
+            {a?.risk_signal ?? 'INFO'}
+          </span>
+          <span style={{ fontSize: 10, color: 'var(--muted)' }}>{msg.chunks_indexed} chunk{msg.chunks_indexed !== 1 ? 's' : ''} indexed</span>
+        </div>
+        {a?.summary && <p className="chat-text" style={{ marginBottom: 6 }}>{a.summary}</p>}
+        {a?.key_findings?.length > 0 && (
+          <ul style={{ margin: '0 0 6px 0', paddingLeft: 16, fontSize: 12 }}>
+            {a.key_findings.map((f, i) => <li key={i} style={{ marginBottom: 2 }}>{f}</li>)}
+          </ul>
+        )}
+        {a?.recommended_action && (
+          <p style={{ fontSize: 11, color: 'var(--muted)', margin: 0 }}>
+            <strong>Action:</strong> {a.recommended_action}
+          </p>
+        )}
+        {msg.latency_ms != null && (
+          <span className="chat-latency">{msg.latency_ms.toFixed(0)} ms</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ChatPanel({ version }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput]       = useState('');
   const [loading, setLoading]   = useState(false);
+  const [docUploading, setDocUploading] = useState(false);
   const [error, setError]       = useState('');
+  const [isListening, setIsListening] = useState(false);
   const bottomRef = useRef(null);
   const llm = LLM_META[version?.model_backend] ?? LLM_META.rules;
 
+  function startListening() {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert('Speech recognition not supported in this browser.');
+      return;
+    }
+    const rec = new SpeechRecognition();
+    rec.onstart = () => setIsListening(true);
+    rec.onresult = (e) => setInput(e.results[0][0].transcript);
+    rec.onend = () => setIsListening(false);
+    rec.start();
+  }
+
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
+
+  async function uploadAndAnalyse(file) {
+    if (!file || docUploading) return;
+    setDocUploading(true);
+    setError('');
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+      const res = await fetch('/api/v1/documents/analyse', { method: 'POST', body: fd });
+      if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+      const data = await res.json();
+      setMessages(prev => [...prev, { role: 'document', ...data }]);
+    } catch (e) {
+      setError(`Upload failed: ${e.message}`);
+    } finally {
+      setDocUploading(false);
+    }
+  }
 
   const history = messages.map(m => ({ role: m.role, content: m.content }));
 
@@ -546,7 +796,11 @@ function ChatPanel({ version }) {
             </div>
           </div>
         )}
-        {messages.map((m, i) => <ChatBubble key={i} msg={m} />)}
+        {messages.map((m, i) =>
+          m.role === 'document'
+            ? <DocAnalysisBubble key={i} msg={m} />
+            : <ChatBubble key={i} msg={m} />
+        )}
         {loading && (
           <div className="chat-bubble-row chat-assistant">
             <div className="chat-avatar"><Bot size={13} /></div>
@@ -563,13 +817,22 @@ function ChatPanel({ version }) {
       <div className="chat-input-row">
         <div className="chat-input-wrap">
           <textarea
-            className="chat-input"
-            placeholder="Ask about tire strategy, ERS, braking, weather…"
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            onKeyDown={handleKey}
-            rows={1}
+           className="chat-input"
+           placeholder="Ask about tire strategy, ERS, braking, weather…"
+           value={input}
+           onChange={e => setInput(e.target.value)}
+           onKeyDown={handleKey}
+           rows={1}
           />
+          <button className={`chat-mic${isListening ? ' active' : ''}`} onClick={startListening} title="Voice Command">
+           <Mic size={16} />
+          </button>
+          <label className="chat-mic" title="Upload & Analyse Document" style={{ cursor: 'pointer' }}>
+            <FileText size={16} className={docUploading ? 'spin' : ''} />
+            <input type="file" accept=".pdf,.txt,.md,.png,.jpg,.jpeg"
+              style={{ display: 'none' }}
+              onChange={e => { uploadAndAnalyse(e.target.files[0]); e.target.value = ''; }} />
+          </label>
           <button className="chat-send" onClick={() => send()} disabled={loading || !input.trim()}
             style={{ color: llm.color }}>
             <Send size={16} />
@@ -652,36 +915,254 @@ function fmtLapTime(s) {
   return `${m}:${sec}`;
 }
 
+const COMPOUND_COLOURS = {
+  SOFT: '#e53e3e', MEDIUM: '#d69e2e', HARD: '#cbd5e0',
+  INTERMEDIATE: '#38a169', WET: '#3182ce',
+};
+
+function deriveStints(laps) {
+  const stints = [];
+  let cur = null;
+  for (const lap of laps) {
+    const c = (lap.compound ?? 'UNKNOWN').toUpperCase();
+    if (!cur || cur.compound !== c) {
+      if (cur) stints.push(cur);
+      cur = { compound: c, start: lap.lap_number, end: lap.lap_number };
+    } else {
+      cur.end = lap.lap_number;
+    }
+  }
+  if (cur) stints.push(cur);
+  return stints;
+}
+
+function RaceSummaryBar({ laps, label }) {
+  if (!laps.length) return null;
+  const stints = deriveStints(laps);
+  const fl = [...laps].filter(l => l.lap_time_s).sort((a, b) => a.lap_time_s - b.lap_time_s)[0];
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap', marginTop: 4 }}>
+      {label && <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--muted)', minWidth: 28 }}>{label}</span>}
+      {stints.map(s => (
+        <span key={s.start} style={{
+          fontSize: '0.66rem', padding: '1px 5px', borderRadius: 3,
+          background: COMPOUND_COLOURS[s.compound] ?? '#555',
+          color: s.compound === 'HARD' ? '#1a1a2e' : '#fff', fontWeight: 600,
+        }}>
+          {s.compound[0]} {s.start}–{s.end}
+        </span>
+      ))}
+      {fl && (
+        <span style={{ fontSize: '0.66rem', color: 'var(--muted)', marginLeft: 2 }}>
+          FL L{fl.lap_number} {fmtLapTime(fl.lap_time_s)}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function StintChart({ laps, selectedLap, onSelect }) {
+  if (!laps.length) return null;
+  const stints = deriveStints(laps);
+  const minLap = laps[0].lap_number;
+  const maxLap = laps[laps.length - 1].lap_number;
+  const span = Math.max(1, maxLap - minLap + 1);
+
+  function handleClick(e) {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    onSelect(Math.round(minLap + pct * (span - 1)));
+  }
+
+  const cursorPct = selectedLap != null ? ((selectedLap - minLap) / span) * 100 : null;
+
+  return (
+    <div style={{ marginTop: 6 }}>
+      <svg width="100%" height="18" style={{ cursor: 'pointer', borderRadius: 3, display: 'block', overflow: 'visible' }}
+           onClick={handleClick}>
+        {stints.map(s => (
+          <rect key={s.start}
+            x={`${((s.start - minLap) / span) * 100}%`} y="0"
+            width={`${((s.end - s.start + 1) / span) * 100}%`} height="18"
+            fill={COMPOUND_COLOURS[s.compound] ?? '#555'} />
+        ))}
+        {cursorPct != null && (
+          <line x1={`${cursorPct}%`} y1="-2" x2={`${cursorPct}%`} y2="20"
+                stroke="white" strokeWidth="2" opacity="0.9" />
+        )}
+      </svg>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.6rem', color: 'var(--muted)', marginTop: 1 }}>
+        <span>L{minLap}</span><span>L{maxLap}</span>
+      </div>
+    </div>
+  );
+}
+
 function LapBadge({ lap }) {
   if (!lap) return null;
-  const colours = { SOFT: '#e53e3e', MEDIUM: '#d69e2e', HARD: '#e2e8f0', INTERMEDIATE: '#38a169', WET: '#3182ce' };
   const c = lap.compound?.toUpperCase() ?? 'MEDIUM';
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: '0.7rem', color: 'var(--muted)' }}>
-      <span style={{ width: 8, height: 8, borderRadius: '50%', background: colours[c] ?? '#888', flexShrink: 0 }} />
+      <span style={{ width: 8, height: 8, borderRadius: '50%', background: COMPOUND_COLOURS[c] ?? '#888', flexShrink: 0 }} />
       {fmtLapTime(lap.lap_time_s)}
       {lap.tyre_life != null && <span style={{ opacity: 0.6 }}>· {c[0]} ×{lap.tyre_life}</span>}
     </span>
   );
 }
 
+const RISK_COLOURS = { INFO: '#4a5568', WATCH: '#d69e2e', WARNING: '#e53e3e', CRITICAL: '#805ad5' };
+
+function InsightHistoryStrip({ history, onRestore }) {
+  if (!history.length) return null;
+  return (
+    <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 4 }}>
+      {history.map(item => (
+        <button key={item.id} onClick={() => onRestore(item)} style={{
+          flexShrink: 0, background: '#0d1b2e', border: '1px solid var(--border)',
+          borderRadius: 6, padding: '4px 8px', cursor: 'pointer', textAlign: 'left', minWidth: 88,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2 }}>
+            {item.lapInfo && (
+              <span style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
+                background: COMPOUND_COLOURS[item.lapInfo.compound?.toUpperCase()] ?? '#888' }} />
+            )}
+            <span style={{ fontSize: '0.7rem', color: 'var(--text)', fontWeight: 600 }}>
+              {item.lap != null ? `L${item.lap}` : 'Best'}
+            </span>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', marginLeft: 'auto', flexShrink: 0,
+              background: RISK_COLOURS[item.risk] ?? '#4a5568' }} />
+          </div>
+          <div style={{ fontSize: '0.62rem', color: 'var(--muted)', maxWidth: 96,
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {item.recommendation}
+          </div>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function LapDeltaChart({ laps, laps2, driver, driver2, selectedLap, onSelect }) {
+  if (!laps.length || !laps2.length) return null;
+  const map2 = Object.fromEntries(laps2.map(l => [l.lap_number, l]));
+  const deltas = laps
+    .filter(l => l.lap_time_s && map2[l.lap_number]?.lap_time_s)
+    .map(l => ({ lap: l.lap_number, delta: l.lap_time_s - map2[l.lap_number].lap_time_s }));
+  if (!deltas.length) return null;
+  const minLap = deltas[0].lap, maxLap = deltas[deltas.length - 1].lap;
+  const span = Math.max(1, maxLap - minLap);
+  const maxAbs = Math.max(1, Math.max(...deltas.map(d => Math.abs(d.delta))));
+  const W = 1000, H = 80, MID = H / 2;
+  const lx = lap => ((lap - minLap) / span) * W;
+  const dy = d => MID - (d / maxAbs) * (MID - 5);
+  const cursor = selectedLap != null ? lx(selectedLap) : null;
+  return (
+    <div>
+      <p style={{ fontSize: '0.68rem', color: 'var(--muted)', marginBottom: 3 }}>
+        Lap delta · <span style={{ color: '#63b3ed' }}>{driver}</span> vs <span style={{ color: '#f6ad55' }}>{driver2}</span>
+        <span style={{ opacity: 0.5 }}> · + = {driver2} faster</span>
+      </p>
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none"
+           style={{ width: '100%', height: 64, background: '#0a0f1e', borderRadius: 4, display: 'block', cursor: 'pointer' }}
+           onClick={e => {
+             const r = e.currentTarget.getBoundingClientRect();
+             onSelect(Math.round(minLap + ((e.clientX - r.left) / r.width) * span));
+           }}>
+        <line x1="0" y1={MID} x2={W} y2={MID} stroke="rgba(255,255,255,0.15)" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+        {deltas.map((d, i) => {
+          const x = lx(d.lap);
+          const nx = i < deltas.length - 1 ? lx(deltas[i + 1].lap) : x + W / deltas.length;
+          const w = Math.max(2, nx - x - 1);
+          const y = d.delta >= 0 ? dy(d.delta) : MID;
+          const h = Math.max(1, Math.abs(dy(d.delta) - MID));
+          return <rect key={d.lap} x={x} y={y} width={w} height={h}
+            fill={d.delta > 0 ? '#f6ad55' : '#63b3ed'} opacity="0.85" />;
+        })}
+        {cursor != null && (
+          <line x1={cursor} y1="0" x2={cursor} y2={H} stroke="white" strokeWidth="2" opacity="0.8" vectorEffect="non-scaling-stroke" />
+        )}
+        <text x="4" y="10" fontSize="9" fill="rgba(255,255,255,0.35)" dominantBaseline="hanging">+{maxAbs.toFixed(1)}s</text>
+        <text x="4" y={H - 2} fontSize="9" fill="rgba(255,255,255,0.35)">−{maxAbs.toFixed(1)}s</text>
+      </svg>
+    </div>
+  );
+}
+
+function TraceChart({ trace, trace2, driver, driver2, lap }) {
+  if (!trace.length) return null;
+  const maxDist = Math.max(...trace.map(p => p.dist), 1);
+  const W = 1000, H = 100, SH = 74;
+  const tx = d => (d / maxDist) * W;
+  const sy = s => SH - ((Math.max(50, Math.min(350, s)) - 50) / 300) * SH;
+  const pts = arr => arr.map(p => `${tx(p.dist)},${sy(p.speed)}`).join(' ');
+  const throtPath = trace.length < 2 ? '' : [
+    `M${tx(trace[0].dist)},${H}`,
+    ...trace.map(p => `L${tx(p.dist)},${SH + (1 - p.throttle / 100) * (H - SH)}`),
+    `L${tx(trace[trace.length - 1].dist)},${H}Z`,
+  ].join('');
+  return (
+    <div style={{ marginTop: 10 }}>
+      <p style={{ fontSize: '0.68rem', color: 'var(--muted)', marginBottom: 3 }}>
+        Speed · Throttle · Brake{lap != null ? ` — Lap ${lap}` : ''}
+      </p>
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none"
+           style={{ width: '100%', height: 80, background: '#0a0f1e', borderRadius: 4, display: 'block' }}>
+        {trace.map((p, i) => p.drs && i < trace.length - 1 && (
+          <rect key={i} x={tx(p.dist)} y={0}
+            width={Math.max(1, tx(trace[i + 1]?.dist ?? p.dist) - tx(p.dist))} height={H}
+            fill="#1a4040" />
+        ))}
+        {throtPath && <path d={throtPath} fill="#1a4a1a" opacity="0.75" />}
+        {trace.map((p, i) => p.brake && (
+          <rect key={i} x={tx(p.dist)} y={SH}
+            width={Math.max(2, tx(trace[i + 1]?.dist ?? p.dist) - tx(p.dist))} height={H - SH}
+            fill="#e53e3e" opacity="0.85" />
+        ))}
+        <polyline points={pts(trace)} fill="none" stroke="#63b3ed" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+        {trace2.length > 0 && (
+          <polyline points={pts(trace2)} fill="none" stroke="#f6ad55" strokeWidth="1.5"
+            strokeDasharray="6,3" vectorEffect="non-scaling-stroke" />
+        )}
+        <text x="4" y="11" fontSize="9" fill="rgba(255,255,255,0.4)" dominantBaseline="hanging">350</text>
+        <text x="4" y={SH - 2} fontSize="9" fill="rgba(255,255,255,0.4)">50</text>
+      </svg>
+      <div style={{ display: 'flex', gap: 10, fontSize: '0.63rem', color: 'var(--muted)', marginTop: 3 }}>
+        <span><span style={{ color: '#63b3ed' }}>━</span> {driver} speed</span>
+        {trace2.length > 0 && <span><span style={{ color: '#f6ad55' }}>╌</span> {driver2}</span>}
+        <span><span style={{ color: '#38a169' }}>█</span> throttle</span>
+        <span><span style={{ color: '#e53e3e' }}>█</span> brake</span>
+        <span><span style={{ color: '#1a6060' }}>█</span> DRS</span>
+      </div>
+    </div>
+  );
+}
+
 function LivePanel({ version }) {
-  const [races, setRaces]           = useState([]);
-  const [drivers, setDrivers]       = useState([]);
-  const [laps, setLaps]             = useState([]);
-  const [roundNum, setRoundNum]     = useState('');
-  const [driver, setDriver]         = useState('');
+  const [races, setRaces]             = useState([]);
+  const [drivers, setDrivers]         = useState([]);
+  const [laps, setLaps]               = useState([]);
+  const [laps2, setLaps2]             = useState([]);
+  const [roundNum, setRoundNum]       = useState('');
+  const [driver, setDriver]           = useState('');
+  const [driver2, setDriver2]         = useState('');
   const [selectedLap, setSelectedLap] = useState(null);
-  const [replayMode, setReplayMode] = useState(false);
-  const [audience, setAudience]     = useState('DRIVER');
-  const [insight, setInsight]       = useState(null);
-  const [error, setError]           = useState('');
-  const [loading, setLoading]       = useState(false);
+  const [replayMode, setReplayMode]   = useState(false);
+  const [audience, setAudience]       = useState('DRIVER');
+  const [insight, setInsight]         = useState(null);
+  const [insight2, setInsight2]       = useState(null);
+  const [history, setHistory]         = useState([]);
+  const [trace, setTrace]             = useState([]);
+  const [trace2, setTrace2]           = useState([]);
+  const [error, setError]             = useState('');
+  const [loading, setLoading]         = useState(false);
   const [loadingDrivers, setLoadingDrivers] = useState(false);
-  const [year, setYear]             = useState(2024);
+  const [year, setYear]               = useState(2024);
 
   useEffect(() => {
-    setError(''); setRaces([]); setRoundNum(''); setDrivers([]); setDriver(''); setLaps([]);
+    setError(''); setRaces([]); setRoundNum('');
+    setDrivers([]); setDriver(''); setDriver2('');
+    setLaps([]); setLaps2([]); setInsight(null); setInsight2(null);
+    setHistory([]); setTrace([]); setTrace2([]);
     fetch(`/api/v1/session/races?year=${year}`)
       .then(r => r.ok ? r.json() : [])
       .then(setRaces)
@@ -690,7 +1171,10 @@ function LivePanel({ version }) {
 
   useEffect(() => {
     if (!roundNum) return;
-    setDrivers([]); setDriver(''); setLaps([]); setSelectedLap(null);
+    setDrivers([]); setDriver(''); setDriver2('');
+    setLaps([]); setLaps2([]); setSelectedLap(null);
+    setInsight(null); setInsight2(null);
+    setHistory([]); setTrace([]); setTrace2([]);
     setLoadingDrivers(true);
     fetch(`/api/v1/session/drivers/${year}/${roundNum}`)
       .then(r => r.ok ? r.json() : [])
@@ -704,7 +1188,7 @@ function LivePanel({ version }) {
 
   useEffect(() => {
     if (!roundNum || !driver) return;
-    setLaps([]); setSelectedLap(null);
+    setLaps([]); setSelectedLap(null); setInsight(null); setHistory([]); setTrace([]);
     fetch(`/api/v1/session/laps/${year}/${roundNum}/${driver}`)
       .then(r => r.ok ? r.json() : [])
       .then(rows => {
@@ -714,18 +1198,46 @@ function LivePanel({ version }) {
       .catch(() => {});
   }, [year, roundNum, driver]);
 
+  useEffect(() => {
+    if (!roundNum || !driver2) { setLaps2([]); setInsight2(null); setTrace2([]); return; }
+    fetch(`/api/v1/session/laps/${year}/${roundNum}/${driver2}`)
+      .then(r => r.ok ? r.json() : [])
+      .then(setLaps2)
+      .catch(() => {});
+  }, [year, roundNum, driver2]);
+
+  async function fetchTrace(lap) {
+    if (!roundNum || !driver || lap == null) return;
+    const [r1, r2] = await Promise.all([
+      fetch(`/api/v1/session/trace/${year}/${roundNum}/${driver}/${lap}`),
+      driver2 ? fetch(`/api/v1/session/trace/${year}/${roundNum}/${driver2}/${lap}`) : Promise.resolve(null),
+    ]);
+    setTrace(r1.ok ? await r1.json() : []);
+    setTrace2(r2 && r2.ok ? await r2.json() : []);
+  }
+
   async function fetchInsight(lapOverride) {
     if (!roundNum || !driver) return;
     setError(''); setLoading(true);
     const lap = lapOverride ?? (replayMode ? selectedLap : null);
     const lapParam = lap != null ? `&lap_number=${lap}` : '';
+    const base = `/api/v1/session/insight?year=${year}&round_num=${roundNum}&audience=${audience}${lapParam}`;
     try {
-      const res = await fetch(
-        `/api/v1/session/insight?year=${year}&round_num=${roundNum}&driver=${driver}&audience=${audience}${lapParam}`,
-        { method: 'POST' }
-      );
-      if (!res.ok) throw new Error(await res.text());
-      setInsight(await res.json());
+      const reqs = [fetch(`${base}&driver=${driver}`, { method: 'POST' })];
+      if (driver2) reqs.push(fetch(`${base}&driver=${driver2}`, { method: 'POST' }));
+      const [res1, res2] = await Promise.all(reqs);
+      if (!res1.ok) throw new Error(await res1.text());
+      const d1 = await res1.json();
+      const d2 = res2 && res2.ok ? await res2.json() : null;
+      setInsight(d1);
+      setInsight2(d2);
+      const lapInfo = laps.find(l => l.lap_number === lap) ?? null;
+      setHistory(prev => [{
+        id: Date.now(), lap, lapInfo, driver, driver2,
+        risk: d1.risk, recommendation: d1.recommendation,
+        insight: d1, insight2: d2,
+      }, ...prev].slice(0, 8));
+      if (replayMode && lap != null) fetchTrace(lap);
     } catch (e) {
       setError(String(e.message ?? e));
     } finally {
@@ -744,6 +1256,17 @@ function LivePanel({ version }) {
       fetchInsight(next);
       return next;
     });
+  }
+
+  function handleChartClick(lap) {
+    setSelectedLap(lap);
+    if (replayMode) fetchInsight(lap);
+  }
+
+  function restoreHistoryItem(item) {
+    setInsight(item.insight);
+    setInsight2(item.insight2);
+    if (item.lap != null) setSelectedLap(item.lap);
   }
 
   return (
@@ -786,24 +1309,37 @@ function LivePanel({ version }) {
           </Section>
 
           <Section title="Driver">
-            <label style={{ display: 'block' }}><span>Driver</span>
-              <select className="text-input" value={driver}
-                onChange={e => setDriver(e.target.value)}
-                disabled={!drivers.length}>
-                {loadingDrivers
-                  ? <option>Loading…</option>
-                  : !drivers.length
-                    ? <option>— pick race first —</option>
-                    : drivers.map(d => (
-                        <option key={d.code} value={d.code}>{d.code}</option>
-                      ))}
-              </select>
-            </label>
+            <div className="context-row">
+              <label style={{ flex: 1 }}><span>Driver 1</span>
+                <select className="text-input" value={driver}
+                  onChange={e => { setDriver(e.target.value); setInsight(null); }}
+                  disabled={!drivers.length}>
+                  {loadingDrivers
+                    ? <option>Loading…</option>
+                    : !drivers.length
+                      ? <option>— pick race first —</option>
+                      : drivers.map(d => <option key={d.code} value={d.code}>{d.code}</option>)}
+                </select>
+              </label>
+              <label style={{ flex: 1 }}><span>vs</span>
+                <select className="text-input" value={driver2}
+                  onChange={e => { setDriver2(e.target.value); setInsight2(null); }}
+                  disabled={!drivers.length}>
+                  <option value="">— none —</option>
+                  {drivers.filter(d => d.code !== driver).map(d => (
+                    <option key={d.code} value={d.code}>{d.code}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            {laps.length > 0 && <RaceSummaryBar laps={laps} label={driver2 ? driver : null} />}
+            {driver2 && laps2.length > 0 && <RaceSummaryBar laps={laps2} label={driver2} />}
           </Section>
 
           {laps.length > 0 && (
             <Section title="Lap">
-              <div className="context-row" style={{ alignItems: 'center', gap: 8 }}>
+              <StintChart laps={laps} selectedLap={selectedLap} onSelect={handleChartClick} />
+              <div className="context-row" style={{ alignItems: 'center', gap: 8, marginTop: 8 }}>
                 <label className="check-label">
                   <input type="checkbox" checked={replayMode}
                     onChange={e => setReplayMode(e.target.checked)} />
@@ -837,22 +1373,903 @@ function LivePanel({ version }) {
             ? <><Activity size={13} /> Loading telemetry…</>
             : replayMode
               ? <>Analyse Lap {selectedLap}{currentLapInfo ? ` · ${fmtLapTime(currentLapInfo.lap_time_s)}` : ''}</>
-              : 'Analyse Session'}
+              : driver2 ? `Compare ${driver} vs ${driver2}` : 'Analyse Session'}
         </button>
 
         <p className="muted" style={{ fontSize: '0.70rem', marginTop: 8 }}>
-          Uses FastF1 — works any time, including during live race weekends.
-          Analyses a 5-lap window for trend detection. First load per session
-          downloads ~50 MB and may take 20–30 s.
+          Uses FastF1. First load per session ~50 MB / 20–30 s. Analyses a 5-lap window.
         </p>
         {error && <pre className="error">{error}</pre>}
       </div>
 
       <div className="card insight-card">
-        <h2><ShieldAlert size={15} /> {replayMode ? `Lap ${selectedLap} Insight` : 'Session Insight'}</h2>
-        {!insight
-          ? <p className="muted empty-hint">Pick a race and driver, then click Analyse Session.</p>
-          : <InsightPanel insight={insight} modelBackend={version?.model_backend} />}
+        <h2><ShieldAlert size={15} />{' '}
+          {driver2
+            ? `${driver} vs ${driver2}${replayMode ? ` — Lap ${selectedLap}` : ''}`
+            : replayMode ? `Lap ${selectedLap} Insight` : 'Session Insight'}
+        </h2>
+
+        {history.length > 0 && (
+          <InsightHistoryStrip history={history} onRestore={restoreHistoryItem} />
+        )}
+
+        {driver2 && laps.length > 0 && laps2.length > 0 && (
+          <LapDeltaChart
+            laps={laps} laps2={laps2}
+            driver={driver} driver2={driver2}
+            selectedLap={selectedLap} onSelect={handleChartClick}
+          />
+        )}
+
+        {driver2 ? (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+            <div>
+              <p style={{ fontWeight: 700, fontSize: '0.8rem', marginBottom: 8, color: 'var(--text)' }}>{driver}</p>
+              {insight
+                ? <InsightPanel insight={insight} modelBackend={version?.model_backend} />
+                : <p className="muted empty-hint" style={{ fontSize: '0.75rem' }}>Click Compare to analyse.</p>}
+            </div>
+            <div style={{ borderLeft: '1px solid var(--border)', paddingLeft: 16 }}>
+              <p style={{ fontWeight: 700, fontSize: '0.8rem', marginBottom: 8, color: 'var(--text)' }}>{driver2}</p>
+              {insight2
+                ? <InsightPanel insight={insight2} modelBackend={version?.model_backend} />
+                : <p className="muted empty-hint" style={{ fontSize: '0.75rem' }}>Click Compare to analyse.</p>}
+            </div>
+          </div>
+        ) : (
+          !insight
+            ? <p className="muted empty-hint">Pick a race and driver, then click Analyse Session.</p>
+            : <InsightPanel insight={insight} modelBackend={version?.model_backend} />
+        )}
+
+        {trace.length > 0 && (
+          <TraceChart
+            trace={trace} trace2={trace2}
+            driver={driver} driver2={driver2}
+            lap={selectedLap}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+const SCENARIO_COLORS = ['#38bdf8', '#22c55e', '#a78bfa'];
+
+function StrategyComparisonTable({ comparison }) {
+  const best = comparison.scenarios.find(s => s.recommended);
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+        <h4 style={{ margin: 0 }}>Strategy Comparison</h4>
+        <span className="chat-latency">{comparison.latency_ms.toFixed(0)} ms</span>
+      </div>
+      <div style={{ padding: '10px 14px', borderRadius: 8, background: '#0a1628', border: '1px solid #1e3a5c', marginBottom: 10 }}>
+        <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#38bdf8', letterSpacing: '0.04em' }}>RECOMMENDATION</span>
+        <span style={{ fontSize: '0.82rem', color: 'var(--text)', marginLeft: 10 }}>{comparison.recommendation}</span>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${comparison.scenarios.length}, 1fr)`, gap: 8 }}>
+        {comparison.scenarios.map((s, i) => {
+          const color = SCENARIO_COLORS[i] ?? '#64748b';
+          const isRec = s.recommended;
+          return (
+            <div key={s.label} style={{
+              padding: '10px 12px', borderRadius: 8,
+              background: isRec ? color + '18' : '#0d1b2e',
+              border: `1px solid ${isRec ? color + 'aa' : '#1e3a5c'}`,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0 }} />
+                <span style={{ fontSize: '0.72rem', fontWeight: 700, color, flex: 1 }}>{s.label}</span>
+                {isRec && <span style={{ fontSize: '0.62rem', fontWeight: 700, color, background: color + '33', borderRadius: 3, padding: '1px 5px' }}>BEST</span>}
+              </div>
+              <div className="feat-table" style={{ gap: 2 }}>
+                <div className="feat-row" style={{ padding: '2px 0' }}>
+                  <span className="feat-key" style={{ fontSize: '0.68rem' }}>Total time</span>
+                  <span className="feat-val" style={{ fontSize: '0.72rem', color: isRec ? color : 'var(--text)' }}>
+                    {(s.total_time_s / 60).toFixed(1)} min
+                  </span>
+                </div>
+                <div className="feat-row" style={{ padding: '2px 0' }}>
+                  <span className="feat-key" style={{ fontSize: '0.68rem' }}>vs best</span>
+                  <span className="feat-val" style={{ fontSize: '0.72rem', color: s.delta_s === 0 ? '#22c55e' : '#f97316' }}>
+                    {s.delta_s === 0 ? '—' : `+${s.delta_s.toFixed(1)}s`}
+                  </span>
+                </div>
+                {s.pit_lap != null && (
+                  <div className="feat-row" style={{ padding: '2px 0' }}>
+                    <span className="feat-key" style={{ fontSize: '0.68rem' }}>Pit lap</span>
+                    <span className="feat-val" style={{ fontSize: '0.72rem' }}>L{s.pit_lap}</span>
+                  </div>
+                )}
+                {s.cliff_lap != null && (
+                  <div className="feat-row" style={{ padding: '2px 0' }}>
+                    <span className="feat-key" style={{ fontSize: '0.68rem' }}>Cliff</span>
+                    <span className="feat-val" style={{ fontSize: '0.72rem', color: '#ef4444' }}>L{s.cliff_lap}</span>
+                  </div>
+                )}
+                <div className="feat-row" style={{ padding: '2px 0' }}>
+                  <span className="feat-key" style={{ fontSize: '0.68rem' }}>End wear FL</span>
+                  <span className="feat-val" style={{ fontSize: '0.72rem', color: s.end_wear_fl > 0.85 ? '#ef4444' : 'inherit' }}>
+                    {Math.round(s.end_wear_fl * 100)}%
+                  </span>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function PredictionsPanel({ version }) {
+  const [stats, setStats]           = useState(DEFAULT_STATS);
+  const [projection, setProjection] = useState(null);
+  const [comparison, setComparison] = useState(null);
+  const [loading, setLoading]       = useState(false);
+  const [error, setError]           = useState('');
+
+  async function project() {
+    setLoading(true); setProjection(null); setComparison(null); setError('');
+    try {
+      const win = buildWindow(stats);
+      const body = JSON.stringify(win);
+      const headers = { 'Content-Type': 'application/json' };
+      const [r1, r2] = await Promise.all([
+        fetch('/api/v1/predictions/race-projection',    { method: 'POST', headers, body }),
+        fetch('/api/v1/predictions/strategy-comparison', { method: 'POST', headers, body }),
+      ]);
+      if (!r1.ok) throw new Error(await r1.text());
+      const [proj, comp] = await Promise.all([r1.json(), r2.ok ? r2.json() : null]);
+      setProjection(proj);
+      setComparison(comp);
+    } catch (e) { setError(e.message); }
+    finally { setLoading(false); }
+  }
+
+  return (
+    <div className="grid">
+      <div className="card input-card">
+        <div className="input-header"><h2>Tire Strategy Projection</h2></div>
+        <StatsForm stats={stats} onChange={setStats} />
+        <button className="analyze-btn" onClick={project} disabled={loading}>
+          {loading ? <><Activity size={13} className="spin" /> Simulating…</> : <><TrendingUp size={13} /> Project Stint</>}
+        </button>
+        {error && <pre className="error">{error}</pre>}
+      </div>
+
+      <div className="card insight-card">
+        <h2><TrendingUp size={15} /> Tire Degradation Forecast</h2>
+        {!projection ? (
+          <p className="muted empty-hint">Set tire state and current lap, then run simulation.</p>
+        ) : (
+          <div className="projection-results">
+            {comparison && <StrategyComparisonTable comparison={comparison} />}
+
+            <div className="projection-header" style={{ marginBottom: 8 }}>
+              <span className="projection-summary">{projection.summary}</span>
+              <span className="chat-latency">{projection.latency_ms.toFixed(0)} ms</span>
+            </div>
+
+            <div className="feat-table">
+              {projection.projections.map(p => {
+                const atCliff = p.wear_fl > 0.85;
+                return (
+                  <div key={p.lap} className="feat-row" style={atCliff ? { background: '#1e0f04' } : {}}>
+                    <span className="feat-key">Lap {p.lap}</span>
+                    <span className="feat-val">
+                      <span className="p-time">{p.p50_time_s.toFixed(2)}s</span>
+                      <span className="p-wear" style={{ color: atCliff ? 'var(--critical)' : p.wear_fl > 0.65 ? '#f97316' : 'inherit' }}>
+                        {Math.round(p.wear_fl * 100)}% FL
+                      </span>
+                      <span style={{ fontSize: '0.72rem', color: p.grip < 0.55 ? '#f97316' : 'var(--muted)' }}>
+                        {Math.round(p.grip * 100)}% grip
+                      </span>
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+            <p className="muted" style={{ fontSize: '0.68rem', marginTop: 8 }}>
+              Simulation models tire physics only — lap times are relative, not absolute.
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Regression panel ───────────────────────────────────────────────────────
+
+
+function GatePill({ label, pass }) {
+  const color = pass ? '#22c55e' : '#ef4444';
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 4,
+      padding: '3px 9px', borderRadius: 12, fontSize: '0.72rem', fontWeight: 600,
+      background: color + '22', border: `1px solid ${color}55`, color,
+    }}>
+      {pass ? '✓' : '✗'} {label}
+    </span>
+  );
+}
+
+function RegressionReport({ report }) {
+  const gates = Object.entries(GATE_META).map(([key, label]) => ({ key, label, pass: report[key] }));
+  const overallPass = gates.every(g => g.pass);
+  const cases = report.cases ?? [];
+  const byClass = report.by_class ?? {};
+  const overallColor = overallPass ? '#22c55e' : '#ef4444';
+
+  return (
+    <>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+        <span className="risk-pill" style={{ color: overallColor, background: overallColor + '22', borderColor: overallColor + '55', fontSize: '0.85rem' }}>
+          {overallPass ? 'ALL GATES PASS' : 'GATES FAILED'}
+        </span>
+        <span className="muted" style={{ fontSize: '0.72rem' }}>
+          {report.positive_cases} positive · {report.nominal_cases} nominal · {report.latency_ms}ms
+        </span>
+      </div>
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 16 }}>
+        {gates.map(g => <GatePill key={g.key} label={g.label} pass={g.pass} />)}
+      </div>
+
+      <div className="feat-table" style={{ marginBottom: 16 }}>
+        {[
+          ['Case recall',         `${(report.case_recall * 100).toFixed(0)}%`],
+          ['Agent activation',    `${(report.agent_activation_rate * 100).toFixed(0)}%`],
+          ['Source retrieval',    `${(report.source_retrieval_rate * 100).toFixed(0)}%`],
+          ['Policy correctness',  `${(report.policy_correctness * 100).toFixed(0)}%`],
+          ['False positive rate', `${(report.false_positive_rate * 100).toFixed(0)}%`],
+        ].map(([label, val]) => (
+          <div key={label} className="feat-row">
+            <span className="feat-key">{label}</span>
+            <span className="feat-val">{val}</span>
+          </div>
+        ))}
+      </div>
+
+      {Object.keys(byClass).length > 0 && (
+        <>
+          <h4>By Class</h4>
+          <div className="feat-table" style={{ marginBottom: 16 }}>
+            {Object.entries(byClass).map(([cls, info]) => (
+              <div key={cls} className="feat-row">
+                <span className="feat-key" style={{ fontFamily: 'monospace' }}>{cls}</span>
+                <span className="feat-val">
+                  {info.passed}/{info.cases} pass
+                  {info.recall != null ? ` · recall ${(info.recall * 100).toFixed(0)}%` : ''}
+                </span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {cases.length > 0 && (
+        <>
+          <h4>Cases ({cases.length})</h4>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.72rem' }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid var(--border)', color: 'var(--muted)' }}>
+                  {['ID', 'Class', 'Expected', 'Observed', 'Conf', 'ms', '✓'].map((h, i) => (
+                    <th key={h} style={{ textAlign: i >= 4 ? 'right' : 'left', padding: '4px 6px', fontWeight: 600 }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {cases.map(c => {
+                  const riskColor = RISK_META[c.observed_risk]?.color ?? '#64748b';
+                  const expLabel = c.expected_min_risk
+                    ? `≥${c.expected_min_risk}`
+                    : c.expected_max_risk
+                      ? `≤${c.expected_max_risk}`
+                      : '—';
+                  const failedChecks = Object.entries(c.checks ?? {}).filter(([, v]) => !v).map(([k]) => k);
+                  return (
+                    <tr key={c.case_id} style={{ borderBottom: '1px solid #ffffff08' }}
+                        title={failedChecks.length ? `Failed: ${failedChecks.join(', ')}` : 'All checks passed'}>
+                      <td style={{ padding: '3px 6px', fontFamily: 'monospace', fontSize: '0.68rem', color: 'var(--muted)' }}>
+                        {c.case_id.length > 24 ? c.case_id.slice(0, 24) + '…' : c.case_id}
+                      </td>
+                      <td style={{ padding: '3px 6px' }}>{c.class}</td>
+                      <td style={{ padding: '3px 6px', color: 'var(--muted)' }}>{expLabel}</td>
+                      <td style={{ padding: '3px 6px', color: riskColor, fontWeight: 600 }}>{c.observed_risk}</td>
+                      <td style={{ padding: '3px 6px', textAlign: 'right', color: 'var(--muted)' }}>{(c.confidence * 100).toFixed(0)}%</td>
+                      <td style={{ padding: '3px 6px', textAlign: 'right', color: 'var(--muted)' }}>{c.latency_ms.toFixed(0)}</td>
+                      <td style={{ padding: '3px 6px', textAlign: 'right' }}>
+                        <span style={{ color: c.pass ? '#22c55e' : '#ef4444', fontWeight: 700 }}>{c.pass ? '✓' : '✗'}</span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+
+// ── History panel ──────────────────────────────────────────────────────────
+
+const PAGE_SIZE = 50;
+
+function HistoryPanel() {
+  const [driverFilter, setDriverFilter] = useState('');
+  const [trackFilter, setTrackFilter]   = useState('');
+  const [riskFilter, setRiskFilter]     = useState('');
+  const [insights, setInsights]         = useState([]);
+  const [trend, setTrend]               = useState(null);
+  const [heatmap, setHeatmap]           = useState(null);
+  const [loading, setLoading]           = useState(false);
+  const [offset, setOffset]             = useState(0);
+
+  async function load(off = 0) {
+    setLoading(true);
+    const p = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(off) });
+    if (driverFilter) p.set('driver_id', driverFilter);
+    if (trackFilter)  p.set('track_id',  trackFilter);
+    if (riskFilter)   p.set('risk',      riskFilter);
+    const data = await fetch(`/api/v1/insights/history?${p}`).then(r => r.json()).catch(() => []);
+    setInsights(Array.isArray(data) ? data : []);
+    setOffset(off);
+    setLoading(false);
+  }
+
+  async function loadTrend(driver) {
+    if (!driver) { setTrend(null); return; }
+    const d = await fetch(`/api/v1/insights/trend/${driver}`).then(r => r.json()).catch(() => null);
+    setTrend(d);
+  }
+
+  async function loadHeatmap(track) {
+    if (!track) { setHeatmap(null); return; }
+    const d = await fetch(`/api/v1/insights/circuit/${track}`).then(r => r.json()).catch(() => null);
+    setHeatmap(d);
+  }
+
+  useEffect(() => { load(0); }, []);
+
+  const RC = { INFO: '#64748b', WATCH: '#f59e0b', WARNING: '#f97316', CRITICAL: '#ef4444' };
+
+  return (
+    <div className="grid">
+      <div className="card input-card">
+        <div className="input-header"><h2><History size={14} /> Filters</h2></div>
+        <div className="stats-form">
+          <Section title="Search">
+            <div className="context-row">
+              <label style={{ flex: 2 }}><span>Driver ID</span>
+                <input className="text-input" value={driverFilter}
+                  onChange={e => setDriverFilter(e.target.value)} placeholder="e.g. VER" />
+              </label>
+              <label style={{ flex: 2 }}><span>Track</span>
+                <input className="text-input" value={trackFilter}
+                  onChange={e => setTrackFilter(e.target.value)} placeholder="e.g. silverstone" />
+              </label>
+            </div>
+            <div className="context-row">
+              <label style={{ flex: 2 }}><span>Risk level</span>
+                <select className="text-input" value={riskFilter} onChange={e => setRiskFilter(e.target.value)}>
+                  <option value="">All</option>
+                  {['INFO','WATCH','WARNING','CRITICAL'].map(r => <option key={r} value={r}>{r}</option>)}
+                </select>
+              </label>
+            </div>
+          </Section>
+        </div>
+        <button className="analyze-btn" onClick={() => { load(0); loadTrend(driverFilter); loadHeatmap(trackFilter); }}
+          disabled={loading}>
+          {loading ? <><Activity size={13} /> Loading…</> : <><Search size={13} /> Search</>}
+        </button>
+
+        {trend && (
+          <>
+            <h4 style={{ marginTop: 16 }}><TrendingUp size={13} /> Driver Trend — {trend.driver_id}</h4>
+            <div className="feat-table">
+              {Object.entries(trend.by_risk ?? {}).map(([r, v]) => (
+                <div key={r} className="feat-row">
+                  <span className="feat-key" style={{ color: RC[r] ?? '#aaa' }}>{r}</span>
+                  <span className="feat-val">{v.count} · {(v.avg_confidence * 100).toFixed(0)}% conf</span>
+                </div>
+              ))}
+              <div className="feat-row">
+                <span className="feat-key" style={{ color: 'var(--muted)' }}>Total</span>
+                <span className="feat-val">{trend.total}</span>
+              </div>
+            </div>
+          </>
+        )}
+
+        {heatmap && heatmap.rows?.length > 0 && (
+          <>
+            <h4 style={{ marginTop: 16 }}><Table size={13} /> Circuit Heatmap — {heatmap.track_id}</h4>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>{['Driver','Risk','Count','Conf'].map(h => (
+                    <th key={h} style={{ textAlign: 'left', padding: '2px 6px', color: 'var(--muted)', fontWeight: 600 }}>{h}</th>
+                  ))}</tr>
+                </thead>
+                <tbody>
+                  {heatmap.rows.map((r, i) => (
+                    <tr key={i} style={{ borderTop: '1px solid var(--card-border)' }}>
+                      <td style={{ padding: '3px 6px' }}>{r.driver_id}</td>
+                      <td style={{ padding: '3px 6px', color: RC[r.risk] ?? '#aaa', fontWeight: 600 }}>{r.risk}</td>
+                      <td style={{ padding: '3px 6px', textAlign: 'right' }}>{r.count}</td>
+                      <td style={{ padding: '3px 6px', textAlign: 'right', color: 'var(--muted)' }}>{(r.avg_confidence * 100).toFixed(0)}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </div>
+
+      <div className="card insight-card">
+        <h2><Table size={14} /> Insight History</h2>
+        {insights.length === 0
+          ? <p className="muted empty-hint">{loading ? 'Loading…' : 'No insights found. Run analysis to populate history.'}</p>
+          : (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>{['Driver','Track','Lap','Compound','Risk','Conf','Judge','Policy','Time'].map(h => (
+                    <th key={h} style={{ textAlign: 'left', padding: '3px 6px', color: 'var(--muted)', fontWeight: 600, whiteSpace: 'nowrap' }}>{h}</th>
+                  ))}</tr>
+                </thead>
+                <tbody>
+                  {insights.map((ins, i) => {
+                    const jm = ins.judge_mean;
+                    const jColor = jm == null ? '#64748b' : jm >= 0.75 ? '#22c55e' : jm >= 0.55 ? '#f59e0b' : '#ef4444';
+                    return (
+                    <tr key={ins.insight_id ?? i} style={{ borderTop: '1px solid var(--card-border)' }}>
+                      <td style={{ padding: '3px 6px', fontFamily: 'monospace' }}>{ins.driver_id}</td>
+                      <td style={{ padding: '3px 6px', color: 'var(--muted)' }}>{ins.track_id}</td>
+                      <td style={{ padding: '3px 6px', textAlign: 'right' }}>{ins.lap ?? '—'}</td>
+                      <td style={{ padding: '3px 6px', color: COMPOUND_COLOR[ins.compound] ?? '#aaa' }}>{ins.compound ?? '—'}</td>
+                      <td style={{ padding: '3px 6px', color: RC[ins.risk] ?? '#aaa', fontWeight: 600 }}>{ins.risk}</td>
+                      <td style={{ padding: '3px 6px', textAlign: 'right' }}>{ins.confidence != null ? `${(ins.confidence * 100).toFixed(0)}%` : '—'}</td>
+                      <td style={{ padding: '3px 6px', textAlign: 'right', color: jColor, fontWeight: jm != null ? 600 : 400 }}>
+                        {jm != null ? `${(jm * 100).toFixed(0)}%` : '—'}
+                      </td>
+                      <td style={{ padding: '3px 6px', color: 'var(--muted)' }}>{ins.policy}</td>
+                      <td style={{ padding: '3px 6px', color: 'var(--muted)', whiteSpace: 'nowrap' }}>
+                        {ins.created_at ? new Date(ins.created_at).toLocaleTimeString() : '—'}
+                      </td>
+                    </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+                <button className="kb-btn" onClick={() => load(Math.max(0, offset - PAGE_SIZE))} disabled={offset === 0 || loading}>
+                  ← Prev
+                </button>
+                <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+                  {offset + 1}–{offset + insights.length}
+                </span>
+                <button className="kb-btn" onClick={() => load(offset + PAGE_SIZE)}
+                  disabled={insights.length < PAGE_SIZE || loading}>
+                  Next →
+                </button>
+              </div>
+            </div>
+          )
+        }
+      </div>
+    </div>
+  );
+}
+
+// ── Drift status card ──────────────────────────────────────────────────────
+
+function DriftStatusCard() {
+  const [drift, setDrift]     = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  function refresh() {
+    setLoading(true);
+    fetch('/api/v1/drift/status').then(r => r.ok ? r.json() : null)
+      .then(d => { setDrift(d); setLoading(false); }).catch(() => setLoading(false));
+  }
+
+  useEffect(() => { refresh(); }, []);
+
+  const features = drift?.features ? Object.entries(drift.features) : [];
+  const alerted  = drift?.alerted_features ?? [];
+
+  return (
+    <div className="card" style={{ minWidth: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+        <h2 style={{ margin: 0 }}><Activity size={14} /> Feature Drift</h2>
+        <button className="kb-btn" onClick={refresh} disabled={loading}>
+          <RefreshCw size={11} className={loading ? 'spin' : ''} /> Refresh
+        </button>
+      </div>
+
+      {!drift?.ready ? (
+        <div>
+          <p className="muted" style={{ fontSize: 12, marginBottom: 6 }}>
+            Warming up baseline — {drift?.baseline_size ?? 0} / {drift?.min_baseline ?? 50} observations collected.
+          </p>
+          <div style={{ height: 4, borderRadius: 2, background: 'var(--card-border)', overflow: 'hidden' }}>
+            <div style={{ width: `${Math.min(100, ((drift?.baseline_size ?? 0) / (drift?.min_baseline ?? 50)) * 100)}%`, height: '100%', background: '#3b82f6', borderRadius: 2 }} />
+          </div>
+          <p className="muted" style={{ fontSize: 10, marginTop: 4 }}>Run analyses in Telemetry or Session tabs to build the baseline.</p>
+        </div>
+      ) : (
+        <>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+            <span style={{ fontSize: 11, color: alerted.length > 0 ? '#ef4444' : '#22c55e', fontWeight: 700 }}>
+              {alerted.length > 0 ? `⚠ ${alerted.length} feature${alerted.length > 1 ? 's' : ''} drifting` : '✓ No drift detected'}
+            </span>
+            <span className="muted" style={{ fontSize: 10 }}>baseline {drift.baseline_size} obs · updated {drift.last_updated?.slice(11, 19) ?? '—'}</span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {features.sort(([, a], [, b]) => Math.abs(b.z_score) - Math.abs(a.z_score)).map(([feat, info]) => {
+              const pct = Math.min(100, (Math.abs(info.z_score) / 5) * 100);
+              const color = info.alerted ? '#ef4444' : Math.abs(info.z_score) > 2 ? '#f59e0b' : '#22c55e';
+              return (
+                <div key={feat} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontSize: 10, color: 'var(--muted)', width: 140, flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={feat}>{feat}</span>
+                  <div style={{ flex: 1, height: 4, borderRadius: 2, background: 'var(--card-border)', overflow: 'hidden' }}>
+                    <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: 2 }} />
+                  </div>
+                  <span style={{ fontSize: 10, color, width: 36, textAlign: 'right', fontFamily: 'monospace' }}>
+                    {info.z_score > 0 ? '+' : ''}{info.z_score.toFixed(2)}σ
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── Calibration health card ────────────────────────────────────────────────
+
+function CalibrationCard() {
+  const [stats, setStats]       = useState(null);
+  const [retraining, setRetraining] = useState(false);
+  const [result, setResult]     = useState(null);
+  const [error, setError]       = useState('');
+
+  function load() {
+    fetch('/api/v1/feedback/stats').then(r => r.ok ? r.json() : null).then(d => { if (d) setStats(d); }).catch(() => {});
+  }
+
+  useEffect(() => { load(); }, []);
+
+  async function retrain() {
+    setRetraining(true); setResult(null); setError('');
+    try {
+      const res = await fetch('/api/v1/calibrator/retrain', { method: 'POST' });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.detail ?? `Error ${res.status}`);
+      setResult(d);
+      load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setRetraining(false);
+    }
+  }
+
+  const pct = stats ? Math.min(100, (stats.total / stats.min_for_retrain) * 100) : 0;
+  const eceColor = stats?.current_ece == null ? '#64748b' : stats.current_ece <= 0.05 ? '#22c55e' : stats.current_ece <= 0.15 ? '#f59e0b' : '#ef4444';
+
+  return (
+    <div className="card" style={{ minWidth: 0 }}>
+      <h2 style={{ marginBottom: 10 }}><TrendingUp size={14} /> Calibration Health</h2>
+
+      {stats?.regression_detected && (
+        <div style={{ padding: '6px 10px', background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 6, fontSize: 11, color: '#f59e0b' }}>
+          ⚠ Last retrain blocked — ECE regressed above previous model. Live calibrator unchanged.
+        </div>
+      )}
+
+      {stats && (
+        <>
+          <div style={{ display: 'flex', gap: 16, marginBottom: 12, flexWrap: 'wrap' }}>
+            <div>
+              <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 2 }}>ECE</div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: eceColor, fontFamily: 'monospace' }}>
+                {stats.current_ece != null ? stats.current_ece.toFixed(4) : '—'}
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 2 }}>Brier</div>
+              <div style={{ fontSize: 18, fontWeight: 700, fontFamily: 'monospace' }}>
+                {stats.current_brier != null ? stats.current_brier.toFixed(4) : '—'}
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 2 }}>Feedback</div>
+              <div style={{ fontSize: 18, fontWeight: 700 }}>{stats.total}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 2 }}>Avg Rating</div>
+              <div style={{ fontSize: 18, fontWeight: 700 }}>{stats.avg_rating != null ? `${stats.avg_rating}/5` : '—'}</div>
+            </div>
+          </div>
+
+          <div style={{ marginBottom: 8 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--muted)', marginBottom: 3 }}>
+              <span>Feedback for retrain</span>
+              <span>{stats.total} / {stats.min_for_retrain}</span>
+            </div>
+            <div style={{ height: 4, borderRadius: 2, background: 'var(--card-border)', overflow: 'hidden' }}>
+              <div style={{ width: `${pct}%`, height: '100%', background: pct >= 100 ? '#22c55e' : '#3b82f6', borderRadius: 2 }} />
+            </div>
+          </div>
+
+          {stats.last_retrain && (
+            <p style={{ fontSize: 10, color: 'var(--muted)', margin: '0 0 10px' }}>
+              Last retrained {stats.last_retrain.slice(0, 10)}
+              {stats.retrain_dataset?.generator && ` · ${stats.retrain_dataset.generator}`}
+              {stats.retrain_dataset?.n_feedback && ` · ${stats.retrain_dataset.n_feedback} feedback samples`}
+            </p>
+          )}
+
+          <button className="analyze-btn" style={{ padding: '6px 14px', fontSize: 12 }}
+            onClick={retrain} disabled={retraining || !stats.ready_to_retrain}
+            title={!stats.ready_to_retrain ? `Need ${stats.min_for_retrain - stats.total} more feedback records` : 'Re-calibrate from feedback'}>
+            {retraining ? <><Activity size={12} className="spin" /> Retraining…</> : 'Re-calibrate from feedback'}
+          </button>
+          {!stats.ready_to_retrain && (
+            <p style={{ fontSize: 10, color: 'var(--muted)', marginTop: 4 }}>
+              Rate insights in Telemetry / Session to build up feedback.
+            </p>
+          )}
+
+          {result && !result.skipped && (
+            result.regression_detected ? (
+              <div style={{ marginTop: 8, padding: '6px 10px', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 6, fontSize: 11, color: '#f59e0b' }}>
+                ⚠ Retrain blocked — new ECE {result.ece?.toFixed(4)} regressed from {result.previous_ece?.toFixed(4)}. Versioned model saved; live calibrator unchanged.
+              </div>
+            ) : (
+              <div style={{ marginTop: 8, padding: '6px 10px', background: 'rgba(34,197,94,0.1)', borderRadius: 6, fontSize: 11 }}>
+                ✓ Retrained — ECE {result.ece?.toFixed(4)} · Brier {result.brier_score?.toFixed(4)} · {result.n_feedback} feedback samples
+              </div>
+            )
+          )}
+          {result?.skipped && (
+            <p style={{ fontSize: 11, color: '#f59e0b', marginTop: 6 }}>Skipped: {result.reason}</p>
+          )}
+          {error && <p style={{ fontSize: 11, color: '#ef4444', marginTop: 6 }}>{error}</p>}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── Analytics panel ────────────────────────────────────────────────────────
+
+const ANALYTICS_SUGGESTIONS = [
+  'How many WARNING insights occurred per driver this week?',
+  'Which track has the highest average confidence score?',
+  'Show average tire wear by compound',
+  'List the 5 most recent CRITICAL insights',
+];
+
+function AnalyticsPanel() {
+  const [question, setQuestion]   = useState('');
+  const [result, setResult]       = useState(null);
+  const [loading, setLoading]     = useState(false);
+  const [schema, setSchema]       = useState(null);
+  const [showSchema, setShowSchema] = useState(false);
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    fetch('/api/v1/analytics/schema').then(r => r.ok ? r.json() : null).then(d => { if (d) setSchema(d); }).catch(() => {});
+  }, []);
+
+  async function ask() {
+    if (!question.trim()) return;
+    setLoading(true); setResult(null);
+    try {
+      const r = await fetch('/api/v1/analytics/query', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question }),
+      });
+      const d = await r.json();
+      setResult(r.ok ? d : { error: d.detail ?? d.error ?? `Server error ${r.status}` });
+    } catch (e) {
+      setResult({ error: e.message });
+    }
+    setLoading(false);
+  }
+
+  const rows = result?.results ?? [];
+  const cols = rows.length > 0 ? Object.keys(rows[0]) : [];
+
+  return (
+    <div className="grid" style={{ gridTemplateColumns: '1fr' }}>
+      <div style={{ gridColumn: '1 / -1', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+        <DriftStatusCard />
+        <CalibrationCard />
+      </div>
+      <div className="card" style={{ gridColumn: '1 / -1' }}>
+        <div className="input-header"><h2><Database size={14} /> Text-to-SQL Analytics</h2></div>
+
+        <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+          <input ref={inputRef} className="chat-input" value={question}
+            onChange={e => setQuestion(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && ask()}
+            placeholder="Ask a question about insight history… e.g. 'how many WARNINGs per driver?'" />
+          <button className="send-btn" onClick={ask} disabled={loading || !question.trim()}>
+            {loading ? <Activity size={14} className="spin" /> : <Send size={14} />}
+          </button>
+        </div>
+
+        {!result && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+            {ANALYTICS_SUGGESTIONS.map(s => (
+              <button key={s} className="suggestion-chip" onClick={() => { setQuestion(s); setTimeout(() => inputRef.current?.focus(), 0); }}>
+                {s}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {result?.error && <pre className="error">{result.error}</pre>}
+
+        {result && !result.error && (
+          <>
+            <details style={{ marginBottom: 10 }}>
+              <summary style={{ fontSize: 11, color: 'var(--muted)', cursor: 'pointer' }}>
+                SQL ({result.model ?? 'unknown'} · {result.latency_ms?.toFixed(0) ?? '?'}ms)
+              </summary>
+              <pre style={{ fontSize: 11, background: 'var(--card-border)', padding: 8, borderRadius: 4, marginTop: 6, overflowX: 'auto' }}>
+                {result.sql}
+              </pre>
+            </details>
+            {rows.length === 0
+              ? <p className="muted">Query returned 0 rows.</p>
+              : (
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr>{cols.map(c => (
+                        <th key={c} style={{ textAlign: 'left', padding: '4px 8px', color: 'var(--muted)', fontWeight: 600, borderBottom: '1px solid var(--card-border)' }}>{c}</th>
+                      ))}</tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((row, i) => (
+                        <tr key={i} style={{ borderTop: '1px solid var(--card-border)' }}>
+                          {cols.map(c => (
+                            <td key={c} style={{ padding: '4px 8px', fontFamily: typeof row[c] === 'number' ? 'monospace' : undefined }}>
+                              {row[c] == null ? '—' : String(row[c])}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 6 }}>
+                    <p style={{ fontSize: 11, color: 'var(--muted)', margin: 0 }}>{result.row_count} row{result.row_count !== 1 ? 's' : ''}</p>
+                    <button className="kb-btn" onClick={() => {
+                      const header = cols.join(',');
+                      const body = rows.map(r => cols.map(c => JSON.stringify(r[c] ?? '')).join(',')).join('\n');
+                      const blob = new Blob([header + '\n' + body], { type: 'text/csv' });
+                      const a = document.createElement('a');
+                      a.href = URL.createObjectURL(blob);
+                      a.download = 'f1di_analytics.csv';
+                      a.click();
+                    }}>
+                      Export CSV
+                    </button>
+                  </div>
+                </div>
+              )
+            }
+          </>
+        )}
+
+        {schema && (
+          <div style={{ marginTop: 12 }}>
+            <button className="suggestion-chip" onClick={() => setShowSchema(s => !s)}>
+              {showSchema ? 'Hide schema' : 'Show schema'}
+            </button>
+            {showSchema && (
+              <pre style={{ fontSize: 11, background: 'var(--card-border)', padding: 8, borderRadius: 4, marginTop: 6, overflowX: 'auto', whiteSpace: 'pre-wrap' }}>
+                {schema.schema}
+              </pre>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function RegressionPanel() {
+  const [fixtures, setFixtures] = useState([]);
+  const [fixture, setFixture]   = useState('');
+  const [report, setReport]     = useState(null);
+  const [loading, setLoading]   = useState(false);
+  const [error, setError]       = useState('');
+
+  useEffect(() => {
+    fetch('/api/v1/regression/fixtures')
+      .then(r => r.ok ? r.json() : [])
+      .then(fs => { setFixtures(fs); if (fs.length) setFixture(fs[0]); })
+      .catch(() => {});
+  }, []);
+
+  async function run() {
+    if (!fixture) return;
+    setLoading(true); setError(''); setReport(null);
+    try {
+      const res = await fetch(`/api/v1/regression/run?fixture=${encodeURIComponent(fixture)}`, { method: 'POST' });
+      if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+      setReport(await res.json());
+    } catch (e) {
+      setError(String(e.message ?? e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="grid">
+      <div className="card input-card">
+        <div className="input-header">
+          <h2><FlaskConical size={14} /> Regression Gates</h2>
+        </div>
+        <div className="stats-form">
+          <Section title="Fixture">
+            <div className="context-row">
+              <label style={{ flex: 2 }}><span>File</span>
+                <select className="text-input" value={fixture} onChange={e => setFixture(e.target.value)}>
+                  {fixtures.length === 0 && <option value="">No fixtures found</option>}
+                  {fixtures.map(f => <option key={f} value={f}>{f}</option>)}
+                </select>
+              </label>
+            </div>
+          </Section>
+          <Section title="Gate Thresholds">
+            <div className="feat-table">
+              {[
+                ['Case recall',         '≥ 100%'],
+                ['False positive rate', '= 0%'],
+                ['Agent activation',    '≥ 100%'],
+                ['Evidence present',    'All cases'],
+                ['Source retrieval',    '≥ 100%'],
+                ['Policy correctness',  '≥ 100%'],
+              ].map(([label, threshold]) => (
+                <div key={label} className="feat-row">
+                  <span className="feat-key">{label}</span>
+                  <span className="feat-val" style={{ color: 'var(--muted)' }}>{threshold}</span>
+                </div>
+              ))}
+            </div>
+          </Section>
+        </div>
+        <button className="analyze-btn" onClick={run} disabled={loading || !fixture}>
+          {loading ? <><Activity size={13} /> Running…</> : 'Run Regression'}
+        </button>
+        {error && <pre className="error">{error}</pre>}
+      </div>
+
+      <div className="card insight-card">
+        <h2><FlaskConical size={15} /> Results</h2>
+        {!report
+          ? <p className="muted empty-hint">Select a fixture and click Run Regression.</p>
+          : <RegressionReport report={report} />}
       </div>
     </div>
   );
@@ -895,6 +2312,22 @@ export default function App() {
               onClick={() => setMode('chat')}>
               <MessageSquare size={14} /> Chat Analysis
             </button>
+            <button className={`mode-tab${mode === 'history' ? ' active' : ''}`}
+              onClick={() => setMode('history')}>
+              <History size={14} /> History
+            </button>
+            <button className={`mode-tab${mode === 'analytics' ? ' active' : ''}`}
+              onClick={() => setMode('analytics')}>
+              <Database size={14} /> Analytics
+            </button>
+            <button className={`mode-tab${mode === 'predictions' ? ' active' : ''}`}
+              onClick={() => setMode('predictions')}>
+              <LineChart size={14} /> Predictions
+            </button>
+            <button className={`mode-tab${mode === 'regression' ? ' active' : ''}`}
+              onClick={() => setMode('regression')}>
+              <FlaskConical size={14} /> Regression
+            </button>
           </div>
         </div>
         <div className="hero-right">
@@ -909,9 +2342,13 @@ export default function App() {
         </div>
       </header>
 
-      {mode === 'telemetry' && <TelemetryPanel version={version} />}
-      {mode === 'live'      && <LivePanel version={version} />}
-      {mode === 'chat'      && <ChatPanel version={version} />}
+      {mode === 'telemetry'  && <TelemetryPanel version={version} />}
+      {mode === 'live'       && <LivePanel version={version} />}
+      {mode === 'chat'       && <ChatPanel version={version} />}
+      {mode === 'history'    && <HistoryPanel />}
+      {mode === 'analytics'  && <AnalyticsPanel />}
+      {mode === 'predictions' && <PredictionsPanel version={version} />}
+      {mode === 'regression' && <RegressionPanel />}
     </main>
   );
 }

@@ -112,6 +112,49 @@ class AgentFinding(BaseModel):
     features: dict[str, float | str | bool] = Field(default_factory=dict)
 
 
+class PredictionPoint(BaseModel):
+    lap: int
+    p10_time_s: float | None = None
+    p50_time_s: float | None = None
+    p90_time_s: float | None = None
+    wear_fl: float | None = None
+    wear_fr: float | None = None
+    grip: float | None = None
+
+
+class RaceProjection(BaseModel):
+    session_id: str
+    driver_id: str
+    track_id: str
+    current_lap: int
+    remaining_laps: int
+    projections: list[PredictionPoint]
+    summary: str
+    confidence: float = Field(ge=0, le=1)
+    latency_ms: float
+
+
+class StrategyScenario(BaseModel):
+    label: str
+    pit_lap: int | None
+    total_time_s: float
+    delta_s: float
+    cliff_lap: int | None
+    end_wear_fl: float
+    recommended: bool
+
+
+class StrategyComparison(BaseModel):
+    session_id: str
+    driver_id: str
+    track_id: str
+    current_lap: int
+    remaining_laps: int
+    scenarios: list[StrategyScenario]
+    recommendation: str
+    latency_ms: float
+
+
 class DriverInsight(BaseModel):
     insight_id: str
     session_id: str

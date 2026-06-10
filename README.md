@@ -191,6 +191,7 @@ All settings are set via environment variables (prefix `F1DI_`) or `.env`:
 ```bash
 make test          # pytest
 make regress       # regression gates + replay
+make integration   # opt-in Qdrant/FastF1 smoke gates
 make lint          # ruff check
 make simulate      # regenerate synthetic race scenario
 make docker-up     # docker compose up --build
@@ -201,3 +202,6 @@ Regression gates (all must pass on main):
 - p95 inference latency < 250ms (rules-only path)
 - warning/critical confidence discrimination
 - deterministic replay stability
+- labeled replay recall, source retrieval, policy correctness, and hard-negative false positives
+
+Replay fixture capture and labeling guidance is documented in `docs/operations.md`.

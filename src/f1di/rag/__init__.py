@@ -12,4 +12,12 @@ def make_retriever():
             collection=settings.qdrant_collection,
             model_name=settings.embedding_model,
         )
+
+    if settings.vector_backend == "tiered":
+        from f1di.rag.tiered_retriever import TieredRetriever
+        return TieredRetriever(
+            hot_seasons=settings.tiered_hot_seasons,
+            min_hot_results=settings.tiered_min_hot_results,
+        )
+
     return HybridMemoryRetriever()

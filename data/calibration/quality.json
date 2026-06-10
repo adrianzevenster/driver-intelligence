@@ -1,4 +1,15 @@
 {
-  "ece": 0.0023,
-  "fitted_at": "2026-06-04T14:55:27Z"
+  "ece": 0.0138,
+  "brier_score": 0.0068,
+  "fitted_at": "2026-06-10T15:54:23Z",
+  "model_path": "data/calibration/isotonic_20260610T155423Z.pkl",
+  "previous_ece": 0.0138,
+  "previous_model_path": null,
+  "feedback_snapshot": "data/calibration/feedback_snapshot_20260610T155423Z.jsonl",
+  "calibration_dataset": {
+    "generator": "synthetic+feedback",
+    "n_synthetic": 1830,
+    "n_feedback": 20,
+    "feedback_weight": 3
+  }
 }

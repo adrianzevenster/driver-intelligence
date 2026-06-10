@@ -178,6 +178,35 @@ def _build_lap_samples(
     return samples
 
 
+def get_lap_trace(year: int, round_num: int, driver: str, lap_number: int, n_points: int = 150) -> list[dict]:
+    """Return downsampled car-data trace for a single lap (speed, throttle, brake, DRS, distance)."""
+    ff1 = _ff1()
+    session = ff1.get_session(year, round_num, "R")
+    session.load(laps=True, telemetry=True, weather=False, messages=False)
+    driver_laps = session.laps.pick_drivers(driver.upper())
+    matching = driver_laps[driver_laps["LapNumber"] == lap_number]
+    if len(matching) == 0:
+        return []
+    try:
+        car_data = matching.iloc[0].get_car_data().add_distance()
+    except Exception as exc:
+        logger.debug("fastf1_trace_failed lap=%d err=%s", lap_number, exc)
+        return []
+    if car_data is None or len(car_data) == 0:
+        return []
+    step = max(1, len(car_data) // n_points)
+    result = []
+    for _, row in car_data.iloc[::step].iterrows():
+        result.append({
+            "dist": round(float(row.get("Distance", 0)), 1),
+            "speed": round(float(row.get("Speed", 0)), 1),
+            "throttle": round(float(row.get("Throttle", 0)), 1),
+            "brake": bool(row.get("Brake", False)),
+            "drs": int(row.get("DRS", 0)) >= 8,
+        })
+    return result
+
+
 def build_window(
     year: int,
     round_num: int,

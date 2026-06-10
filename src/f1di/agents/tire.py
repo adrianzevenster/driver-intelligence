@@ -1,4 +1,5 @@
 from f1di.agents.base import RaceAgent, multi_source_evidence
+from f1di.agents import thresholds as _thresh
 from f1di.domain.schemas import AgentFinding, RiskLevel, TelemetryWindow
 from f1di.features.extractor import RaceFeatures
 from f1di.rag.store import HybridMemoryRetriever
@@ -8,6 +9,7 @@ class TireStrategyAgent(RaceAgent):
     name = "tire_strategy"
 
     def analyze(self, window: TelemetryWindow, features: RaceFeatures, retriever: HybridMemoryRetriever) -> AgentFinding:
+        t = _thresh.get(window.track_id)
         compound = window.latest.compound.value
         evidence = multi_source_evidence(
             retriever,
@@ -19,12 +21,12 @@ class TireStrategyAgent(RaceAgent):
         wear_pressure = max(features.fl_wear, features.fr_wear, features.rear_wear_mean)
 
         lap_span = window.latest.lap - window.samples[0].lap
-        spl = len(window.samples) / max(lap_span, 1)
+        spl = len(window.samples) / lap_span if lap_span > 0 else 1.0
         projected_fl_4laps = features.fl_wear + features.fl_wear_slope * spl * 4
         projected_fr_4laps = features.fr_wear + features.fr_wear_slope * spl * 4
         projected_front_cliff = max(projected_fl_4laps, projected_fr_4laps)
 
-        if wear_pressure > 0.78 and features.grip_estimate < 0.62:
+        if wear_pressure > t.wear_critical and features.grip_estimate < 0.62:
             conf = 0.81
             conf += 0.04 if features.fl_wear_slope > 0.003 else 0.0
             conf += 0.04 if features.fr_wear > 0.75 else 0.0
@@ -43,7 +45,7 @@ class TireStrategyAgent(RaceAgent):
                 features={"wear_pressure": wear_pressure, "grip": features.grip_estimate, "axle_imbalance": features.axle_imbalance_fl_rl},
             )
 
-        if wear_pressure > 0.66:
+        if wear_pressure > t.wear_warning:
             conf = 0.74
             conf += 0.04 if features.fl_wear_slope > 0.002 else 0.0
             conf += 0.03 if features.fr_wear_slope > 0.002 else 0.0
@@ -61,7 +63,7 @@ class TireStrategyAgent(RaceAgent):
                 features={"wear_pressure": wear_pressure, "grip": features.grip_estimate, "axle_imbalance": features.axle_imbalance_fl_rl},
             )
 
-        if projected_front_cliff > 0.75 and features.fl_wear_slope > 0.0:
+        if projected_front_cliff > t.wear_critical * 0.97 and features.fl_wear_slope > 0.0:
             conf = 0.68
             conf += 0.04 if features.fr_wear_slope > 0.0015 else 0.0
             conf += 0.03 if features.rear_wear_slope > 0.001 else 0.0

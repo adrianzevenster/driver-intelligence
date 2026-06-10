@@ -9,6 +9,13 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: src
+      F1DI_ENV: test
+      F1DI_LLM_BACKEND: rules
+      F1DI_VECTOR_BACKEND: memory
+      F1DI_DETERMINISTIC: "true"
+      F1DI_STORAGE_URL: sqlite:///./ci_test.db
 
     steps:
       - name: Check out repository
@@ -36,6 +43,38 @@ jobs:
 
       - name: Regression gate
         run: uv run python scripts/run_replay_regression.py
+
+      - name: Real replay evaluation gate
+        run: uv run python scripts/run_real_replay_gate.py
+
+      - name: Calibrator quality gate
+        run: |
+          uv run python scripts/fit_calibrator.py
+          uv run python - <<'EOF'
+          import json, sys
+          from pathlib import Path
+          q = json.loads(Path("data/calibration/quality.json").read_text())
+          ece = q.get("ece", 1.0)
+          brier = q.get("brier_score", 1.0)
+          print(f"Calibrator ECE={ece:.4f}  Brier={brier:.4f}")
+          if ece > 0.15:
+              print(f"FAIL: ECE {ece:.4f} exceeds threshold 0.15")
+              sys.exit(1)
+          if brier > 0.15:
+              print(f"FAIL: Brier {brier:.4f} exceeds threshold 0.15")
+              sys.exit(1)
+          print("PASS")
+          EOF
+
+      - name: Verify Alembic migrations
+        run: |
+          F1DI_STORAGE_URL=sqlite:///./alembic_test.db uv run alembic upgrade head
+          F1DI_STORAGE_URL=sqlite:///./alembic_test.db uv run alembic downgrade base
+          F1DI_STORAGE_URL=sqlite:///./alembic_test.db uv run alembic upgrade head
+          rm -f alembic_test.db
+
+      - name: Persistence integration tests
+        run: uv run pytest tests/regression/test_api_smoke.py tests/regression/test_replay_fixture_schema.py -v
 
       - name: Set up Node
         uses: actions/setup-node@v4

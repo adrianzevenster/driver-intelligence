@@ -25,6 +25,7 @@ services:
     ports: ["9090:9090"]
     volumes:
       - ./infra/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./infra/prometheus_alerts.yml:/etc/prometheus/prometheus_alerts.yml:ro
 
   grafana:
     image: grafana/grafana:latest

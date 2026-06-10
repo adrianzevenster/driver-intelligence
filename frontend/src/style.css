@@ -291,6 +291,23 @@ p { margin: 0; color: var(--muted); }
 .chat-send:disabled { opacity: .35; cursor: not-allowed; }
 .chat-model-tag { font-size: 10px; color: var(--muted); font-weight: 600; text-align: right; }
 
+/* ── Predictions ── */
+.projection-header { display: flex; justify-content: space-between; align-items: flex-start; }
+.projection-summary { font-size: 13px; font-weight: 600; color: #93c5fd; line-height: 1.5; }
+.p-time { width: 50px; }
+.p-wear { width: 70px; font-weight: 600; }
+.p-win  { width: 60px; text-align: right; }
+
+/* ── Voice ── */
+.chat-mic {
+  width: 38px; height: 38px; border-radius: 10px; border: 1px solid var(--border);
+  background: var(--surface2); cursor: pointer; display: flex; align-items: center;
+  justify-content: center; flex-shrink: 0; color: var(--muted); transition: all .12s;
+}
+.chat-mic:hover { background: #14203a; border-color: #2d4a8a; color: var(--text); }
+.chat-mic.active { background: #ef4444; color: white; border-color: #ef4444; animation: mic-pulse 1.5s infinite; }
+@keyframes mic-pulse { 0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); } 70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); } 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); } }
+
 /* ── Responsive ── */
 @media (max-width: 1000px) {
   .hero { grid-template-columns: 1fr; gap: 12px; }

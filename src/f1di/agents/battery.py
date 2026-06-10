@@ -1,4 +1,5 @@
 from f1di.agents.base import RaceAgent, multi_source_evidence
+from f1di.agents import thresholds as _thresh
 from f1di.domain.schemas import AgentFinding, RiskLevel, TelemetryWindow
 from f1di.features.extractor import RaceFeatures
 from f1di.rag.store import HybridMemoryRetriever
@@ -8,6 +9,7 @@ class BatteryAgent(RaceAgent):
     name = "battery"
 
     def analyze(self, window: TelemetryWindow, features: RaceFeatures, retriever: HybridMemoryRetriever) -> AgentFinding:
+        t = _thresh.get(window.track_id)
         evidence = multi_source_evidence(
             retriever,
             window.track_id,
@@ -16,7 +18,7 @@ class BatteryAgent(RaceAgent):
             jolpica_query=f"{window.track_id} race fastest lap power unit",
         )
 
-        if features.battery_soc < 0.22 and features.battery_soc_slope < -0.01:
+        if features.battery_soc < t.battery_soc_warning and features.battery_soc_slope < -0.01:
             conf = 0.79
             conf += 0.04 if features.battery_soc_slope < -0.015 else 0.0
             conf += 0.02 if features.mean_speed_kph > 220 else 0.0

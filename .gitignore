@@ -28,6 +28,7 @@ frontend/dist/
 # Generated / runtime data
 data/scenarios/*.jsonl
 data/scenarios/regression_report.json
+data/scenarios/real_replay_report.json
 data/calibration/*.pkl
 data/fastf1_cache/
 

@@ -143,6 +143,15 @@ def build_window(
 
     wear = min(0.98, stint_lap * _WEAR_RATE.get(compound.value, 0.018))
 
+    # Rain intensity: continuous scale — rainfall flag + wind amplifies spray severity
+    if rainfall:
+        rain_intensity = min(0.95, 0.60 + max(0.0, wind_speed_ms - 3.0) * 0.025)
+    elif humidity > 85:
+        rain_intensity = 0.10  # damp/wet track without active rain
+    else:
+        rain_intensity = 0.0
+    evolving_grip = 0.72 if rainfall else (0.87 if humidity > 85 else 0.92)
+
     # ── Build samples ─────────────────────────────────────────────────────────
     samples: list[TelemetrySample] = []
     speeds = [float(r.get("speed", 200)) for r in car_rows]
@@ -160,6 +169,20 @@ def build_window(
         accel_g = (speed - prev_speed) / 3.6 / 9.81 if i > 0 else 0.0
         brake_bar = 90.0 if braking else 0.0
 
+        # Lockup: sudden speed drop >12% while braking hard at speed
+        speed_drop_ratio = (prev_speed - speed) / max(prev_speed, 1.0) if i > 0 else 0.0
+        lockup = braking and speed > 150 and speed_drop_ratio > 0.12
+
+        # Wheel speeds: front wheels carry more braking load → slow faster under braking
+        if braking and speed > 80:
+            decel_factor = min(0.20, max(0.0, -accel_g) * 0.08)
+            wfl = speed * (1.0 - decel_factor)
+            wfr = speed * (1.0 - decel_factor * 0.97)
+            wrl = speed * (1.0 - decel_factor * 0.30)
+            wrr = speed * (1.0 - decel_factor * 0.28)
+        else:
+            wfl = wfr = wrl = wrr = speed
+
         if drs == 8 or throttle > 90:
             soc = max(0.25, 0.70 - stint_lap * 0.003)
         else:
@@ -169,8 +192,13 @@ def build_window(
 
         base_tire = _BASE_TIRE_TEMP.get(compound.value, 88.0)
         tire_temp = base_tire + (track_temp - 30) * 0.5 + throttle * 0.08
+        if rainfall:
+            tire_temp = min(tire_temp, 70.0)  # wet conditions suppress tire temps
         brake_temp = (350.0 + speed * 0.6) if braking else 320.0
         sample_wear = min(0.98, wear + (i - len(car_rows)) * _WEAR_RATE.get(compound.value, 0.018) * 0.05)
+
+        # Sector heuristic: S1 = low-speed entry (gear ≤ 3), S2 = mid (4-5), S3 = high-speed
+        sector = 1 if gear <= 3 else (3 if gear >= 7 else 2)
 
         samples.append(TelemetrySample(
             session_id=session_id,
@@ -178,7 +206,7 @@ def build_window(
             track_id=track_id,
             timestamp_ms=i * 3700,
             lap=current_lap,
-            sector=min(3, max(1, (gear // 3) + 1)),
+            sector=sector,
             distance_m=float(current_lap * 5000 + i * 200),
             corner_id=None,
             speed_kph=speed,
@@ -188,10 +216,10 @@ def build_window(
             steering_angle_deg=0.0,
             yaw_rate_deg_s=0.0,
             slip_angle_deg=0.0,
-            wheel_speed_fl=speed,
-            wheel_speed_fr=speed,
-            wheel_speed_rl=speed,
-            wheel_speed_rr=speed,
+            wheel_speed_fl=round(wfl, 1),
+            wheel_speed_fr=round(wfr, 1),
+            wheel_speed_rl=round(wrl, 1),
+            wheel_speed_rr=round(wrr, 1),
             compound=compound,
             stint_lap=stint_lap,
             tire_temp_fl_c=tire_temp,
@@ -202,8 +230,8 @@ def build_window(
             tire_wear_fr=sample_wear * 0.97,
             tire_wear_rl=sample_wear * 0.92,
             tire_wear_rr=sample_wear * 0.90,
-            grip_estimate=max(0.60, 0.95 - sample_wear * 0.35),
-            lockup_event=False,
+            grip_estimate=max(0.55, 0.95 - sample_wear * 0.35 - rain_intensity * 0.15),
+            lockup_event=lockup,
             battery_soc=round(soc, 3),
             ers_deploy_kw=ers_deploy,
             ers_regen_kw=ers_regen,
@@ -213,8 +241,8 @@ def build_window(
             humidity_pct=humidity,
             wind_speed_kph=wind_speed_ms * 3.6,
             wind_direction_deg=wind_dir,
-            rain_intensity=0.6 if rainfall else 0.0,
-            evolving_grip=0.75 if rainfall else 0.92,
+            rain_intensity=rain_intensity,
+            evolving_grip=evolving_grip,
             brake_temp_fl_c=brake_temp,
             brake_temp_fr_c=brake_temp - 10.0,
             brake_temp_rl_c=brake_temp * 0.7,

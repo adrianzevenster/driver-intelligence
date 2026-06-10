@@ -1,0 +1,51 @@
+[
+  {
+    "fitted_at": "2026-06-10T15:54:23Z",
+    "ece": 0.0138,
+    "brier_score": 0.0068,
+    "previous_ece": 0.0138,
+    "n_feedback": 20,
+    "model_path": "data/calibration/isotonic_20260610T155423Z.pkl",
+    "feedback_snapshot": "data/calibration/feedback_snapshot_20260610T155423Z.jsonl"
+  },
+  {
+    "fitted_at": "2026-06-10T16:10:12Z",
+    "ece": 0.026,
+    "brier_score": 0.0079,
+    "previous_ece": 0.0001,
+    "n_feedback": 22,
+    "model_path": "/tmp/pytest-of-adrian/pytest-8/test_retrain_regression_guard_0/calibration/isotonic_20260610T161012Z.pkl",
+    "feedback_snapshot": "/tmp/pytest-of-adrian/pytest-8/test_retrain_regression_guard_0/calibration/feedback_snapshot_20260610T161012Z.jsonl",
+    "regression_detected": true
+  },
+  {
+    "fitted_at": "2026-06-10T16:10:21Z",
+    "ece": 0.0038,
+    "brier_score": 0.0064,
+    "previous_ece": 0.99,
+    "n_feedback": 22,
+    "model_path": "/tmp/pytest-of-adrian/pytest-8/test_retrain_regression_guard_1/calibration/isotonic_20260610T161021Z.pkl",
+    "feedback_snapshot": "/tmp/pytest-of-adrian/pytest-8/test_retrain_regression_guard_1/calibration/feedback_snapshot_20260610T161021Z.jsonl",
+    "regression_detected": false
+  },
+  {
+    "fitted_at": "2026-06-10T16:10:39Z",
+    "ece": 0.026,
+    "brier_score": 0.0079,
+    "previous_ece": 0.0001,
+    "n_feedback": 22,
+    "model_path": "/tmp/pytest-of-adrian/pytest-9/test_retrain_regression_guard_0/calibration/isotonic_20260610T161039Z.pkl",
+    "feedback_snapshot": "/tmp/pytest-of-adrian/pytest-9/test_retrain_regression_guard_0/calibration/feedback_snapshot_20260610T161039Z.jsonl",
+    "regression_detected": true
+  },
+  {
+    "fitted_at": "2026-06-10T16:10:47Z",
+    "ece": 0.0038,
+    "brier_score": 0.0064,
+    "previous_ece": 0.99,
+    "n_feedback": 22,
+    "model_path": "/tmp/pytest-of-adrian/pytest-9/test_retrain_regression_guard_1/calibration/isotonic_20260610T161047Z.pkl",
+    "feedback_snapshot": "/tmp/pytest-of-adrian/pytest-9/test_retrain_regression_guard_1/calibration/feedback_snapshot_20260610T161047Z.jsonl",
+    "regression_detected": false
+  }
+]

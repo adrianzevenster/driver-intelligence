@@ -1,0 +1,89 @@
+groups:
+  - name: f1di
+    rules:
+      - alert: F1DIAPIDown
+        expr: absent(up{job="f1di-api"})
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "F1DI API unreachable"
+          description: "Prometheus cannot scrape the f1di-api target for more than 1 minute."
+
+      - alert: F1DIHighInsightLatencyP95
+        expr: |
+          histogram_quantile(0.95,
+            rate(f1di_insight_latency_ms_bucket[5m])
+          ) > 800
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Insight latency p95 exceeds 800 ms"
+          description: "p95 insight latency is {{ $value | humanize }}ms over the last 5 minutes."
+
+      - alert: F1DIHighHTTPErrorRate
+        expr: |
+          sum(rate(f1di_http_requests_total{status=~"5.."}[5m]))
+            /
+          sum(rate(f1di_http_requests_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "HTTP 5xx error rate above 5%"
+          description: "{{ $value | humanizePercentage }} of requests are returning 5xx."
+
+      - alert: F1DILowConfidenceDrift
+        expr: f1di_last_confidence < 0.30
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Sustained low calibrated confidence"
+          description: "Calibrated confidence has been below 0.30 for 10 minutes — check agent health or input data quality."
+
+      - alert: F1DINoInsightsGenerated
+        expr: increase(f1di_insights_total[10m]) == 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "No insights generated in 10 minutes"
+          description: "The /v1/insights endpoint has produced zero results — pipeline may be stalled."
+
+      - alert: F1DIFeatureDrift
+        expr: f1di_drift_alert_active == 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Telemetry input feature drift detected"
+          description: "One or more input features have a rolling Z-score > 3.5 for 5 minutes — possible sensor fault, track change, or distributional shift."
+
+      - alert: F1DIHighFeatureDriftZscore
+        expr: abs(f1di_feature_drift_zscore) > 5
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Extreme feature drift: {{ $labels.feature }} Z={{ $value | humanize }}"
+          description: "Feature '{{ $labels.feature }}' has Z-score {{ $value | humanize }}, suggesting a data pipeline or sensor fault."
+
+      - alert: F1DICalibrationECEDegraded
+        expr: f1di_calibration_ece > 0.10
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Calibration ECE above warning threshold ({{ $value | humanize }})"
+          description: "ECE is {{ $value | humanize }} (threshold 0.10). Consider retraining the calibrator or reviewing feedback quality."
+
+      - alert: F1DICalibrationRegressionBlocked
+        expr: f1di_calibration_regression_blocked == 1
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Calibrator retrain was regression-blocked"
+          description: "The most recent retrain attempt raised ECE above the previous model by more than 0.01. Live model was NOT updated. Review quality.json and feedback data before retraining again."

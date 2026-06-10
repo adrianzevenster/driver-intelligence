@@ -6,16 +6,18 @@ from f1di.agents.battery import BatteryAgent
 from f1di.agents.telemetry import TelemetryAnalysisAgent
 from f1di.agents.tire import TireStrategyAgent
 from f1di.agents.weather import WeatherAgent
+from f1di.agents.thresholds import get as get_thresholds
 from f1di.confidence.calibration import ConfidenceCalibrator, compute_raw_score
 from f1di.domain.schemas import TelemetryWindow
 from f1di.features.extractor import RaceFeatures, extract_features
-from f1di.rag.store import HybridMemoryRetriever
+from f1di.rag.store import HybridMemoryRetriever, load_markdown_knowledge
 from f1di.simulator.generator import DriverProfile, IncidentPlan, SyntheticRaceSimulator
 
 _AGENTS = [TelemetryAnalysisAgent(), TireStrategyAgent(), WeatherAgent(), BatteryAgent()]
 
 
 def _ground_truth_label(window: TelemetryWindow, features: RaceFeatures) -> float:
+    t = get_thresholds(window.track_id)
     latest = window.latest
     max_wear = max(
         latest.tire_wear_fl,
@@ -23,26 +25,26 @@ def _ground_truth_label(window: TelemetryWindow, features: RaceFeatures) -> floa
         (latest.tire_wear_rl + latest.tire_wear_rr) / 2,
     )
 
-    if any(s.lockup_event for s in window.samples) or latest.brake_temp_fl_c > 950:
+    if any(s.lockup_event for s in window.samples) or latest.brake_temp_fl_c > t.brake_temp_critical_c:
         return 0.90
-    if max_wear > 0.78 and latest.grip_estimate < 0.62:
+    if max_wear > t.wear_critical and latest.grip_estimate < 0.62:
         return 0.85
-    if max_wear > 0.66:
+    if max_wear > t.wear_warning:
         return 0.70
-    if latest.rain_intensity >= 0.35:
+    if latest.rain_intensity >= t.rain_warning:
         return 0.65
 
     lap_span = latest.lap - window.samples[0].lap
-    spl = len(window.samples) / max(lap_span, 1)
+    spl = len(window.samples) / lap_span if lap_span > 0 else 1.0
     projected_fl_4laps = features.fl_wear + features.fl_wear_slope * spl * 4
     projected_fr_4laps = features.fr_wear + features.fr_wear_slope * spl * 4
-    if max(projected_fl_4laps, projected_fr_4laps) > 0.75 and features.fl_wear_slope > 0.0 and max_wear > 0.55:
+    if max(projected_fl_4laps, projected_fr_4laps) > t.wear_critical * 0.97 and features.fl_wear_slope > 0.0 and max_wear > t.wear_warning * 0.85:
         return 0.65
 
-    if latest.battery_soc < 0.22 and features.battery_soc_slope < -0.01:
+    if latest.battery_soc < t.battery_soc_warning and features.battery_soc_slope < -0.01:
         return 0.55
 
-    if max_wear > 0.48:
+    if max_wear > t.wear_warning * 0.73:
         return 0.40
 
     return 0.20
@@ -84,9 +86,15 @@ def _build_scenarios(per_type: int) -> list[dict]:
     return scenarios
 
 
-def generate_calibration_dataset(n_races: int = 30, seed: int = 42) -> tuple[list[float], list[float]]:
+def generate_calibration_dataset(
+    n_races: int = 30,
+    seed: int = 42,
+    knowledge_path: Path = Path("data/knowledge"),
+) -> tuple[list[float], list[float]]:
     sim = SyntheticRaceSimulator(seed=seed)
     retriever = HybridMemoryRetriever()
+    if knowledge_path.exists():
+        retriever.add_documents(load_markdown_knowledge(knowledge_path))
     per_type = max(1, n_races // 5)
     scenarios = _build_scenarios(per_type)
 
@@ -102,8 +110,8 @@ def generate_calibration_dataset(n_races: int = 30, seed: int = 42) -> tuple[lis
         for w in sim.rolling_windows(samples, size=12, step=4):
             features = extract_features(w)
             findings = [agent.analyze(w, features, retriever) for agent in _AGENTS]
-            _, cal_features = compute_raw_score(findings)
-            X.append(cal_features["risk_mean"])
+            raw, _cal_features = compute_raw_score(findings)
+            X.append(raw)
             y.append(_ground_truth_label(w, features))
 
     return X, y
@@ -132,6 +140,20 @@ def calibration_ece(
         true_freq = sum(y[j] for j in idx) / len(idx)
         ece += (len(idx) / n) * abs(pred_conf - true_freq)
     return round(ece, 4)
+
+
+def calibration_brier(
+    calibrator: ConfidenceCalibrator,
+    n_races: int = 15,
+    seed: int = 999,
+) -> float:
+    X, y = generate_calibration_dataset(n_races=n_races, seed=seed)
+    y_hat = (
+        [float(calibrator._model.predict([x])[0]) for x in X]
+        if calibrator._model is not None
+        else list(X)
+    )
+    return round(sum((yh - yt) ** 2 for yh, yt in zip(y_hat, y)) / len(y), 4)
 
 
 def fit_and_save(

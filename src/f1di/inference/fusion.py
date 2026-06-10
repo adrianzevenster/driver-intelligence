@@ -46,12 +46,19 @@ class InferenceOrchestrator:
     def analyze(self, window: TelemetryWindow, audience: InsightAudience = InsightAudience.DRIVER) -> DriverInsight:
         start = time.perf_counter()
         features = extract_features(window)
+
+        try:
+            from f1di.observability.drift import features_as_dict, get_tracker
+            get_tracker().update(features_as_dict(features))
+        except Exception:
+            pass
+
         findings = [agent.analyze(window, features, self.retriever) for agent in self.agents]
         highest = max(findings, key=lambda f: RISK_WEIGHT[f.risk])
         confidence, uncertainty, calibration_features = self.calibrator.calibrate(findings)
 
         recommendation = self._rules_recommendation(highest.risk, findings, calibration_features)
-        if settings.llm_backend != "rules":
+        if settings.llm_backend != "rules" and not settings.deterministic:
             recommendation = self._llm_recommendation(
                 window, findings, highest, audience, confidence, recommendation
             )
@@ -119,8 +126,10 @@ class InferenceOrchestrator:
         return result if result else fallback
 
     def _policy(self, audience: InsightAudience, confidence: float, risk: RiskLevel) -> str:
+        if risk in {RiskLevel.WARNING, RiskLevel.CRITICAL}:
+            return "SHOW"
         if audience == InsightAudience.DRIVER and confidence < settings.confidence_min_driver:
-            return "ENGINEER_ONLY" if risk in {RiskLevel.WARNING, RiskLevel.CRITICAL} else "SUPPRESS"
+            return "ENGINEER_ONLY"
         if confidence < settings.confidence_min_engineer:
             return "SUPPRESS"
         return "SHOW"
@@ -139,6 +148,16 @@ class InferenceOrchestrator:
                 if tire.features.get("axle_imbalance", 0) > 0.15:
                     return "Open pit-window discussion now; pronounced axle imbalance — avoid aggressive kerbs and entry lock-up risk."
                 return "Open pit-window discussion now; protect front-left and avoid aggressive entry kerbs."
+            weather = next((f for f in findings if f.agent == "weather" and f.risk == RiskLevel.WARNING), None)
+            if weather:
+                rain = weather.features.get("rain_intensity", 0)
+                grip = weather.features.get("grip_estimate", 1.0)
+                if grip < 0.65:
+                    return "Rain intensity has crossed the intermediate threshold; open compound switch discussion and monitor evolving track conditions."
+                return f"Rain intensity {rain:.2f} approaching crossover; prepare intermediate switch discussion and adjust braking reference points."
+            battery = next((f for f in findings if f.agent == "battery" and f.risk == RiskLevel.WARNING), None)
+            if battery:
+                return "ERS depletion rate exceeds recovery capacity; adjust deployment strategy and reduce harvest-zone aggression."
             return "Adjust driving mode and monitor next telemetry window before escalating to driver comms."
 
         if risk == RiskLevel.WATCH:

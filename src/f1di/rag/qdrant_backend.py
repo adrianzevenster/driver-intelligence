@@ -16,9 +16,11 @@ class QdrantHybridRetriever:
         from qdrant_client import QdrantClient
         from sentence_transformers import SentenceTransformer
 
+        self.url = url.rstrip("/")
         self.client = QdrantClient(url=url)
         self.collection = collection
-        self._encoder = SentenceTransformer(model_name)
+        from f1di.config.settings import settings as _s
+        self._encoder = SentenceTransformer(model_name, local_files_only=_s.embedding_offline)
         self._vector_size: int = self._encoder.get_embedding_dimension()
         self._ensure_collection()
 
@@ -108,7 +110,14 @@ class QdrantHybridRetriever:
             )
             results = response.points
         except Exception:
-            return []
+            try:
+                results = self._rest_search(
+                    query_emb.tolist(),
+                    top_k,
+                    filters,
+                )
+            except Exception:
+                return []
 
         return [
             RetrievedEvidence(
@@ -119,6 +128,43 @@ class QdrantHybridRetriever:
                 metadata={k[5:]: v for k, v in r.payload.items() if k.startswith("meta_")},
             )
             for r in results
+        ]
+
+    def _rest_search(
+        self,
+        query_vector: list[float],
+        top_k: int,
+        filters: dict[str, str] | None,
+    ):
+        import httpx
+        from types import SimpleNamespace
+
+        qdrant_filter = None
+        if filters:
+            qdrant_filter = {
+                "must": [
+                    {"key": f"meta_{k}", "match": {"value": v}}
+                    for k, v in filters.items()
+                ]
+            }
+
+        payload: dict[str, Any] = {
+            "vector": query_vector,
+            "limit": top_k,
+            "with_payload": True,
+        }
+        if qdrant_filter:
+            payload["filter"] = qdrant_filter
+
+        response = httpx.post(
+            f"{self.url}/collections/{self.collection}/points/search",
+            json=payload,
+            timeout=10,
+        )
+        response.raise_for_status()
+        return [
+            SimpleNamespace(score=item["score"], payload=item["payload"])
+            for item in response.json().get("result", [])
         ]
 
     def _ensure_collection(self) -> None:

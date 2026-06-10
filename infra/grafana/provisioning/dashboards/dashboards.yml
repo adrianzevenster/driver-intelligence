@@ -1,0 +1,7 @@
+apiVersion: 1
+providers:
+  - name: f1di
+    folder: F1DI
+    type: file
+    options:
+      path: /etc/grafana/provisioning/dashboards
