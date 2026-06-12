@@ -100,14 +100,14 @@ class MonteCarloSimulator:
 
         for i in range(self.iterations):
             curr_fl, curr_fr = start_fl, start_fr
-            for l in range(n_laps):
+            for lap_idx in range(n_laps):
                 curr_fl = min(1.0, curr_fl + slope_fl * np.random.normal(1.0, 0.05))
                 curr_fr = min(1.0, curr_fr + slope_fr * np.random.normal(1.0, 0.05))
                 max_wear = max(curr_fl, curr_fr)
                 wear_penalty = (max_wear - 0.8) * 15.0 if max_wear > 0.8 else 0.0
-                lap_times[i, l] = base_lap_time + max_wear * 2.0 + wear_penalty + np.random.normal(0, 0.3)
-                wear_fl[i, l] = curr_fl
-                wear_fr[i, l] = curr_fr
+                lap_times[i, lap_idx] = base_lap_time + max_wear * 2.0 + wear_penalty + np.random.normal(0, 0.3)
+                wear_fl[i, lap_idx] = curr_fl
+                wear_fr[i, lap_idx] = curr_fr
 
         return wear_fl, wear_fr, lap_times
 

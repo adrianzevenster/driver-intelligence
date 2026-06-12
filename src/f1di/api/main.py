@@ -978,8 +978,6 @@ def fit_thresholds_from_telemetry(
 
         fl = sorted(r.tire_wear_fl for r in track_rows)
         soc = sorted(r.battery_soc for r in track_rows)
-        n = len(fl)
-
         def pct(vals: list, p: float) -> float:
             idx = (len(vals) - 1) * p
             lo = int(idx)
@@ -1058,9 +1056,8 @@ def feedback_stats() -> dict:
     try:
         from sqlalchemy import func, select
         from f1di.storage.database import db_session
-        from f1di.storage.models import FeedbackRecord, InsightRecord
+        from f1di.storage.models import FeedbackRecord
         with db_session() as session:
-            total = session.execute(select(func.count()).select_from(FeedbackRecord)).scalar_one()
             correct = session.execute(
                 select(func.count()).select_from(FeedbackRecord).where(FeedbackRecord.correct == True)  # noqa: E712
             ).scalar_one()
@@ -1730,6 +1727,7 @@ def capture_fixtures_from_feedback(
     if not cases:
         return {"captured": 0, "message": "No incorrect predictions with stored telemetry found."}
 
+    import json
     _FIXTURES_DIR.mkdir(parents=True, exist_ok=True)
     date_str = time.strftime("%Y%m%d")
     out_path = _FIXTURES_DIR / f"feedback_corrections_{date_str}.json"

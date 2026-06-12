@@ -168,9 +168,13 @@ def evaluate_retriever(
         mrr = _reciprocal_rank(retrieved, relevant)
         ndcg5 = _ndcg_at_k(retrieved, relevant, 5)
 
-        p1_list.append(p1); p3_list.append(p3); p5_list.append(p5)
-        r3_list.append(r3); r5_list.append(r5)
-        mrr_list.append(mrr); ndcg5_list.append(ndcg5)
+        p1_list.append(p1)
+        p3_list.append(p3)
+        p5_list.append(p5)
+        r3_list.append(r3)
+        r5_list.append(r5)
+        mrr_list.append(mrr)
+        ndcg5_list.append(ndcg5)
 
         topic = item.get("topic", "other")
         row = {"p1": p1, "p3": p3, "r3": r3, "mrr": mrr, "ndcg5": ndcg5}

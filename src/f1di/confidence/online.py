@@ -15,7 +15,6 @@ _HISTORY_PATH = Path("data/calibration/model_history.json")
 
 def _feedback_pairs() -> list[tuple[float, float]]:
     from sqlalchemy import select
-    from sqlalchemy.orm import outerjoin
     from f1di.storage.database import db_session
     from f1di.storage.models import FeedbackRecord, InsightRecord
 

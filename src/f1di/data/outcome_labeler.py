@@ -24,7 +24,6 @@ import os
 import warnings
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import datetime, timezone
 
 logger = logging.getLogger("f1di.data.outcome_labeler")
 
@@ -208,7 +207,7 @@ def label_race(
     try:
         from f1di.storage.database import db_session
         from f1di.storage.models import FeedbackRecord, InsightRecord
-        from sqlalchemy import select, or_
+        from sqlalchemy import select
     except Exception as exc:
         logger.warning("db_unavailable: %s", exc)
         return OutcomeReport(

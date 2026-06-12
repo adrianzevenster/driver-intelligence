@@ -40,7 +40,7 @@ def run() -> None:
 
     from f1di.config.settings import settings
     from f1di.inference.fusion import InferenceOrchestrator
-    from f1di.streaming.contracts import decode_window, encode_insight
+    from f1di.streaming.contracts import decode_window
     from f1di.streaming.kafka_worker import process_payload
 
     logger.info(
