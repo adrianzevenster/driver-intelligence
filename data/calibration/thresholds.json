@@ -1,22 +1,22 @@
 {
   "bahrain": {
-    "wear_critical": 0.76,
-    "wear_warning": 0.7,
+    "wear_critical": 0.7,
+    "wear_warning": 0.55,
     "brake_temp_critical_c": 950.0,
-    "fl_degradation_pressure_critical": 0.71,
-    "fl_degradation_pressure_warning": 0.62,
+    "fl_degradation_pressure_critical": 0.72,
+    "fl_degradation_pressure_warning": 0.6,
     "rain_warning": 0.35,
-    "battery_soc_warning": 0.22,
+    "battery_soc_warning": 0.35,
     "crosswind_watch": 12.0
   },
   "melbourne": {
-    "wear_critical": 0.56,
-    "wear_warning": 0.5,
+    "wear_critical": 0.7,
+    "wear_warning": 0.55,
     "brake_temp_critical_c": 950.0,
-    "fl_degradation_pressure_critical": 0.55,
-    "fl_degradation_pressure_warning": 0.45,
+    "fl_degradation_pressure_critical": 0.72,
+    "fl_degradation_pressure_warning": 0.6,
     "rain_warning": 0.35,
-    "battery_soc_warning": 0.22,
+    "battery_soc_warning": 0.35,
     "crosswind_watch": 12.0
   },
   "miami": {
@@ -30,223 +30,33 @@
     "crosswind_watch": 12.0
   },
   "montreal": {
-    "wear_critical": 0.52,
-    "wear_warning": 0.4,
+    "wear_critical": 0.7,
+    "wear_warning": 0.55,
     "brake_temp_critical_c": 950.0,
-    "fl_degradation_pressure_critical": 0.55,
-    "fl_degradation_pressure_warning": 0.45,
-    "rain_warning": 0.3,
-    "battery_soc_warning": 0.22,
+    "fl_degradation_pressure_critical": 0.72,
+    "fl_degradation_pressure_warning": 0.6,
+    "rain_warning": 0.35,
+    "battery_soc_warning": 0.35,
     "crosswind_watch": 12.0
   },
   "silverstone": {
-    "wear_critical": 0.765,
-    "wear_warning": 0.588,
+    "wear_critical": 0.7,
+    "wear_warning": 0.55,
     "brake_temp_critical_c": 950.0,
-    "fl_degradation_pressure_critical": 0.715,
-    "fl_degradation_pressure_warning": 0.508,
-    "rain_warning": 0.3,
-    "battery_soc_warning": 0.22,
+    "fl_degradation_pressure_critical": 0.72,
+    "fl_degradation_pressure_warning": 0.6,
+    "rain_warning": 0.35,
+    "battery_soc_warning": 0.35,
     "crosswind_watch": 12.0
   },
   "spa": {
-    "wear_critical": 0.609,
-    "wear_warning": 0.478,
+    "wear_critical": 0.7,
+    "wear_warning": 0.55,
     "brake_temp_critical_c": 950.0,
-    "fl_degradation_pressure_critical": 0.559,
-    "fl_degradation_pressure_warning": 0.45,
-    "rain_warning": 0.3,
-    "battery_soc_warning": 0.22,
-    "crosswind_watch": 12.0
-  },
-  "baku": {
-    "wear_critical": 0.667,
-    "wear_warning": 0.556,
-    "brake_temp_critical_c": 950.0,
-    "fl_degradation_pressure_critical": 0.617,
-    "fl_degradation_pressure_warning": 0.476,
+    "fl_degradation_pressure_critical": 0.72,
+    "fl_degradation_pressure_warning": 0.6,
     "rain_warning": 0.35,
-    "battery_soc_warning": 0.22,
-    "crosswind_watch": 12.0
-  },
-  "zandvoort": {
-    "wear_critical": 0.52,
-    "wear_warning": 0.424,
-    "brake_temp_critical_c": 950.0,
-    "fl_degradation_pressure_critical": 0.55,
-    "fl_degradation_pressure_warning": 0.45,
-    "rain_warning": 0.3,
-    "battery_soc_warning": 0.22,
-    "crosswind_watch": 12.0
-  },
-  "suzuka": {
-    "wear_critical": 0.773,
-    "wear_warning": 0.682,
-    "brake_temp_critical_c": 950.0,
-    "fl_degradation_pressure_critical": 0.723,
-    "fl_degradation_pressure_warning": 0.602,
-    "rain_warning": 0.35,
-    "battery_soc_warning": 0.22,
-    "crosswind_watch": 12.0
-  },
-  "las_vegas": {
-    "wear_critical": 0.667,
-    "wear_warning": 0.5,
-    "brake_temp_critical_c": 950.0,
-    "fl_degradation_pressure_critical": 0.617,
-    "fl_degradation_pressure_warning": 0.45,
-    "rain_warning": 0.35,
-    "battery_soc_warning": 0.22,
-    "crosswind_watch": 12.0
-  },
-  "interlagos": {
-    "wear_critical": 0.774,
-    "wear_warning": 0.71,
-    "brake_temp_critical_c": 950.0,
-    "fl_degradation_pressure_critical": 0.724,
-    "fl_degradation_pressure_warning": 0.63,
-    "rain_warning": 0.3,
-    "battery_soc_warning": 0.22,
-    "crosswind_watch": 12.0
-  },
-  "lusail": {
-    "wear_critical": 0.574,
-    "wear_warning": 0.514,
-    "brake_temp_critical_c": 950.0,
-    "fl_degradation_pressure_critical": 0.55,
-    "fl_degradation_pressure_warning": 0.45,
-    "rain_warning": 0.35,
-    "battery_soc_warning": 0.22,
-    "crosswind_watch": 12.0
-  },
-  "monza": {
-    "wear_critical": 0.818,
-    "wear_warning": 0.727,
-    "brake_temp_critical_c": 950.0,
-    "fl_degradation_pressure_critical": 0.768,
-    "fl_degradation_pressure_warning": 0.647,
-    "rain_warning": 0.35,
-    "battery_soc_warning": 0.22,
-    "crosswind_watch": 12.0
-  },
-  "mexico_city": {
-    "wear_critical": 0.775,
-    "wear_warning": 0.65,
-    "brake_temp_critical_c": 950.0,
-    "fl_degradation_pressure_critical": 0.725,
-    "fl_degradation_pressure_warning": 0.57,
-    "rain_warning": 0.35,
-    "battery_soc_warning": 0.22,
-    "crosswind_watch": 12.0
-  },
-  "abu_dhabi": {
-    "wear_critical": 0.68,
-    "wear_warning": 0.56,
-    "brake_temp_critical_c": 950.0,
-    "fl_degradation_pressure_critical": 0.63,
-    "fl_degradation_pressure_warning": 0.48,
-    "rain_warning": 0.35,
-    "battery_soc_warning": 0.22,
-    "crosswind_watch": 12.0
-  },
-  "singapore": {
-    "wear_critical": 0.86,
-    "wear_warning": 0.8,
-    "brake_temp_critical_c": 950.0,
-    "fl_degradation_pressure_critical": 0.81,
-    "fl_degradation_pressure_warning": 0.72,
-    "rain_warning": 0.3,
-    "battery_soc_warning": 0.22,
-    "crosswind_watch": 12.0
-  },
-  "austin": {
-    "wear_critical": 0.6,
-    "wear_warning": 0.467,
-    "brake_temp_critical_c": 950.0,
-    "fl_degradation_pressure_critical": 0.55,
-    "fl_degradation_pressure_warning": 0.45,
-    "rain_warning": 0.35,
-    "battery_soc_warning": 0.22,
-    "crosswind_watch": 12.0
-  },
-  "monaco": {
-    "wear_critical": 0.585,
-    "wear_warning": 0.4,
-    "brake_temp_critical_c": 950.0,
-    "fl_degradation_pressure_critical": 0.55,
-    "fl_degradation_pressure_warning": 0.45,
-    "rain_warning": 0.3,
-    "battery_soc_warning": 0.22,
-    "crosswind_watch": 12.0
-  },
-  "budapest": {
-    "wear_critical": 0.719,
-    "wear_warning": 0.625,
-    "brake_temp_critical_c": 950.0,
-    "fl_degradation_pressure_critical": 0.669,
-    "fl_degradation_pressure_warning": 0.545,
-    "rain_warning": 0.3,
-    "battery_soc_warning": 0.22,
-    "crosswind_watch": 12.0
-  },
-  "spielberg": {
-    "wear_critical": 0.84,
-    "wear_warning": 0.76,
-    "brake_temp_critical_c": 950.0,
-    "fl_degradation_pressure_critical": 0.79,
-    "fl_degradation_pressure_warning": 0.68,
-    "rain_warning": 0.3,
-    "battery_soc_warning": 0.22,
-    "crosswind_watch": 12.0
-  },
-  "le_castellet": {
-    "wear_critical": 0.9,
-    "wear_warning": 0.82,
-    "brake_temp_critical_c": 950.0,
-    "fl_degradation_pressure_critical": 0.85,
-    "fl_degradation_pressure_warning": 0.74,
-    "rain_warning": 0.35,
-    "battery_soc_warning": 0.22,
-    "crosswind_watch": 12.0
-  },
-  "barcelona": {
-    "wear_critical": 0.783,
-    "wear_warning": 0.696,
-    "brake_temp_critical_c": 950.0,
-    "fl_degradation_pressure_critical": 0.733,
-    "fl_degradation_pressure_warning": 0.616,
-    "rain_warning": 0.35,
-    "battery_soc_warning": 0.22,
-    "crosswind_watch": 12.0
-  },
-  "imola": {
-    "wear_critical": 0.711,
-    "wear_warning": 0.556,
-    "brake_temp_critical_c": 950.0,
-    "fl_degradation_pressure_critical": 0.661,
-    "fl_degradation_pressure_warning": 0.476,
-    "rain_warning": 0.35,
-    "battery_soc_warning": 0.22,
-    "crosswind_watch": 12.0
-  },
-  "jeddah": {
-    "wear_critical": 0.544,
-    "wear_warning": 0.484,
-    "brake_temp_critical_c": 950.0,
-    "fl_degradation_pressure_critical": 0.55,
-    "fl_degradation_pressure_warning": 0.45,
-    "rain_warning": 0.35,
-    "battery_soc_warning": 0.22,
-    "crosswind_watch": 12.0
-  },
-  "shanghai": {
-    "wear_critical": 0.619,
-    "wear_warning": 0.524,
-    "brake_temp_critical_c": 950.0,
-    "fl_degradation_pressure_critical": 0.569,
-    "fl_degradation_pressure_warning": 0.45,
-    "rain_warning": 0.35,
-    "battery_soc_warning": 0.22,
+    "battery_soc_warning": 0.35,
     "crosswind_watch": 12.0
   }
 }

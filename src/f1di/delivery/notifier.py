@@ -47,6 +47,10 @@ def set_recipients(recipients: list[str]) -> None:
     _runtime_recipients = [r.strip() for r in recipients if r.strip()]
 
 
+def _format_message(insight: DriverInsight) -> str:
+    return _format_plain(insight)
+
+
 def _format_plain(insight: DriverInsight) -> str:
     emoji = _RISK_EMOJI.get(insight.risk, "🔔")
     rec = textwrap.shorten(insight.recommendation, width=280, placeholder="…")
@@ -67,7 +71,7 @@ def _format_html(insight: DriverInsight) -> str:
     agents_fired = [f.agent for f in insight.findings if f.risk not in {RiskLevel.INFO}]
     rows = "".join(
         f"<tr><td style='padding:4px 8px;color:#94a3b8;'>{f.agent}</td>"
-        f"<td style='padding:4px 8px;'>{f.message}</td></tr>"
+        f"<td style='padding:4px 8px;'>{f.summary}</td></tr>"
         for f in insight.findings
     )
     return f"""
@@ -98,7 +102,10 @@ def _format_html(insight: DriverInsight) -> str:
 
 class PushNotifier:
     def __init__(self) -> None:
-        self._min_risk = RiskLevel(getattr(settings, "notify_min_risk", "WARNING"))
+        try:
+            self._min_risk = RiskLevel(getattr(settings, "notify_min_risk", "WARNING"))
+        except (ValueError, TypeError):
+            self._min_risk = RiskLevel.WARNING
 
     def set_min_risk(self, risk: str) -> None:
         self._min_risk = RiskLevel(risk)
