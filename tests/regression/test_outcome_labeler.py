@@ -1,14 +1,14 @@
-from __future__ import annotations
-
 """Regression tests for the post-race outcome labeler.
 
 FastF1 network access and the database are both mocked — these tests run
 fully offline and do not require a FastF1 cache or Postgres.
 """
 
-from unittest.mock import MagicMock, patch
-import pandas as pd
+from __future__ import annotations
+
 import numpy as np
+import pandas as pd
+from unittest.mock import MagicMock, patch
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────
