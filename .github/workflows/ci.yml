@@ -35,7 +35,7 @@ jobs:
       - name: Lint
         run: uv run ruff check .
 
-      - name: Test
+      - name: Unit tests
         run: uv run pytest
 
       - name: Generate synthetic scenarios
@@ -73,8 +73,19 @@ jobs:
           F1DI_STORAGE_URL=sqlite:///./alembic_test.db uv run alembic upgrade head
           rm -f alembic_test.db
 
-      - name: Persistence integration tests
-        run: uv run pytest tests/regression/test_api_smoke.py tests/regression/test_replay_fixture_schema.py -v
+      - name: Regression tests
+        run: |
+          uv run pytest tests/regression/test_ingesters.py \
+                        tests/regression/test_outcome_labeler.py \
+                        tests/regression/test_kafka_worker.py \
+                        tests/regression/test_ml_endpoints.py \
+                        tests/regression/test_api_smoke.py \
+                        tests/regression/test_replay_fixture_schema.py \
+                        tests/regression/test_retrieval_quality.py \
+                        tests/regression/test_recommendation_quality.py \
+                        tests/regression/test_real_replay_gate.py \
+                        tests/regression/test_orchestrator.py \
+                        -v
 
       - name: Set up Node
         uses: actions/setup-node@v4
