@@ -34,7 +34,8 @@ def _feedback_pairs() -> list[tuple[float, float]]:
                 label = (fb.rating - 1) / 4.0
             else:
                 continue
-            confidence = ins.confidence if ins is not None else 0.5
+            confidence = (ins.raw_score if ins is not None and ins.raw_score is not None
+                          else ins.confidence if ins is not None else 0.5)
             pairs.append((confidence, label))
     return pairs
 

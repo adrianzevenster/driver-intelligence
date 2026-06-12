@@ -24,6 +24,7 @@ class InsightRecord(Base):
     risk: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
     confidence: Mapped[float] = mapped_column(Float, nullable=False)
     uncertainty: Mapped[float] = mapped_column(Float, nullable=False)
+    raw_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     policy: Mapped[str] = mapped_column(String(32), nullable=False)
     audience: Mapped[str] = mapped_column(String(32), nullable=False)
     recommendation: Mapped[str] = mapped_column(Text, nullable=False, default="")

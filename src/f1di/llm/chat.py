@@ -53,7 +53,6 @@ def _call_anthropic(message: str, history: list[dict], context_block: str, setti
         response = client.messages.create(
             model=settings.llm_advice_model,
             max_tokens=1024,
-            output_config={"effort": "medium"},
             system=[{"type": "text", "text": _SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
             messages=_build_messages(message, history, context_block),
         )

@@ -25,7 +25,10 @@ dependencies = [
   "rich>=13.7.0",
   "sqlalchemy>=2.0.50",
   "alembic>=1.18.4",
+  "psycopg2-binary>=2.9",
   "python-multipart>=0.0.32",
+  "qdrant-client>=1.9.0",
+  "fastf1>=3.3.0",
 ]
 
 [project.optional-dependencies]

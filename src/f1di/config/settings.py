@@ -35,11 +35,22 @@ class Settings(BaseSettings):
     llm_api_key: str = ""
     llm_timeout_ms: float = 2000.0
 
-    # Push delivery (Telegram + Slack — optional)
+    # LLM judge — cross-model evaluation (auto-selected opposite to llm_backend)
+    # Override with F1DI_JUDGE_MODEL / F1DI_JUDGE_BASE_URL to force a specific judge.
+    judge_model: str = ""
+    judge_base_url: str = ""
+
+    # Push delivery (email + Telegram + Slack — optional)
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
     slack_webhook_url: str = ""
     notify_min_risk: str = "WARNING"  # "WARNING" | "CRITICAL"
+    # Email (SMTP — use Gmail app password or any SMTP relay)
+    smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    email_recipients: str = "a.zevenstar@gmail.com"
 
     # Background ingestion scheduler
     ingestion_auto_enabled: bool = False

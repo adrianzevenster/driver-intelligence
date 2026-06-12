@@ -6,6 +6,7 @@ import {
   RefreshCw, BookOpen, Radio, History, FlaskConical,
   ThumbsUp, ThumbsDown, TrendingUp, Upload, Table, Search,
   Mic, LineChart, FileText,
+  Bell, Mail, Plus, X, Settings, Clock, Play,
 } from 'lucide-react';
 import './style.css';
 
@@ -2275,6 +2276,673 @@ function RegressionPanel() {
   );
 }
 
+// ── Model Lab panel ───────────────────────────────────────────────────────
+
+function RiskDistBar({ distribution, total }) {
+  if (!total) return <p className="muted" style={{ fontSize: 11 }}>No data yet</p>;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+      {['CRITICAL', 'WARNING', 'WATCH', 'INFO'].map(r => {
+        const n = (distribution ?? {})[r] ?? 0;
+        const pct = (n / total) * 100;
+        const c = RISK_META[r]?.color ?? '#64748b';
+        return (
+          <div key={r} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: 10, color: c, width: 58, flexShrink: 0 }}>{r}</span>
+            <div style={{ flex: 1, height: 5, borderRadius: 2, background: 'var(--card-border)', overflow: 'hidden' }}>
+              <div style={{ width: `${pct}%`, height: '100%', background: c }} />
+            </div>
+            <span style={{ fontSize: 10, color: 'var(--muted)', width: 24, textAlign: 'right' }}>{n}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function QualityTrendChart({ history }) {
+  if (!history || history.length < 2) return (
+    <p className="muted" style={{ fontSize: 11 }}>
+      Need ≥2 snapshots to show trend. Record snapshots via the flywheel or "Record now".
+    </p>
+  );
+
+  const W = 1000, H = 80;
+  const n = history.length;
+  const xs = history.map((_, i) => (i / (n - 1)) * W);
+
+  const eceVals  = history.map(h => h.calibration?.ece);
+  const mrrVals  = history.map(h => h.retrieval?.mrr);
+
+  function sparkline(vals, color, invert = false) {
+    const finite = vals.filter(v => v != null && isFinite(v));
+    if (finite.length < 2) return null;
+    const lo = Math.min(...finite), hi = Math.max(...finite);
+    const range = hi - lo || 0.001;
+    const pts = vals.map((v, i) => {
+      if (v == null) return null;
+      const y = invert
+        ? 4 + ((v - lo) / range) * (H - 8)      // higher = worse (ECE)
+        : H - 4 - ((v - lo) / range) * (H - 8); // higher = better (MRR)
+      return `${xs[i]},${y}`;
+    }).filter(Boolean).join(' ');
+    return <polyline points={pts} fill="none" stroke={color} strokeWidth="2.5" vectorEffect="non-scaling-stroke" />;
+  }
+
+  const labels = history.map(h => h.recorded_at?.slice(0, 10) ?? '');
+
+  return (
+    <div>
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none"
+        style={{ width: '100%', height: 72, background: '#0a0f1e', borderRadius: 4, display: 'block' }}>
+        <line x1="0" y1={H / 2} x2={W} y2={H / 2} stroke="rgba(255,255,255,0.06)" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+        {sparkline(eceVals, '#f59e0b', true)}
+        {sparkline(mrrVals, '#22c55e', false)}
+        {xs.map((x, i) => (
+          <line key={i} x1={x} y1={0} x2={x} y2={H} stroke="rgba(255,255,255,0.04)" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+        ))}
+      </svg>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.62rem', color: 'var(--muted)', marginTop: 2 }}>
+        <span>{labels[0]}</span>
+        <div style={{ display: 'flex', gap: 12 }}>
+          <span style={{ color: '#f59e0b' }}>— ECE (↓ better)</span>
+          <span style={{ color: '#22c55e' }}>— MRR (↑ better)</span>
+        </div>
+        <span>{labels[labels.length - 1]}</span>
+      </div>
+      <div style={{ display: 'flex', gap: 16, marginTop: 8, flexWrap: 'wrap' }}>
+        {history.slice(-3).reverse().map((h, i) => (
+          <div key={i} style={{ fontSize: 10, color: 'var(--muted)', background: '#0d1b2e', borderRadius: 4, padding: '4px 8px', border: '1px solid var(--card-border)' }}>
+            <span style={{ fontWeight: 700 }}>{h.recorded_at?.slice(0, 10)}</span>
+            {h.calibration?.ece != null && <span style={{ color: '#f59e0b', marginLeft: 6 }}>ECE {h.calibration.ece.toFixed(4)}</span>}
+            {h.retrieval?.mrr != null && <span style={{ color: '#22c55e', marginLeft: 6 }}>MRR {(h.retrieval.mrr * 100).toFixed(0)}%</span>}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ModelLabPanel({ version }) {
+  const [stats, setStats]                   = useState(DEFAULT_STATS);
+  const [challengerVersion, setChallengerVersion] = useState('challenger');
+  const [shadowResult, setShadowResult]     = useState(null);
+  const [compareData, setCompareData]       = useState(null);
+  const [evalData, setEvalData]             = useState(null);
+  const [retrievalData, setRetrievalData]   = useState(null);
+  const [qualityHistory, setQualityHistory] = useState([]);
+  const [loading, setLoading]               = useState(false);
+  const [promoting, setPromoting]           = useState(false);
+  const [runningRetrieval, setRunningRetrieval] = useState(false);
+  const [recordingSnapshot, setRecordingSnapshot] = useState(false);
+  const [promoteResult, setPromoteResult]   = useState(null);
+  const [error, setError]                   = useState('');
+
+  async function refreshCompare(ver) {
+    const v = ver ?? challengerVersion;
+    const r = await fetch(`/api/v1/shadow/compare?challenger_version=${encodeURIComponent(v)}`).catch(() => null);
+    if (r?.ok) setCompareData(await r.json());
+  }
+
+  async function refreshEval(ver) {
+    const v = ver ?? challengerVersion;
+    const r = await fetch(`/api/v1/shadow/evaluate?challenger_version=${encodeURIComponent(v)}`).catch(() => null);
+    if (r?.ok) setEvalData(await r.json());
+  }
+
+  async function loadQualityHistory() {
+    const r = await fetch('/api/v1/quality/history?limit=30').catch(() => null);
+    if (r?.ok) setQualityHistory(await r.json());
+  }
+
+  async function recordSnapshot() {
+    setRecordingSnapshot(true);
+    await fetch('/api/v1/quality/record?trigger=manual', { method: 'POST' }).catch(() => null);
+    await loadQualityHistory();
+    setRecordingSnapshot(false);
+  }
+
+  useEffect(() => {
+    refreshCompare();
+    refreshEval();
+    loadQualityHistory();
+    fetch('/api/v1/eval/retrieval').then(r => r.ok ? r.json() : null).then(d => { if (d) setRetrievalData(d); }).catch(() => {});
+  }, []);
+
+  async function runShadow() {
+    setLoading(true); setError(''); setShadowResult(null);
+    try {
+      const win = buildWindow(stats);
+      const res = await fetch(`/api/v1/shadow/analyze?challenger_version=${encodeURIComponent(challengerVersion)}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(win),
+      });
+      if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+      setShadowResult(await res.json());
+      await Promise.all([refreshCompare(), refreshEval()]);
+    } catch (e) {
+      setError(String(e.message ?? e));
+    }
+    setLoading(false);
+  }
+
+  async function promote(force = false) {
+    setPromoting(true); setPromoteResult(null);
+    const r = await fetch(
+      `/api/v1/shadow/promote?challenger_version=${encodeURIComponent(challengerVersion)}&force=${force}`,
+      { method: 'POST' },
+    );
+    const d = await r.json();
+    setPromoteResult(d);
+    setPromoting(false);
+    if (d.promoted) refreshEval();
+  }
+
+  async function runRetrievalEval() {
+    setRunningRetrieval(true);
+    const r = await fetch('/api/v1/eval/retrieval?save=true').catch(() => null);
+    if (r?.ok) setRetrievalData(await r.json());
+    setRunningRetrieval(false);
+  }
+
+  const canPromote = evalData?.promote === true && !promoteResult?.promoted;
+  const evalRec = evalData?.recommendation;
+  const recColor = canPromote ? '#22c55e' : evalRec === 'insufficient_data' ? '#64748b' : '#f59e0b';
+
+  return (
+    <div className="grid">
+      {/* Left: shadow analyze form */}
+      <div className="card input-card">
+        <div className="input-header">
+          <h2><Radio size={14} /> Shadow Analyze</h2>
+        </div>
+        <div className="stats-form">
+          <Section title="Challenger">
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <span style={{ fontSize: 11, color: 'var(--muted)' }}>Version tag</span>
+              <input className="text-input" value={challengerVersion}
+                onChange={e => setChallengerVersion(e.target.value)}
+                placeholder="challenger" />
+            </label>
+          </Section>
+        </div>
+        <StatsForm stats={stats} onChange={setStats} />
+        <button className="analyze-btn" onClick={runShadow} disabled={loading}>
+          {loading ? <><Activity size={13} /> Analyzing…</> : 'Run Shadow Analyze'}
+        </button>
+        {error && <pre className="error">{error}</pre>}
+        {shadowResult && (
+          <div style={{ marginTop: 10, padding: '8px 10px', background: '#0a1628', borderRadius: 6, border: '1px solid var(--card-border)', fontSize: 12 }}>
+            <span style={{ color: RISK_META[shadowResult.risk]?.color ?? '#64748b', fontWeight: 700 }}>{shadowResult.risk}</span>
+            <span className="muted" style={{ marginLeft: 8 }}>conf {(shadowResult.confidence * 100).toFixed(0)}% · stored as shadow</span>
+          </div>
+        )}
+      </div>
+
+      {/* Right: compare, evaluate, retrieval */}
+      <div className="card insight-card" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+        {/* Compare */}
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+            <h2 style={{ margin: 0, fontSize: 14 }}><BarChart2 size={13} /> Risk Distribution</h2>
+            <button className="kb-btn" onClick={() => { refreshCompare(); refreshEval(); }}>
+              <RefreshCw size={11} /> Refresh
+            </button>
+          </div>
+          {compareData ? (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+              <div>
+                <p style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 6, fontWeight: 700 }}>
+                  PRODUCTION · n={compareData.production?.n ?? 0}
+                </p>
+                <RiskDistBar distribution={compareData.production?.risk_distribution} total={compareData.production?.n ?? 0} />
+                {compareData.production?.n > 0 && (
+                  <p style={{ fontSize: 10, color: 'var(--muted)', marginTop: 6 }}>
+                    avg conf {(compareData.production.avg_confidence * 100).toFixed(1)}%
+                    · unc {(compareData.production.avg_uncertainty * 100).toFixed(1)}%
+                  </p>
+                )}
+              </div>
+              <div>
+                <p style={{ fontSize: 10, color: '#38bdf8', marginBottom: 6, fontWeight: 700 }}>
+                  CHALLENGER · {compareData.challenger_version} · n={compareData.shadow?.n ?? 0}
+                </p>
+                <RiskDistBar distribution={compareData.shadow?.risk_distribution} total={compareData.shadow?.n ?? 0} />
+                {compareData.shadow?.n > 0 && (
+                  <p style={{ fontSize: 10, color: 'var(--muted)', marginTop: 6 }}>
+                    avg conf {(compareData.shadow.avg_confidence * 100).toFixed(1)}%
+                    · unc {(compareData.shadow.avg_uncertainty * 100).toFixed(1)}%
+                  </p>
+                )}
+              </div>
+            </div>
+          ) : (
+            <p className="muted" style={{ fontSize: 12 }}>Run shadow analyses to populate comparison.</p>
+          )}
+        </div>
+
+        <div style={{ borderTop: '1px solid var(--card-border)' }} />
+
+        {/* Evaluate */}
+        <div>
+          <h2 style={{ margin: '0 0 10px', fontSize: 14 }}><TrendingUp size={13} /> Statistical Evaluation</h2>
+          {evalData ? (
+            evalData.recommendation === 'insufficient_data' ? (
+              <div style={{ padding: '8px 12px', background: '#0d1b2e', borderRadius: 6, fontSize: 12 }}>
+                <p style={{ color: '#64748b', margin: '0 0 4px' }}>Insufficient data — need ≥{evalData.min_n} shadow runs</p>
+                <p className="muted" style={{ fontSize: 10, margin: 0 }}>
+                  {evalData.n_shadow} shadow · {evalData.n_prod} production records
+                </p>
+              </div>
+            ) : (
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: recColor, padding: '3px 10px', borderRadius: 12, background: recColor + '22', border: `1px solid ${recColor}55` }}>
+                    {evalRec?.replace(/_/g, ' ').toUpperCase()}
+                  </span>
+                </div>
+                <div className="feat-table" style={{ marginBottom: 12 }}>
+                  {[
+                    ['Shadow n',      evalData.n_shadow],
+                    ['Prod n',        evalData.n_prod],
+                    ['Shadow conf',   evalData.shadow_mean_confidence != null ? `${(evalData.shadow_mean_confidence * 100).toFixed(1)}%` : '—'],
+                    ['Prod conf',     evalData.prod_mean_confidence != null ? `${(evalData.prod_mean_confidence * 100).toFixed(1)}%` : '—'],
+                    ['p-value',       evalData.p_value != null ? evalData.p_value.toFixed(4) : '—'],
+                    ['Effect (RBC)',  evalData.rank_biserial_correlation != null ? evalData.rank_biserial_correlation.toFixed(4) : '—'],
+                    ['Escalation Δ', evalData.shadow_escalation_rate != null ? `${((evalData.shadow_escalation_rate - evalData.prod_escalation_rate) * 100).toFixed(1)}pp` : '—'],
+                  ].map(([label, val]) => (
+                    <div key={label} className="feat-row">
+                      <span className="feat-key">{label}</span>
+                      <span className="feat-val">{val}</span>
+                    </div>
+                  ))}
+                </div>
+                <button className="analyze-btn" style={{ padding: '6px 14px', fontSize: 12 }}
+                  onClick={() => promote(false)} disabled={promoting || !canPromote}
+                  title={!canPromote ? (promoteResult?.promoted ? 'Already promoted' : 'Evaluation does not recommend promotion') : 'Promote challenger to production'}>
+                  {promoting ? <><Activity size={12} className="spin" /> Promoting…</> : canPromote ? 'Promote Challenger' : 'Promote (not recommended)'}
+                </button>
+                {!canPromote && !promoteResult && (
+                  <p style={{ fontSize: 10, color: 'var(--muted)', marginTop: 4 }}>
+                    Force-promote via <code style={{ fontSize: 10 }}>POST /v1/shadow/promote?force=true</code>
+                  </p>
+                )}
+                {promoteResult && (
+                  <div style={{ marginTop: 8, padding: '6px 10px', borderRadius: 6, fontSize: 11,
+                    background: promoteResult.promoted ? 'rgba(34,197,94,0.1)' : 'rgba(245,158,11,0.1)',
+                    border: `1px solid ${promoteResult.promoted ? 'rgba(34,197,94,0.3)' : 'rgba(245,158,11,0.3)'}`,
+                    color: promoteResult.promoted ? '#22c55e' : '#f59e0b' }}>
+                    {promoteResult.promoted
+                      ? `✓ Promoted at ${promoteResult.promoted_at?.slice(0, 19).replace('T', ' ')}`
+                      : `Not promoted — ${promoteResult.reason?.replace(/_/g, ' ')}`}
+                  </div>
+                )}
+              </div>
+            )
+          ) : (
+            <p className="muted" style={{ fontSize: 12 }}>Loading evaluation…</p>
+          )}
+        </div>
+
+        <div style={{ borderTop: '1px solid var(--card-border)' }} />
+
+        {/* Retrieval quality */}
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+            <h2 style={{ margin: 0, fontSize: 14 }}><Search size={13} /> Retrieval Quality</h2>
+            <button className="kb-btn" onClick={runRetrievalEval} disabled={runningRetrieval}>
+              <RefreshCw size={11} className={runningRetrieval ? 'spin' : ''} />
+              {runningRetrieval ? 'Running…' : 'Run eval'}
+            </button>
+          </div>
+          {retrievalData ? (
+            <div>
+              <div className="feat-table" style={{ marginBottom: 10 }}>
+                {[
+                  ['P@1',    retrievalData.precision_at_1],
+                  ['P@3',    retrievalData.precision_at_3],
+                  ['P@5',    retrievalData.precision_at_5],
+                  ['R@3',    retrievalData.recall_at_3],
+                  ['MRR',    retrievalData.mrr],
+                  ['NDCG@5', retrievalData.ndcg_at_5],
+                ].map(([label, val]) => {
+                  const pct = val != null ? val * 100 : null;
+                  const color = pct == null ? '#64748b' : pct >= 70 ? '#22c55e' : pct >= 45 ? '#f59e0b' : '#ef4444';
+                  return (
+                    <div key={label} className="feat-row">
+                      <span className="feat-key">{label}</span>
+                      <span className="feat-val" style={{ color, fontFamily: 'monospace' }}>
+                        {pct != null ? `${pct.toFixed(1)}%` : '—'}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+              {retrievalData.per_topic && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                  {Object.entries(retrievalData.per_topic).map(([topic, m]) => {
+                    const mrr = m.mrr ?? 0;
+                    const c = mrr >= 0.7 ? '#22c55e' : mrr >= 0.45 ? '#f59e0b' : '#ef4444';
+                    return (
+                      <span key={topic} style={{ fontSize: 10, padding: '2px 7px', borderRadius: 10,
+                        background: c + '22', border: `1px solid ${c}55`, color: c }}>
+                        {topic} MRR {(mrr * 100).toFixed(0)}%
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ) : (
+            <p className="muted" style={{ fontSize: 12 }}>Click "Run eval" to measure retrieval quality against the gold QA set.</p>
+          )}
+        </div>
+
+        <div style={{ borderTop: '1px solid var(--card-border)' }} />
+
+        {/* Quality trend */}
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+            <h2 style={{ margin: 0, fontSize: 14 }}><LineChart size={13} /> Quality Trend</h2>
+            <button className="kb-btn" onClick={recordSnapshot} disabled={recordingSnapshot}>
+              <RefreshCw size={11} className={recordingSnapshot ? 'spin' : ''} />
+              {recordingSnapshot ? 'Recording…' : 'Record now'}
+            </button>
+          </div>
+          <QualityTrendChart history={qualityHistory} />
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
+// ── System panel ───────────────────────────────────────────────────────────
+
+const RISK_OPTIONS = ['INFO', 'WATCH', 'WARNING', 'CRITICAL'];
+
+function DeliverySection() {
+  const [status, setStatus]       = useState(null);
+  const [newEmail, setNewEmail]   = useState('');
+  const [testResult, setTestResult] = useState(null);
+  const [loading, setLoading]     = useState(false);
+
+  function load() {
+    fetch('/api/v1/delivery/status').then(r => r.ok ? r.json() : null).then(d => { if (d) setStatus(d); });
+  }
+  useEffect(load, []);
+
+  async function addRecipient() {
+    if (!newEmail.trim()) return;
+    const next = [...(status?.email_recipients ?? []), newEmail.trim()];
+    await fetch('/api/v1/delivery/recipients', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ recipients: next }),
+    });
+    setNewEmail('');
+    load();
+  }
+
+  async function removeRecipient(addr) {
+    const next = (status?.email_recipients ?? []).filter(r => r !== addr);
+    await fetch('/api/v1/delivery/recipients', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ recipients: next }),
+    });
+    load();
+  }
+
+  async function setMinRisk(risk) {
+    await fetch('/api/v1/delivery/min-risk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ risk }),
+    });
+    load();
+  }
+
+  async function sendTest() {
+    setLoading(true); setTestResult(null);
+    const r = await fetch('/api/v1/delivery/test', { method: 'POST' });
+    const d = await r.json();
+    setTestResult(d.result);
+    setLoading(false);
+  }
+
+  const emailOk = status?.email;
+
+  return (
+    <div className="card">
+      <div className="input-header"><h2><Bell size={14} /> Push Delivery</h2></div>
+
+      {/* Channel status row */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+        <span style={{
+          padding: '3px 10px', borderRadius: 12, fontSize: 11, fontWeight: 700,
+          background: emailOk ? '#14532d' : '#1e293b',
+          color: emailOk ? '#4ade80' : '#64748b',
+          border: `1px solid ${emailOk ? '#16a34a' : '#334155'}`,
+        }}>
+          <Mail size={10} style={{ marginRight: 4, verticalAlign: 'middle' }} />
+          Email {emailOk ? 'ready' : 'not configured'}
+        </span>
+        <span style={{
+          padding: '3px 10px', borderRadius: 12, fontSize: 11, fontWeight: 700,
+          background: status?.telegram ? '#1e1b4b' : '#1e293b',
+          color: status?.telegram ? '#a5b4fc' : '#64748b',
+          border: `1px solid ${status?.telegram ? '#4f46e5' : '#334155'}`,
+        }}>Telegram {status?.telegram ? 'ready' : 'not configured'}</span>
+        <span style={{
+          padding: '3px 10px', borderRadius: 12, fontSize: 11, fontWeight: 700,
+          background: status?.slack ? '#1c1917' : '#1e293b',
+          color: status?.slack ? '#fb923c' : '#64748b',
+          border: `1px solid ${status?.slack ? '#ea580c' : '#334155'}`,
+        }}>Slack {status?.slack ? 'ready' : 'not configured'}</span>
+      </div>
+
+      {!emailOk && (
+        <p className="muted" style={{ fontSize: 11, marginBottom: 12 }}>
+          Set <code>F1DI_SMTP_USERNAME</code> and <code>F1DI_SMTP_PASSWORD</code> (Gmail app password) in your .env to enable email delivery.
+        </p>
+      )}
+
+      {/* Recipients */}
+      <h3 style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8, marginTop: 0 }}>
+        <Mail size={11} style={{ marginRight: 4, verticalAlign: 'middle' }} />
+        Email recipients
+      </h3>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 12 }}>
+        {(status?.email_recipients ?? []).map(addr => (
+          <div key={addr} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 12, flex: 1, color: '#e2e8f0' }}>{addr}</span>
+            <button onClick={() => removeRecipient(addr)}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: 2 }}>
+              <X size={12} />
+            </button>
+          </div>
+        ))}
+        {!(status?.email_recipients?.length) && (
+          <p className="muted" style={{ fontSize: 11 }}>No recipients configured.</p>
+        )}
+      </div>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+        <input className="chat-input" style={{ fontSize: 12 }}
+          placeholder="add email address…"
+          value={newEmail}
+          onChange={e => setNewEmail(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && addRecipient()}
+        />
+        <button className="send-btn" onClick={addRecipient} title="Add recipient">
+          <Plus size={13} />
+        </button>
+      </div>
+
+      {/* Min risk threshold */}
+      <h3 style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8, marginTop: 0 }}>
+        <ShieldAlert size={11} style={{ marginRight: 4, verticalAlign: 'middle' }} />
+        Alert threshold
+      </h3>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
+        {RISK_OPTIONS.map(r => (
+          <button key={r}
+            onClick={() => setMinRisk(r)}
+            style={{
+              padding: '4px 12px', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+              border: '1px solid',
+              background: status?.notify_min_risk === r ? RISK_META[r]?.bg ?? '#1e293b' : '#1e293b',
+              color: status?.notify_min_risk === r ? '#e2e8f0' : '#64748b',
+              borderColor: status?.notify_min_risk === r ? (RISK_META[r]?.color ?? '#64748b') : '#334155',
+            }}>
+            {r}
+          </button>
+        ))}
+      </div>
+      <p className="muted" style={{ fontSize: 11, marginBottom: 16 }}>
+        Alerts fire for this risk level and above. Applies to all channels.
+      </p>
+
+      {/* Test button */}
+      <button className="send-btn" style={{ width: '100%', justifyContent: 'center', gap: 6 }}
+        onClick={sendTest} disabled={loading}>
+        {loading ? <Activity size={13} className="spin" /> : <Bell size={13} />}
+        {loading ? 'Sending…' : 'Send test notification'}
+      </button>
+      {testResult && (
+        <div style={{ marginTop: 10, fontSize: 11 }}>
+          {Object.entries(testResult).map(([ch, ok]) => (
+            <p key={ch} style={{ margin: '2px 0', color: ok ? '#4ade80' : '#f87171' }}>
+              {ch}: {ok ? 'delivered' : 'failed'}
+            </p>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SchedulerSection() {
+  const [status, setStatus]   = useState(null);
+  const [source, setSource]   = useState('fastf1');
+  const [years, setYears]     = useState('');
+  const [n, setN]             = useState(5);
+  const [triggering, setTriggering] = useState(false);
+  const [triggerMsg, setTriggerMsg] = useState(null);
+
+  function load() {
+    fetch('/api/v1/ingestion/status').then(r => r.ok ? r.json() : null).then(d => { if (d) setStatus(d); });
+  }
+  useEffect(load, []);
+
+  async function trigger() {
+    setTriggering(true); setTriggerMsg(null);
+    const qs = `source=${source}&n=${n}${years ? `&years=${years}` : ''}`;
+    const r = await fetch(`/api/v1/ingestion/trigger?${qs}`, { method: 'POST' });
+    const d = await r.json();
+    setTriggerMsg(d.status === 'ingestion_triggered'
+      ? `Triggered ${source} ingestion (${d.years ? `years: ${d.years.join(',')}` : 'auto'}, n=${n})`
+      : d.error ?? 'Unknown error');
+    setTriggering(false);
+    setTimeout(load, 3000);
+  }
+
+  const runs = status?.latest ?? [];
+
+  return (
+    <div className="card">
+      <div className="input-header"><h2><Clock size={14} /> Data Ingestion</h2></div>
+
+      {/* Auto-schedule status */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+        <span style={{
+          padding: '3px 10px', borderRadius: 12, fontSize: 11, fontWeight: 700,
+          background: '#1e293b', color: '#64748b', border: '1px solid #334155',
+        }}>
+          Auto-schedule: enable via <code style={{ fontSize: 10 }}>F1DI_INGESTION_AUTO_ENABLED=true</code>
+        </span>
+        {status?.total_runs != null && (
+          <span style={{
+            padding: '3px 10px', borderRadius: 12, fontSize: 11, fontWeight: 700,
+            background: '#14532d', color: '#4ade80', border: '1px solid #16a34a',
+          }}>
+            {status.total_runs} runs total
+          </span>
+        )}
+      </div>
+
+      {/* Manual trigger */}
+      <h3 style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8, marginTop: 0 }}>
+        <Play size={11} style={{ marginRight: 4, verticalAlign: 'middle' }} />
+        Manual trigger
+      </h3>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+        <select value={source} onChange={e => setSource(e.target.value)}
+          style={{ background: '#1e293b', color: '#e2e8f0', border: '1px solid #334155', borderRadius: 6, padding: '4px 8px', fontSize: 12 }}>
+          <option value="fastf1">FastF1</option>
+          <option value="openf1">OpenF1</option>
+          <option value="jolpica">Jolpica</option>
+        </select>
+        <input className="chat-input" style={{ fontSize: 12, width: 120 }}
+          placeholder="years e.g. 2024"
+          value={years}
+          onChange={e => setYears(e.target.value)}
+        />
+        <input type="number" min={1} max={20} value={n} onChange={e => setN(Number(e.target.value))}
+          style={{ background: '#1e293b', color: '#e2e8f0', border: '1px solid #334155', borderRadius: 6, padding: '4px 8px', fontSize: 12, width: 60 }}
+          title="Sessions per year"
+        />
+        <button className="send-btn" onClick={trigger} disabled={triggering}>
+          {triggering ? <Activity size={13} className="spin" /> : <Play size={13} />}
+          {triggering ? 'Triggering…' : 'Run'}
+        </button>
+        <button className="kb-btn" onClick={load}><RefreshCw size={11} /></button>
+      </div>
+      {triggerMsg && <p style={{ fontSize: 11, color: '#4ade80', marginBottom: 12 }}>{triggerMsg}</p>}
+
+      {/* Recent runs */}
+      <h3 style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8, marginTop: 0 }}>Recent runs</h3>
+      {runs.length === 0
+        ? <p className="muted" style={{ fontSize: 11 }}>No ingestion runs recorded yet.</p>
+        : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse' }}>
+              <thead>
+                <tr>{['Source', 'Year', 'Round', 'Track', 'Docs added', 'Completed'].map(h => (
+                  <th key={h} style={{ textAlign: 'left', padding: '4px 8px', color: 'var(--muted)', fontWeight: 600, borderBottom: '1px solid var(--card-border)' }}>{h}</th>
+                ))}</tr>
+              </thead>
+              <tbody>
+                {runs.map((r, i) => (
+                  <tr key={i} style={{ borderTop: '1px solid var(--card-border)' }}>
+                    <td style={{ padding: '4px 8px' }}>{r.source}</td>
+                    <td style={{ padding: '4px 8px' }}>{r.year ?? '—'}</td>
+                    <td style={{ padding: '4px 8px' }}>{r.round_num ?? '—'}</td>
+                    <td style={{ padding: '4px 8px' }}>{r.track_id ?? '—'}</td>
+                    <td style={{ padding: '4px 8px', fontFamily: 'monospace' }}>{r.documents_added}</td>
+                    <td style={{ padding: '4px 8px', color: 'var(--muted)' }}>{r.completed_at?.replace('T', ' ').slice(0, 16)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
+      }
+    </div>
+  );
+}
+
+function SystemPanel() {
+  return (
+    <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+      <DeliverySection />
+      <SchedulerSection />
+    </div>
+  );
+}
+
 // ── App ────────────────────────────────────────────────────────────────────
 
 export default function App() {
@@ -2328,6 +2996,14 @@ export default function App() {
               onClick={() => setMode('regression')}>
               <FlaskConical size={14} /> Regression
             </button>
+            <button className={`mode-tab${mode === 'modellab' ? ' active' : ''}`}
+              onClick={() => setMode('modellab')}>
+              <Radio size={14} /> Model Lab
+            </button>
+            <button className={`mode-tab${mode === 'system' ? ' active' : ''}`}
+              onClick={() => setMode('system')}>
+              <Settings size={14} /> System
+            </button>
           </div>
         </div>
         <div className="hero-right">
@@ -2349,6 +3025,8 @@ export default function App() {
       {mode === 'analytics'  && <AnalyticsPanel />}
       {mode === 'predictions' && <PredictionsPanel version={version} />}
       {mode === 'regression' && <RegressionPanel />}
+      {mode === 'modellab'   && <ModelLabPanel version={version} />}
+      {mode === 'system'     && <SystemPanel />}
     </main>
   );
 }

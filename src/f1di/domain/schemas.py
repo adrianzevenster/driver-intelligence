@@ -164,6 +164,7 @@ class DriverInsight(BaseModel):
     recommendation: str
     confidence: float = Field(ge=0, le=1)
     uncertainty: float = Field(ge=0, le=1)
+    raw_score: float | None = None
     supporting_factors: list[str]
     evidence: list[RetrievedEvidence]
     findings: list[AgentFinding]

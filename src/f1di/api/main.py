@@ -840,7 +840,6 @@ def shadow_analyze(
     window: TelemetryWindow,
     challenger_version: str = "challenger",
     audience: InsightAudience = InsightAudience.DRIVER,
-    _auth: None = Depends(_require_api_key),
 ) -> DriverInsight:
     """Run inference in shadow mode: result is stored but not shown to drivers.
 
@@ -871,6 +870,74 @@ def shadow_compare(challenger_version: str = "challenger") -> dict[str, Any]:
         raise HTTPException(status_code=503, detail="Persistence layer not installed.")
     with db_session() as session:
         return _compare(session, challenger_version)
+
+
+@app.get("/v1/shadow/evaluate")
+def shadow_evaluate(challenger_version: str = "challenger") -> dict[str, Any]:
+    """Statistical evaluation of a shadow challenger vs production.
+
+    Runs a Mann-Whitney U test on confidence distributions and compares
+    risk escalation rates. Returns a promote=True/False recommendation.
+    A promote recommendation means the challenger shows statistically significant
+    improvement (p<0.05) without increased risk escalation.
+    """
+    try:
+        from f1di.storage.database import db_session
+        from f1di.storage.repository import shadow_evaluate as _evaluate
+    except ImportError:
+        raise HTTPException(status_code=503, detail="Persistence layer not installed.")
+    with db_session() as session:
+        return _evaluate(session, challenger_version)
+
+
+@app.post("/v1/shadow/promote")
+def shadow_promote(
+    challenger_version: str = "challenger",
+    force: bool = False,
+    _auth: None = Depends(_require_api_key),
+) -> dict[str, Any]:
+    """Promote a shadow challenger if evaluation passes.
+
+    Runs shadow_evaluate; if promote=True (or force=True), appends a timestamped
+    record to data/calibration/promotions.json and returns the evaluation summary.
+    """
+    try:
+        from f1di.storage.database import db_session
+        from f1di.storage.repository import shadow_evaluate as _evaluate
+    except ImportError:
+        raise HTTPException(status_code=503, detail="Persistence layer not installed.")
+
+    with db_session() as session:
+        evaluation = _evaluate(session, challenger_version)
+
+    if not evaluation.get("promote") and not force:
+        return {
+            "promoted": False,
+            "reason": evaluation.get("recommendation", "evaluation_failed"),
+            **evaluation,
+        }
+
+    import json as _json
+    from datetime import datetime, timezone
+
+    promotions_path = Path("data/calibration/promotions.json")
+    promotions_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        existing = _json.loads(promotions_path.read_text()) if promotions_path.exists() else []
+    except Exception:
+        existing = []
+
+    record: dict[str, Any] = {
+        "promoted_at": datetime.now(timezone.utc).isoformat(),
+        "challenger_version": challenger_version,
+        "forced": force,
+        **evaluation,
+    }
+    existing.append(record)
+    promotions_path.write_text(_json.dumps(existing, indent=2))
+    logger.info("shadow_promoted challenger=%s forced=%s", challenger_version, force)
+
+    return {"promoted": True, **record}
 
 
 # ---------------------------------------------------------------------------
@@ -1043,14 +1110,49 @@ def feedback_stats() -> dict:
 
 @app.get("/v1/delivery/status")
 def delivery_status() -> dict:
+    from f1di.delivery.notifier import get_notifier, get_recipients
     has_telegram = bool(settings.telegram_bot_token and settings.telegram_chat_id)
     has_slack = bool(settings.slack_webhook_url)
+    has_email = bool(settings.smtp_username and settings.smtp_password)
+    notifier = get_notifier()
     return {
+        "email": has_email,
+        "email_recipients": get_recipients(),
+        "smtp_host": settings.smtp_host,
+        "smtp_username": settings.smtp_username,
         "telegram": has_telegram,
         "slack": has_slack,
-        "notify_min_risk": settings.notify_min_risk,
-        "any_configured": has_telegram or has_slack,
+        "notify_min_risk": notifier.get_min_risk(),
+        "any_configured": has_email or has_telegram or has_slack,
     }
+
+
+@app.post("/v1/delivery/recipients")
+def update_recipients(body: dict) -> dict:
+    from f1di.delivery.notifier import set_recipients, get_recipients
+    recipients = body.get("recipients", [])
+    if not isinstance(recipients, list):
+        raise HTTPException(status_code=422, detail="recipients must be a list of email strings")
+    set_recipients(recipients)
+    return {"recipients": get_recipients()}
+
+
+@app.post("/v1/delivery/min-risk")
+def update_min_risk(body: dict) -> dict:
+    from f1di.delivery.notifier import get_notifier
+    risk = body.get("risk", "WARNING")
+    valid = {"INFO", "WATCH", "WARNING", "CRITICAL"}
+    if risk not in valid:
+        raise HTTPException(status_code=422, detail=f"risk must be one of {sorted(valid)}")
+    get_notifier().set_min_risk(risk)
+    return {"notify_min_risk": risk}
+
+
+@app.post("/v1/delivery/test")
+async def test_delivery() -> dict:
+    from f1di.delivery.notifier import get_notifier
+    result = get_notifier().send_test()
+    return {"result": result}
 
 
 # ---------------------------------------------------------------------------
@@ -1267,6 +1369,211 @@ def session_insight(
     insight = get_orchestrator().analyze(window, audience=audience)
     _persist_insight(insight, window)
     return insight
+
+
+# ---------------------------------------------------------------------------
+# Retrieval evaluation (RAGAS-style)
+# ---------------------------------------------------------------------------
+
+@app.get("/v1/eval/retrieval")
+def retrieval_eval(save: bool = False) -> dict:
+    """Run RAGAS-style retrieval quality evaluation against the gold QA set.
+
+    Returns precision@k, recall@k, MRR, and NDCG@5 aggregated and per-topic.
+    Pass ?save=true to persist the report to data/calibration/retrieval_eval.json.
+    """
+    from f1di.evaluation.retrieval_eval import evaluate_retriever, save_eval_report
+    orchestrator = get_orchestrator()
+    metrics = evaluate_retriever(orchestrator.retriever)
+    if save:
+        save_eval_report(metrics)
+    return metrics.to_dict()
+
+
+# ---------------------------------------------------------------------------
+# Quality history
+# ---------------------------------------------------------------------------
+
+_QUALITY_HISTORY_PATH = Path("data/calibration/quality_history.json")
+_RETRIEVAL_EVAL_PATH  = Path("data/calibration/retrieval_eval.json")
+_QUALITY_PATH         = Path("data/calibration/quality.json")
+
+
+@app.post("/v1/quality/record")
+def record_quality_snapshot(trigger: str = "manual") -> dict[str, Any]:
+    """Append a quality snapshot to quality_history.json.
+
+    Captures calibration ECE/Brier and retrieval P@1/MRR/NDCG from the most
+    recent saved reports. Call after each flywheel retrain or eval run.
+    """
+    import json as _json
+    from datetime import datetime, timezone
+
+    snapshot: dict[str, Any] = {
+        "recorded_at": datetime.now(timezone.utc).isoformat(),
+        "trigger": trigger,
+    }
+
+    if _QUALITY_PATH.exists():
+        try:
+            q = _json.loads(_QUALITY_PATH.read_text())
+            snapshot["calibration"] = {
+                "ece": q.get("ece"),
+                "brier_score": q.get("brier_score"),
+                "n_feedback": q.get("calibration_dataset", {}).get("n_feedback"),
+                "fitted_at": q.get("fitted_at"),
+            }
+        except Exception:
+            pass
+
+    if _RETRIEVAL_EVAL_PATH.exists():
+        try:
+            r = _json.loads(_RETRIEVAL_EVAL_PATH.read_text())
+            snapshot["retrieval"] = {
+                "precision_at_1": r.get("precision_at_1"),
+                "mrr": r.get("mrr"),
+                "ndcg_at_5": r.get("ndcg_at_5"),
+                "n_queries": r.get("n_queries"),
+            }
+        except Exception:
+            pass
+
+    _QUALITY_HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        history = _json.loads(_QUALITY_HISTORY_PATH.read_text()) if _QUALITY_HISTORY_PATH.exists() else []
+    except Exception:
+        history = []
+    history.append(snapshot)
+    _QUALITY_HISTORY_PATH.write_text(_json.dumps(history, indent=2))
+
+    logger.info("quality_snapshot_recorded trigger=%s", trigger)
+    return snapshot
+
+
+@app.get("/v1/quality/history")
+def get_quality_history(limit: int = 50) -> list[dict]:
+    """Return the last `limit` quality snapshots from quality_history.json."""
+    import json as _json
+    if not _QUALITY_HISTORY_PATH.exists():
+        return []
+    try:
+        history = _json.loads(_QUALITY_HISTORY_PATH.read_text())
+        return history[-limit:]
+    except Exception:
+        return []
+
+
+# ---------------------------------------------------------------------------
+# Threshold fitter
+# ---------------------------------------------------------------------------
+
+@app.post("/v1/calibrator/fit-thresholds/fastf1")
+def fit_thresholds_from_fastf1(
+    years: str = "",
+    n_per_year: int = 8,
+    _auth: None = Depends(_require_api_key),
+) -> dict:
+    """Fit per-circuit wear/brake thresholds from FastF1 historical stint data.
+
+    This replaces the hand-coded global defaults in thresholds.json with
+    circuit-specific estimates derived from empirical pit-stop distributions.
+    Results are blended toward the global prior via Bayesian shrinkage.
+
+    Requires FastF1 to be installed and internet access for first run
+    (results are cached in /tmp/f1di_fastf1_cache).
+    """
+    from f1di.agents.threshold_fitter import fit_and_save
+    year_list = [int(y.strip()) for y in years.split(",") if y.strip()] or None
+    return fit_and_save(years=year_list, n_per_year=n_per_year)
+
+
+# ---------------------------------------------------------------------------
+# Incident dataset builder
+# ---------------------------------------------------------------------------
+
+@app.post("/v1/data/build-incident-dataset")
+async def build_incident_dataset_endpoint(
+    years: str = "",
+    n_per_year: int = 6,
+    _auth: None = Depends(_require_api_key),
+) -> dict:
+    """Build a labeled incident dataset from FastF1 historical race data.
+
+    Identifies forced pit stops, retirements, safety cars, and degradation
+    cliffs, and labels the preceding laps as high-risk. The dataset is saved
+    to data/incidents/labeled_dataset.jsonl and automatically incorporated
+    into the calibration retraining pipeline.
+
+    Runs in the background; returns immediately with a confirmation.
+    """
+    import asyncio
+    from f1di.data.incident_dataset import build_dataset
+
+    year_list = [int(y.strip()) for y in years.split(",") if y.strip()] or None
+
+    async def _run():
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, lambda: build_dataset(years=year_list, n_per_year=n_per_year))
+
+    asyncio.create_task(_run())
+    return {"status": "building", "years": year_list, "n_per_year": n_per_year}
+
+
+# ---------------------------------------------------------------------------
+# Race outcome labeling (closes the data flywheel)
+# ---------------------------------------------------------------------------
+
+@app.post("/v1/outcomes/label")
+def label_race_outcomes(
+    year: int,
+    round_num: int,
+    dry_run: bool = False,
+    _auth: None = Depends(_require_api_key),
+) -> dict:
+    """Label stored insights for one race by comparing against actual outcomes.
+
+    Downloads FastF1 data for the given race, extracts incidents (retirements,
+    safety cars, forced pits), then marks each WARNING/CRITICAL insight as
+    correct or incorrect based on whether a matching incident occurred within
+    the look-ahead window. Labels are written as FeedbackRecord rows.
+
+    Pass ?dry_run=true to compute labels without writing to the database.
+    """
+    from f1di.data.outcome_labeler import label_race
+    from dataclasses import asdict
+    result = label_race(year=year, round_num=round_num, dry_run=dry_run)
+    return asdict(result)
+
+
+@app.get("/v1/outcomes/summary")
+def outcome_summary() -> dict:
+    """Return a summary of outcome-labeled feedback records."""
+    try:
+        from sqlalchemy import func, select
+        from f1di.storage.database import db_session
+        from f1di.storage.models import FeedbackRecord
+        with db_session() as session:
+            outcome_rows = session.execute(
+                select(
+                    FeedbackRecord.correct,
+                    func.count().label("n"),
+                )
+                .where(FeedbackRecord.submitted_by == "outcome_labeler")
+                .group_by(FeedbackRecord.correct)
+            ).all()
+
+        by_label = {str(row.correct): row.n for row in outcome_rows}
+        total = sum(by_label.values())
+        return {
+            "total": total,
+            "correct": by_label.get("True", 0),
+            "incorrect": by_label.get("False", 0),
+            "accuracy": (
+                round(by_label.get("True", 0) / total, 3) if total > 0 else None
+            ),
+        }
+    except Exception as exc:
+        return {"error": str(exc)}
 
 
 # ---------------------------------------------------------------------------

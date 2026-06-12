@@ -1,0 +1,131 @@
+name: Post-Race Data Flywheel
+
+on:
+  schedule:
+    # Runs Monday 06:00 UTC — covers Sunday race results for all time zones
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      year:
+        description: "Race year (default: current)"
+        required: false
+        default: ""
+      round_num:
+        description: "Round number (default: latest)"
+        required: false
+        default: ""
+
+jobs:
+  flywheel:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Detect latest race round
+        id: race
+        run: |
+          YEAR="${{ github.event.inputs.year }}"
+          ROUND="${{ github.event.inputs.round_num }}"
+          if [ -z "$YEAR" ]; then
+            YEAR=$(date +%Y)
+          fi
+          if [ -z "$ROUND" ]; then
+            # Ask the API for the latest completed race
+            ROUND=$(ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+              ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
+              "curl -sf 'http://localhost:8080/v1/session/races?year=$YEAR' | \
+               python3 -c \"import sys,json; races=json.load(sys.stdin); \
+               completed=[r for r in races if r.get('round_num')]; \
+               print(completed[-1]['round_num'] if completed else '')\"" 2>/dev/null || echo "")
+          fi
+          echo "year=$YEAR" >> $GITHUB_OUTPUT
+          echo "round=$ROUND" >> $GITHUB_OUTPUT
+
+      - name: Label race outcomes
+        if: steps.race.outputs.round != ''
+        run: |
+          YEAR=${{ steps.race.outputs.year }}
+          ROUND=${{ steps.race.outputs.round }}
+          echo "Labeling outcomes for $YEAR round $ROUND"
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
+            "curl -sf -X POST \
+              -H 'X-API-Key: ${{ secrets.F1DI_API_KEY }}' \
+              'http://localhost:8080/v1/outcomes/label?year=$YEAR&round_num=$ROUND' \
+              | python3 -c \"import sys,json; r=json.load(sys.stdin); \
+                print('Labeled:', r.get('labeled',0), 'correct:', r.get('correct',0), 'incorrect:', r.get('incorrect',0))\""
+
+      - name: Check feedback readiness and retrain calibrator
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
+            "python3 -c \"
+import urllib.request, json, sys
+r = json.loads(urllib.request.urlopen('http://localhost:8080/v1/feedback/stats').read())
+print('Feedback pairs:', r['total'], '/ min:', r['min_for_retrain'])
+if not r['ready_to_retrain']:
+    print('Not enough feedback yet — skipping retrain')
+    sys.exit(0)
+import urllib.request as req
+request = req.Request(
+    'http://localhost:8080/v1/calibrator/retrain',
+    method='POST',
+    headers={'X-API-Key': '${{ secrets.F1DI_API_KEY }}'},
+)
+result = json.loads(req.urlopen(request).read())
+ece = result.get('ece')
+regressed = result.get('regression_detected')
+print('Retrain result — ECE:', ece, '| regression blocked:', regressed)
+if regressed:
+    print('WARNING: Calibrator regression detected — live model unchanged')
+    sys.exit(1)
+print('Calibrator retrained successfully')
+\""
+
+      - name: Evaluate shadow challenger (if any)
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
+            "curl -sf 'http://localhost:8080/v1/shadow/evaluate?challenger_version=challenger' \
+              | python3 -c \"import sys,json; r=json.load(sys.stdin); \
+                print('Shadow evaluation:', json.dumps(r, indent=2)); \
+                promote=r.get('promote'); \
+                print('PROMOTE RECOMMENDATION:', promote)\"" || true
+
+      - name: Run retrieval quality eval
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
+            "curl -sf 'http://localhost:8080/v1/eval/retrieval?save=true' \
+              | python3 -c \"import sys,json; r=json.load(sys.stdin); \
+                p1=r.get('precision_at_1',0); mrr=r.get('mrr',0); ndcg=r.get('ndcg_at_5',0); \
+                print(f'Retrieval — P@1={p1:.3f}  MRR={mrr:.3f}  NDCG@5={ndcg:.3f}  n={r.get(\\\"n_queries\\\",0)}')\"" || true
+
+      - name: Refit per-circuit thresholds from telemetry
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
+            "curl -sf -X POST \
+              -H 'X-API-Key: ${{ secrets.F1DI_API_KEY }}' \
+              'http://localhost:8080/v1/calibrator/fit-thresholds?min_rows=10' \
+              | python3 -c \"import sys,json; r=json.load(sys.stdin); \
+                print('Threshold refit — circuits updated:', r.get('n_fitted',0), \
+                      '| skipped:', len(r.get('skipped',[])))\"" || true
+
+      - name: Record quality snapshot
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
+            "curl -sf -X POST \
+              'http://localhost:8080/v1/quality/record?trigger=flywheel' \
+              | python3 -c \"import sys,json; r=json.load(sys.stdin); \
+                cal=r.get('calibration',{}); ret=r.get('retrieval',{}); \
+                print('Quality snapshot recorded:', r.get('recorded_at','?')[:19]); \
+                print('  ECE:', cal.get('ece'), '| Brier:', cal.get('brier_score')); \
+                print('  MRR:', ret.get('mrr'), '| P@1:', ret.get('precision_at_1'))\"" || true

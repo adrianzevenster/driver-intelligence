@@ -46,14 +46,14 @@ class ConfidenceCalibrator:
     def __init__(self, model: IsotonicRegression | None = None) -> None:
         self._model = model
 
-    def calibrate(self, findings: list[AgentFinding]) -> tuple[float, float, dict[str, float]]:
+    def calibrate(self, findings: list[AgentFinding]) -> tuple[float, float, dict[str, float], float]:
         raw, features = compute_raw_score(findings)
         if self._model is not None:
             confidence = float(self._model.predict([raw])[0])
         else:
             confidence = raw
         confidence = max(0.0, min(1.0, confidence))
-        return confidence, 1.0 - confidence, features
+        return confidence, 1.0 - confidence, features, raw
 
     @classmethod
     def fit(cls, X: list[float], y: list[float]) -> ConfidenceCalibrator:

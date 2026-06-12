@@ -49,13 +49,13 @@ class InferenceOrchestrator:
 
         try:
             from f1di.observability.drift import features_as_dict, get_tracker
-            get_tracker().update(features_as_dict(features))
+            get_tracker().update(features_as_dict(features), track_id=window.track_id)
         except Exception:
             pass
 
         findings = [agent.analyze(window, features, self.retriever) for agent in self.agents]
         highest = max(findings, key=lambda f: RISK_WEIGHT[f.risk])
-        confidence, uncertainty, calibration_features = self.calibrator.calibrate(findings)
+        confidence, uncertainty, calibration_features, raw_score = self.calibrator.calibrate(findings)
 
         recommendation = self._rules_recommendation(highest.risk, findings, calibration_features)
         if settings.llm_backend != "rules" and not settings.deterministic:
@@ -84,6 +84,7 @@ class InferenceOrchestrator:
             recommendation=recommendation,
             confidence=confidence,
             uncertainty=uncertainty,
+            raw_score=raw_score,
             supporting_factors=supporting,
             evidence=evidence[:5],
             findings=findings,

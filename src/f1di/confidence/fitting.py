@@ -6,7 +6,6 @@ from f1di.agents.battery import BatteryAgent
 from f1di.agents.telemetry import TelemetryAnalysisAgent
 from f1di.agents.tire import TireStrategyAgent
 from f1di.agents.weather import WeatherAgent
-from f1di.agents.thresholds import get as get_thresholds
 from f1di.confidence.calibration import ConfidenceCalibrator, compute_raw_score
 from f1di.domain.schemas import TelemetryWindow
 from f1di.features.extractor import RaceFeatures, extract_features
@@ -15,9 +14,23 @@ from f1di.simulator.generator import DriverProfile, IncidentPlan, SyntheticRaceS
 
 _AGENTS = [TelemetryAnalysisAgent(), TireStrategyAgent(), WeatherAgent(), BatteryAgent()]
 
+_WEAR_CLIFF = 0.82
+_WEAR_ALERT = 0.65
+_GRIP_LOSS = 0.60
+_BRAKE_THERMAL = 750.0
+_RAIN_CLIFF = 0.42
+_SOC_CRITICAL = 0.18
 
-def _ground_truth_label(window: TelemetryWindow, features: RaceFeatures) -> float:
-    t = get_thresholds(window.track_id)
+
+def _incident_kind_for_window(window: TelemetryWindow, incidents: list[IncidentPlan], lookahead_laps: int = 4) -> str | None:
+    current_lap = window.latest.lap
+    for inc in incidents:
+        if 0 <= inc.lap - current_lap <= lookahead_laps:
+            return inc.kind
+    return None
+
+
+def _ground_truth_label(window: TelemetryWindow, features: RaceFeatures, incident_kind: str | None = None) -> float:
     latest = window.latest
     max_wear = max(
         latest.tire_wear_fl,
@@ -25,26 +38,28 @@ def _ground_truth_label(window: TelemetryWindow, features: RaceFeatures) -> floa
         (latest.tire_wear_rl + latest.tire_wear_rr) / 2,
     )
 
-    if any(s.lockup_event for s in window.samples) or latest.brake_temp_fl_c > t.brake_temp_critical_c:
+    if incident_kind == "lockup" or any(s.lockup_event for s in window.samples):
+        return 0.92
+    if latest.brake_temp_fl_c > _BRAKE_THERMAL:
         return 0.90
-    if max_wear > t.wear_critical and latest.grip_estimate < 0.62:
+    if max_wear > _WEAR_CLIFF and latest.grip_estimate < _GRIP_LOSS:
         return 0.85
-    if max_wear > t.wear_warning:
+    if max_wear > _WEAR_ALERT:
         return 0.70
-    if latest.rain_intensity >= t.rain_warning:
+    if latest.rain_intensity >= _RAIN_CLIFF:
         return 0.65
 
     lap_span = latest.lap - window.samples[0].lap
     spl = len(window.samples) / lap_span if lap_span > 0 else 1.0
     projected_fl_4laps = features.fl_wear + features.fl_wear_slope * spl * 4
     projected_fr_4laps = features.fr_wear + features.fr_wear_slope * spl * 4
-    if max(projected_fl_4laps, projected_fr_4laps) > t.wear_critical * 0.97 and features.fl_wear_slope > 0.0 and max_wear > t.wear_warning * 0.85:
+    if max(projected_fl_4laps, projected_fr_4laps) > _WEAR_CLIFF * 0.97 and features.fl_wear_slope > 0.0 and max_wear > _WEAR_ALERT * 0.85:
         return 0.65
 
-    if latest.battery_soc < t.battery_soc_warning and features.battery_soc_slope < -0.01:
+    if latest.battery_soc < _SOC_CRITICAL and features.battery_soc_slope < -0.01:
         return 0.55
 
-    if max_wear > t.wear_warning * 0.73:
+    if max_wear > _WEAR_ALERT * 0.73:
         return 0.40
 
     return 0.20
@@ -90,6 +105,7 @@ def generate_calibration_dataset(
     n_races: int = 30,
     seed: int = 42,
     knowledge_path: Path = Path("data/knowledge"),
+    incident_dataset_path: Path = Path("data/incidents/labeled_dataset.jsonl"),
 ) -> tuple[list[float], list[float]]:
     sim = SyntheticRaceSimulator(seed=seed)
     retriever = HybridMemoryRetriever()
@@ -112,7 +128,20 @@ def generate_calibration_dataset(
             findings = [agent.analyze(w, features, retriever) for agent in _AGENTS]
             raw, _cal_features = compute_raw_score(findings)
             X.append(raw)
-            y.append(_ground_truth_label(w, features))
+            incident_kind = _incident_kind_for_window(w, sc["incidents"])
+            y.append(_ground_truth_label(w, features, incident_kind))
+
+    # Augment with real incident labels derived from FastF1 historical data.
+    # These are weighted ×2 (vs ×3 for human feedback) since they come from
+    # a proxy feature mapping rather than direct calibration score space.
+    try:
+        from f1di.data.incident_dataset import load_dataset
+        X_inc, y_inc = load_dataset(incident_dataset_path)
+        if X_inc:
+            X += X_inc * 2
+            y += y_inc * 2
+    except Exception:
+        pass
 
     return X, y
 

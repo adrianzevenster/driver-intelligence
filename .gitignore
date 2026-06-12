@@ -32,5 +32,10 @@ data/scenarios/real_replay_report.json
 data/calibration/*.pkl
 data/fastf1_cache/
 
+# Database files
+*.db
+*.db-shm
+*.db-wal
+
 # Misc
 .codex

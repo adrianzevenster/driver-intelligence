@@ -101,6 +101,7 @@ def save_insight(
         latency_ms=insight.latency_ms,
         shadow=shadow,
         challenger_version=challenger_version,
+        raw_score=insight.raw_score,
     )
     session.add(record)
     return record
@@ -373,3 +374,105 @@ def list_ingestion_runs(session: Session, source: str | None = None) -> list[Ing
     if source:
         stmt = stmt.where(IngestionRecord.source == source)
     return list(session.scalars(stmt))
+
+
+def shadow_evaluate(
+    session: Session,
+    challenger_version: str,
+    *,
+    limit: int = 500,
+    min_n: int = 30,
+) -> dict[str, Any]:
+    """Statistical comparison of shadow challenger vs production.
+
+    Returns a promotion recommendation based on Mann-Whitney U test on
+    confidence distributions and a risk-escalation rate comparison.
+    """
+    shadow_stmt = (
+        select(InsightRecord)
+        .where(InsightRecord.shadow.is_(True))
+        .where(InsightRecord.challenger_version == challenger_version)
+        .order_by(InsightRecord.created_at.desc())
+        .limit(limit)
+    )
+    prod_stmt = (
+        select(InsightRecord)
+        .where(InsightRecord.shadow.is_(False))
+        .order_by(InsightRecord.created_at.desc())
+        .limit(limit)
+    )
+    shadow_records = list(session.scalars(shadow_stmt))
+    prod_records = list(session.scalars(prod_stmt))
+
+    n_shadow = len(shadow_records)
+    n_prod = len(prod_records)
+
+    if n_shadow < min_n or n_prod < min_n:
+        return {
+            "challenger_version": challenger_version,
+            "recommendation": "insufficient_data",
+            "n_shadow": n_shadow,
+            "n_prod": n_prod,
+            "min_n": min_n,
+            "promote": False,
+        }
+
+    shadow_conf = [r.confidence for r in shadow_records]
+    prod_conf = [r.confidence for r in prod_records]
+
+    u_stat, p_value = _mann_whitney_u(shadow_conf, prod_conf)
+    n1, n2 = len(shadow_conf), len(prod_conf)
+    rbc = 1.0 - (2 * u_stat) / (n1 * n2)
+
+    risk_weights = {"CRITICAL": 3, "WARNING": 2, "WATCH": 1, "INFO": 0}
+
+    def _escalation_rate(records):
+        total = len(records)
+        weighted = sum(risk_weights.get(r.risk, 0) for r in records)
+        return weighted / (total * 3) if total > 0 else 0.0
+
+    shadow_escalation = _escalation_rate(shadow_records)
+    prod_escalation = _escalation_rate(prod_records)
+
+    promote = (
+        p_value < 0.05
+        and rbc > 0.05
+        and shadow_escalation <= prod_escalation * 1.10
+    )
+
+    return {
+        "challenger_version": challenger_version,
+        "n_shadow": n_shadow,
+        "n_prod": n_prod,
+        "shadow_mean_confidence": round(sum(shadow_conf) / n_shadow, 4),
+        "prod_mean_confidence": round(sum(prod_conf) / n_prod, 4),
+        "u_statistic": round(u_stat, 1),
+        "p_value": round(p_value, 4),
+        "rank_biserial_correlation": round(rbc, 4),
+        "shadow_escalation_rate": round(shadow_escalation, 4),
+        "prod_escalation_rate": round(prod_escalation, 4),
+        "promote": promote,
+        "recommendation": (
+            "promote_challenger" if promote
+            else "insufficient_effect" if p_value >= 0.05
+            else "significant_but_escalates_risk" if shadow_escalation > prod_escalation * 1.10
+            else "no_improvement"
+        ),
+    }
+
+
+def _mann_whitney_u(x: list[float], y: list[float]) -> tuple[float, float]:
+    """Compute Mann-Whitney U statistic and approximate p-value (normal approximation)."""
+    import math
+    n1, n2 = len(x), len(y)
+    u = sum(1 for xi in x for yj in y if xi > yj) + 0.5 * sum(1 for xi in x for yj in y if xi == yj)
+    mu = n1 * n2 / 2
+    sigma = math.sqrt(n1 * n2 * (n1 + n2 + 1) / 12)
+    if sigma < 1e-9:
+        return u, 1.0
+    z = (u - mu) / sigma
+    t = 1.0 / (1.0 + 0.2316419 * abs(z))
+    poly = t * (0.319381530 + t * (-0.356563782 + t * (1.781477937 + t * (-1.821255978 + t * 1.330274429))))
+    p_one_tail = (1.0 / math.sqrt(2 * math.pi)) * math.exp(-0.5 * z * z) * poly
+    p_value = p_one_tail if z >= 0 else 1.0 - p_one_tail
+    return u, max(0.0, min(1.0, p_value))
