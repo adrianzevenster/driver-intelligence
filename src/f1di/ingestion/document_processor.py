@@ -19,8 +19,8 @@ class KnowledgeDocument:
 
 
 def _clean(text: str) -> str:
-    text = re.sub(r"\s+", " ", text)
     text = re.sub(r"-\n(\w)", r"\1", text)
+    text = re.sub(r"\s+", " ", text)
     return text.strip()
 
 
@@ -137,5 +137,7 @@ class DocumentProcessor:
                 end = start + boundary + 1
             if chunk.strip():
                 chunks.append(chunk.strip())
+            if end >= len(text):
+                break
             start = end - overlap
         return chunks
