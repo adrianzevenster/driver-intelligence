@@ -2441,9 +2441,19 @@ function ModelLabPanel({ version }) {
 
   async function runRetrievalEval() {
     setRunningRetrieval(true);
-    const r = await fetch('/api/v1/eval/retrieval?save=true').catch(() => null);
-    if (r?.ok) setRetrievalData(await r.json());
-    setRunningRetrieval(false);
+    setError('');
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 90000);
+    try {
+      const r = await fetch('/api/v1/eval/retrieval?save=true', { signal: ctrl.signal });
+      if (r.ok) setRetrievalData(await r.json());
+      else setError(`Eval failed: ${r.status} ${r.statusText}`);
+    } catch (e) {
+      setError(e.name === 'AbortError' ? 'Eval timed out (90s) — retrieval may be slow on first run' : `Eval error: ${e.message}`);
+    } finally {
+      clearTimeout(timer);
+      setRunningRetrieval(false);
+    }
   }
 
   const canPromote = evalData?.promote === true && !promoteResult?.promoted;
@@ -2597,6 +2607,7 @@ function ModelLabPanel({ version }) {
               {runningRetrieval ? 'Running…' : 'Run eval'}
             </button>
           </div>
+          {error && <p style={{ fontSize: 11, color: '#ef4444', margin: '0 0 8px' }}>{error}</p>}
           {retrievalData ? (
             <div>
               <div className="feat-table" style={{ marginBottom: 10 }}>
