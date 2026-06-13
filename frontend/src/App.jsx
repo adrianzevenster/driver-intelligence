@@ -2621,7 +2621,7 @@ function ModelLabPanel({ version }) {
                 })}
               </div>
               {retrievalData.per_topic && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 10 }}>
                   {Object.entries(retrievalData.per_topic).map(([topic, m]) => {
                     const mrr = m.mrr ?? 0;
                     const c = mrr >= 0.7 ? '#22c55e' : mrr >= 0.45 ? '#f59e0b' : '#ef4444';
@@ -2632,6 +2632,47 @@ function ModelLabPanel({ version }) {
                       </span>
                     );
                   })}
+                </div>
+              )}
+              {retrievalData.query_results?.length > 0 && (
+                <div style={{ marginTop: 8 }}>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Per-query results</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {retrievalData.query_results.map((qr, i) => {
+                      const hit = qr['p@1'] >= 1.0;
+                      const partial = !hit && qr['mrr'] > 0;
+                      const borderColor = hit ? '#22c55e' : partial ? '#f59e0b' : '#ef4444';
+                      const relevantSet = new Set(qr.relevant);
+                      return (
+                        <div key={i} style={{ fontSize: 11, padding: '7px 9px', borderRadius: 6,
+                          background: 'var(--card-bg)', border: `1px solid ${borderColor}44` }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                            <span style={{ color: 'var(--fg)', fontStyle: 'italic' }}>"{qr.query}"</span>
+                            <span style={{ color: borderColor, fontFamily: 'monospace', marginLeft: 8, whiteSpace: 'nowrap' }}>
+                              P@1 {(qr['p@1'] * 100).toFixed(0)}%  MRR {(qr['mrr'] * 100).toFixed(0)}%
+                            </span>
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                            {qr.retrieved_top3.map((docId, rank) => {
+                              const isRelevant = relevantSet.has(docId);
+                              return (
+                                <div key={rank} style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}>
+                                  <span style={{ color: 'var(--muted)', minWidth: 14 }}>#{rank + 1}</span>
+                                  <span style={{ fontFamily: 'monospace', color: isRelevant ? '#22c55e' : 'var(--muted)',
+                                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {isRelevant ? '✓ ' : '✗ '}{docId}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                            {qr.retrieved_top3.length === 0 && (
+                              <span style={{ color: '#ef4444' }}>no results returned</span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
             </div>

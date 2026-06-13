@@ -63,30 +63,25 @@ jobs:
 
       - name: Check feedback readiness and retrain calibrator
         run: |
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+          STATS=$(ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
             ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
-            "python3 -c \"
-import urllib.request, json, sys
-r = json.loads(urllib.request.urlopen('http://localhost:8080/v1/feedback/stats').read())
-print('Feedback pairs:', r['total'], '/ min:', r['min_for_retrain'])
-if not r['ready_to_retrain']:
-    print('Not enough feedback yet — skipping retrain')
-    sys.exit(0)
-import urllib.request as req
-request = req.Request(
-    'http://localhost:8080/v1/calibrator/retrain',
-    method='POST',
-    headers={'X-API-Key': '${{ secrets.F1DI_API_KEY }}'},
-)
-result = json.loads(req.urlopen(request).read())
-ece = result.get('ece')
-regressed = result.get('regression_detected')
-print('Retrain result — ECE:', ece, '| regression blocked:', regressed)
-if regressed:
-    print('WARNING: Calibrator regression detected — live model unchanged')
-    sys.exit(1)
-print('Calibrator retrained successfully')
-\""
+            "curl -sf 'http://localhost:8080/v1/feedback/stats'")
+          echo "$STATS" | python3 -c "import sys,json; r=json.load(sys.stdin); print('Feedback pairs:', r['total'], '/ min:', r['min_for_retrain'])"
+          READY=$(echo "$STATS" | python3 -c "import sys,json; r=json.load(sys.stdin); print('yes' if r.get('ready_to_retrain') else 'no')")
+          if [ "$READY" != "yes" ]; then
+            echo "Not enough feedback yet — skipping retrain"
+            exit 0
+          fi
+          RESULT=$(ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
+            "curl -sf -X POST -H 'X-API-Key: ${{ secrets.F1DI_API_KEY }}' 'http://localhost:8080/v1/calibrator/retrain'")
+          echo "$RESULT" | python3 -c "import sys,json; r=json.load(sys.stdin); print('Retrain result — ECE:', r.get('ece'), '| regression blocked:', r.get('regression_detected'))"
+          REGRESSED=$(echo "$RESULT" | python3 -c "import sys,json; r=json.load(sys.stdin); print('yes' if r.get('regression_detected') else 'no')")
+          if [ "$REGRESSED" = "yes" ]; then
+            echo "WARNING: Calibrator regression detected — live model unchanged"
+            exit 1
+          fi
+          echo "Calibrator retrained successfully"
 
       - name: Evaluate shadow challenger (if any)
         run: |
