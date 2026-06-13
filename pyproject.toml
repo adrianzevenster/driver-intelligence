@@ -59,6 +59,7 @@ all = [
 pythonpath = ["src"]
 testpaths = ["tests/unit"]
 addopts = "-q"
+norecursedirs = [".venv", ".uv-cache", ".git", "__pycache__", "frontend", "*.egg-info"]
 
 [tool.ruff]
 line-length = 100

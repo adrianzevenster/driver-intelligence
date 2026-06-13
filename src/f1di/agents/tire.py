@@ -45,7 +45,7 @@ class TireStrategyAgent(RaceAgent):
                 features={"wear_pressure": wear_pressure, "grip": features.grip_estimate, "axle_imbalance": features.axle_imbalance_fl_rl},
             )
 
-        if wear_pressure > t.wear_warning:
+        if wear_pressure > t.wear_warning and features.grip_estimate < 0.72:
             conf = 0.74
             conf += 0.04 if features.fl_wear_slope > 0.002 else 0.0
             conf += 0.03 if features.fr_wear_slope > 0.002 else 0.0
