@@ -13,6 +13,64 @@ _QUALITY_PATH = Path("data/calibration/quality.json")
 _HISTORY_PATH = Path("data/calibration/model_history.json")
 
 
+def per_agent_accuracy() -> dict[str, dict]:
+    """Per-agent precision computed from labeled WARNING/CRITICAL insights in the DB.
+
+    For each agent, 'precision' is the fraction of WARNING/CRITICAL findings
+    that were confirmed correct by human feedback or outcome labels.
+    Returns an empty dict when no labeled data exists yet.
+    """
+    import json as _json
+    try:
+        from sqlalchemy import select
+        from f1di.storage.database import db_session
+        from f1di.storage.models import FeedbackRecord, InsightRecord
+    except Exception:
+        return {}
+
+    agent_stats: dict[str, dict[str, int]] = {}
+    try:
+        with db_session() as session:
+            stmt = (
+                select(FeedbackRecord, InsightRecord)
+                .outerjoin(InsightRecord, FeedbackRecord.insight_id == InsightRecord.insight_id)
+                .where(InsightRecord.risk.in_(["WARNING", "CRITICAL"]))
+            )
+            for fb, ins in session.execute(stmt).all():
+                if ins is None:
+                    continue
+                if fb.correct is not None:
+                    is_correct = fb.correct
+                elif fb.rating is not None:
+                    is_correct = fb.rating >= 4
+                else:
+                    continue
+                try:
+                    findings = _json.loads(ins.findings_json or "[]")
+                except Exception:
+                    continue
+                for finding in findings:
+                    if finding.get("risk") not in ("WARNING", "CRITICAL"):
+                        continue
+                    agent = finding.get("agent", "unknown")
+                    stats = agent_stats.setdefault(agent, {"n_correct": 0, "n_total": 0})
+                    stats["n_total"] += 1
+                    if is_correct:
+                        stats["n_correct"] += 1
+    except Exception as exc:
+        logger.warning("per_agent_accuracy query failed: %s", exc)
+        return {}
+
+    return {
+        agent: {
+            "precision": round(s["n_correct"] / s["n_total"], 4) if s["n_total"] > 0 else None,
+            "n_correct": s["n_correct"],
+            "n_total": s["n_total"],
+        }
+        for agent, s in sorted(agent_stats.items())
+    }
+
+
 def _feedback_pairs() -> list[tuple[float, float]]:
     from sqlalchemy import select
     from f1di.storage.database import db_session
@@ -134,6 +192,7 @@ def retrain(
             "n_feedback": len(pairs),
             "feedback_weight": 3,
         },
+        "per_agent_accuracy": per_agent_accuracy(),
     }
     quality_path.write_text(json.dumps(quality, indent=2))
 

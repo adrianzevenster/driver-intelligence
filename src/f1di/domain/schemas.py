@@ -86,6 +86,7 @@ class TelemetryWindow(BaseModel):
     driver_id: str
     track_id: str
     samples: list[TelemetrySample]
+    race_total_laps: int = 57  # caller provides; 57 is the F1 calendar average
 
     @computed_field
     @property
@@ -110,6 +111,10 @@ class AgentFinding(BaseModel):
     confidence: float = Field(ge=0, le=1)
     evidence: list[RetrievedEvidence] = Field(default_factory=list)
     features: dict[str, float | str | bool] = Field(default_factory=dict)
+    class_probabilities: dict[str, float] = Field(default_factory=dict)
+    clf_source: str | None = None
+    ood_score: float | None = None
+    ood_flagged: bool = False
 
 
 class PredictionPoint(BaseModel):

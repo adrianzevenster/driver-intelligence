@@ -18,6 +18,29 @@ from f1di.rag.store import HybridMemoryRetriever, load_markdown_knowledge
 RISK_ORDER = [RiskLevel.INFO, RiskLevel.WATCH, RiskLevel.WARNING, RiskLevel.CRITICAL]
 
 _CALIBRATOR_PATH = Path("data/calibration/isotonic.pkl")
+_META_PATH = Path("data/calibration/meta_learner.pkl")
+
+_meta_cache: object = None
+_meta_mtime: float = 0.0
+
+
+def _get_meta_learner():
+    global _meta_cache, _meta_mtime
+    if not _META_PATH.exists():
+        return None
+    try:
+        mtime = _META_PATH.stat().st_mtime
+    except OSError:
+        return None
+    if mtime != _meta_mtime:
+        try:
+            from f1di.inference.meta_learner import MetaLearner
+            _meta_cache = MetaLearner.load(_META_PATH)
+            _meta_mtime = mtime
+        except Exception:
+            _meta_cache = None
+            _meta_mtime = mtime
+    return _meta_cache
 
 
 class InferenceOrchestrator:
@@ -56,6 +79,12 @@ class InferenceOrchestrator:
         findings = [agent.analyze(window, features, self.retriever) for agent in self.agents]
         highest = max(findings, key=lambda f: RISK_WEIGHT[f.risk])
         confidence, uncertainty, calibration_features, raw_score = self.calibrator.calibrate(findings)
+
+        meta = _get_meta_learner()
+        if meta is not None and meta.n_real >= 20:
+            meta_conf = meta.predict_confidence(findings, confidence)
+            confidence = round(0.6 * meta_conf + 0.4 * confidence, 4)
+            uncertainty = round(max(0.0, 1.0 - confidence), 4)
 
         recommendation = self._rules_recommendation(highest.risk, findings, calibration_features)
         if settings.llm_backend != "rules" and not settings.deterministic:

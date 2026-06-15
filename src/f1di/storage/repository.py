@@ -84,6 +84,9 @@ def save_insight(
                     "risk": f.risk.value,
                     "confidence": f.confidence,
                     "summary": f.summary,
+                    "features": {
+                        k: v for k, v in f.features.items() if isinstance(v, (int, float))
+                    },
                 }
                 for f in insight.findings
             ]

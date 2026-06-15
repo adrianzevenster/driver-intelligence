@@ -9,7 +9,7 @@ from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
-from fastapi import Depends, FastAPI, File, HTTPException, Request, Response, Security, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, Request, Response, Security, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.security.api_key import APIKeyHeader
@@ -232,6 +232,71 @@ def app_version() -> dict[str, str]:
     }
 
 
+class SessionCooldown:
+    """Suppresses duplicate WARNING/CRITICAL alerts for the same session+driver+risk
+    within a configurable lap window to prevent recommendation fatigue.
+
+    State is in-process only — resets on restart, which is acceptable since each
+    race weekend is a fresh session.  Not thread-safe across multiple uvicorn workers;
+    single-worker deployments (the current default) are unaffected.
+    """
+
+    def __init__(self, cooldown_laps: int = 3) -> None:
+        self._cooldown_laps = cooldown_laps
+        # (session_id, driver_id, risk_value) -> last lap where that risk fired
+        self._last_fired: dict[tuple[str, str, str], int] = {}
+
+    def apply(self, insight: DriverInsight, current_lap: int) -> DriverInsight:
+        """Return the insight unchanged, or with policy=SUPPRESS if within cooldown."""
+        if self._cooldown_laps <= 0:
+            return insight
+        if insight.risk.value not in ("WARNING", "CRITICAL"):
+            return insight
+        if insight.policy == "SUPPRESS":
+            return insight
+
+        key = (insight.session_id, insight.driver_id, insight.risk.value)
+        last = self._last_fired.get(key)
+        if last is not None and current_lap - last < self._cooldown_laps:
+            logger.debug(
+                "cooldown: suppressing %s %s risk=%s (last_lap=%d current=%d)",
+                insight.driver_id, insight.session_id, insight.risk.value, last, current_lap,
+            )
+            return insight.model_copy(update={"policy": "SUPPRESS"})
+
+        self._last_fired[key] = current_lap
+        return insight
+
+
+_cooldown = SessionCooldown(settings.alert_cooldown_laps)
+
+
+def _run_shadow_v2(production_insight: DriverInsight, window: TelemetryWindow) -> None:
+    """Re-score the production insight using the v2 challenger weights and save as shadow."""
+    try:
+        import uuid as _uuid
+        from f1di.confidence.calibration import ChallengerCalibrator
+        from f1di.storage.database import db_session
+        from f1di.storage.repository import save_insight
+
+        challenger = ChallengerCalibrator()
+        v2_conf, v2_unc, _, v2_raw = challenger.calibrate(production_insight.findings)
+        shadow = production_insight.model_copy(update={
+            "insight_id": str(_uuid.uuid4()),
+            "confidence": v2_conf,
+            "uncertainty": v2_unc,
+            "raw_score": v2_raw,
+        })
+        with db_session() as session:
+            save_insight(session, shadow, window, shadow=True, challenger_version="weights-v2")
+        logger.debug(
+            "Shadow v2 saved for %s: conf %.3f→%.3f",
+            production_insight.insight_id, production_insight.confidence, v2_conf,
+        )
+    except Exception as exc:
+        logger.debug("Shadow v2 pass failed: %s", exc)
+
+
 def _run_judge_background(insight_id: str, recommendation: str, risk: str, audience: str) -> None:
     """Score a recommendation with the LLM judge and persist the result."""
     try:
@@ -266,15 +331,26 @@ def create_insight(
     orchestrator = get_orchestrator()
     insight = orchestrator.analyze(window, audience=audience)
 
+    # Suppress duplicate alerts within the cooldown window.
+    insight = _cooldown.apply(insight, window.latest.lap)
+
     # Persist to DB (non-blocking — failure doesn't affect the response).
     _persist_insight(insight, window)
 
-    # Push notification for high-priority insights.
-    try:
-        from f1di.delivery.notifier import notify_if_configured
-        notify_if_configured(insight)
-    except Exception as exc:
-        logger.debug("Notification skipped: %s", exc)
+    # Shadow challenger: re-score with v2 weights in a background thread.
+    if settings.shadow_challenger_enabled:
+        import threading
+        threading.Thread(
+            target=_run_shadow_v2, args=(insight, window), daemon=True
+        ).start()
+
+    # Push notification only for non-suppressed high-priority insights.
+    if insight.policy != "SUPPRESS":
+        try:
+            from f1di.delivery.notifier import notify_if_configured
+            notify_if_configured(insight)
+        except Exception as exc:
+            logger.debug("Notification skipped: %s", exc)
 
     INSIGHT_LATENCY.observe(insight.latency_ms)
     INSIGHTS_TOTAL.labels(risk=insight.risk.value, policy=insight.policy, audience=audience.value).inc()
@@ -499,7 +575,7 @@ def ml_quality() -> dict[str, Any]:
 
 
 @app.post("/v1/feedback")
-def submit_feedback(req: FeedbackRequest) -> dict[str, str]:
+def submit_feedback(req: FeedbackRequest, background_tasks: BackgroundTasks) -> dict[str, str]:
     try:
         from f1di.storage.database import db_session
         from f1di.storage.repository import save_feedback
@@ -514,6 +590,8 @@ def submit_feedback(req: FeedbackRequest) -> dict[str, str]:
             comment=req.comment,
             submitted_by=req.submitted_by,
         )
+    from f1di.agents.auto_retrain import maybe_retrain_all
+    background_tasks.add_task(maybe_retrain_all)
     return {"status": "recorded", "insight_id": req.insight_id}
 
 
@@ -828,6 +906,265 @@ async def trigger_ingestion(
 
     asyncio.create_task(_pull())
     return {"status": "ingestion_triggered", "source": source, "years": year_list}
+
+
+@app.get("/v1/flywheel/status")
+def flywheel_status() -> dict:
+    """Fast health check for the data flywheel pipeline (no FastF1 network calls)."""
+    import json as _json
+    import pickle
+
+    # DB
+    db_ok = False
+    try:
+        from f1di.storage.database import check_connection
+        db_ok = bool(check_connection())
+    except Exception:
+        pass
+
+    # Isotonic calibration artifact
+    cal_path = Path("data/calibration/isotonic.pkl")
+    quality_path = Path("data/calibration/quality.json")
+    cal_exists = cal_path.exists()
+    ece: float | None = None
+    ece_ok = False
+    if quality_path.exists():
+        try:
+            q = _json.loads(quality_path.read_text())
+            raw_ece = q.get("ece")
+            if isinstance(raw_ece, (int, float)):
+                ece = round(float(raw_ece), 4)
+                ece_ok = ece <= 0.15
+        except Exception:
+            pass
+
+    # Outcome-labeled cache
+    labeled_path = Path("data/calibration/outcome_labeled.json")
+    rounds_labeled = 0
+    outcome_cache_exists = labeled_path.exists()
+    if outcome_cache_exists:
+        try:
+            rounds_labeled = len(_json.loads(labeled_path.read_text()))
+        except Exception:
+            pass
+
+    def _clf_info(pkl_path: Path) -> dict:
+        if not pkl_path.exists():
+            return {"exists": False, "accuracy": None, "brier_score": None, "n_real": None, "n_train": None, "model_version": None, "model_type": None}
+        try:
+            obj = pickle.loads(pkl_path.read_bytes())
+            return {
+                "exists": True,
+                "accuracy": round(float(obj.accuracy), 4),
+                "brier_score": round(float(obj.brier_score), 4) if hasattr(obj, "brier_score") else None,
+                "n_real": int(obj.n_real),
+                "n_train": int(obj.n_train),
+                "model_version": getattr(obj, "model_version", None),
+                "model_type": getattr(obj, "model_type", None),
+            }
+        except Exception:
+            return {"exists": True, "accuracy": None, "brier_score": None, "n_real": None, "n_train": None, "model_version": None, "model_type": None}
+
+    classifiers = {
+        "tire":      _clf_info(Path("data/calibration/tire_classifier.pkl")),
+        "battery":   _clf_info(Path("data/calibration/battery_classifier.pkl")),
+        "weather":   _clf_info(Path("data/calibration/weather_classifier.pkl")),
+        "telemetry": _clf_info(Path("data/calibration/telemetry_classifier.pkl")),
+        "meta":      _clf_info(Path("data/calibration/meta_learner.pkl")),
+    }
+    meta_active = (
+        classifiers["meta"]["exists"]
+        and classifiers["meta"]["n_real"] is not None
+        and classifiers["meta"]["n_real"] >= 20
+    )
+    classifiers["meta"]["active_in_inference"] = meta_active
+
+    ingestion_enabled = settings.ingestion_auto_enabled
+    overall_ok = db_ok and cal_exists and ece_ok and ingestion_enabled
+
+    return {
+        "overall_ok": overall_ok,
+        "ingestion_enabled": ingestion_enabled,
+        "db_ok": db_ok,
+        "calibrator_exists": cal_exists,
+        "calibrator_ece": ece,
+        "ece_ok": ece_ok,
+        "rounds_labeled": rounds_labeled,
+        "outcome_cache_exists": outcome_cache_exists,
+        "shadow_challenger_enabled": settings.shadow_challenger_enabled,
+        "alert_cooldown_laps": settings.alert_cooldown_laps,
+        "classifiers": classifiers,
+        "auto_retrain": _auto_retrain_status(),
+    }
+
+
+def _auto_retrain_status() -> dict:
+    try:
+        from f1di.agents.auto_retrain import retrain_status
+        return retrain_status()
+    except Exception:
+        return {}
+
+
+# ---------------------------------------------------------------------------
+# Classifier model management
+# ---------------------------------------------------------------------------
+
+_CLASSIFIER_AGENTS = {
+    "tire":      Path("data/calibration/tire_classifier.pkl"),
+    "battery":   Path("data/calibration/battery_classifier.pkl"),
+    "weather":   Path("data/calibration/weather_classifier.pkl"),
+    "telemetry": Path("data/calibration/telemetry_classifier.pkl"),
+}
+
+_HISTORY_PATH = Path("data/calibration/model_history.json")
+
+
+def _read_classifier_history() -> list[dict]:
+    if not _HISTORY_PATH.exists():
+        return []
+    try:
+        return [e for e in _json.loads(_HISTORY_PATH.read_text()) if "agent" in e]
+    except Exception:
+        return []
+
+
+@app.get("/v1/model/history")
+def model_history(agent: str | None = None, limit: int = 100) -> list[dict]:
+    """Return classifier fit history entries from model_history.json."""
+    entries = _read_classifier_history()
+    if agent:
+        entries = [e for e in entries if e.get("agent") == agent]
+    return entries[-limit:]
+
+
+@app.get("/v1/model/snapshots/{agent}")
+def model_snapshots(agent: str) -> list[dict]:
+    """List versioned snapshot pkls for a given agent with their stored metrics."""
+    if agent not in _CLASSIFIER_AGENTS:
+        raise HTTPException(status_code=404, detail=f"Unknown agent: {agent}")
+    cal_dir = Path("data/calibration")
+    prefix = "meta_learner_" if agent == "meta" else f"{agent}_classifier_"
+    snaps = sorted(cal_dir.glob(f"{prefix}*.pkl"), reverse=True)
+    result = []
+    for p in snaps:
+        try:
+            obj = pickle.loads(p.read_bytes())
+            result.append({
+                "path": str(p),
+                "filename": p.name,
+                "fitted_at": p.stem.split("_")[-1],
+                "accuracy": round(float(obj.accuracy), 4),
+                "brier_score": round(float(obj.brier_score), 4) if hasattr(obj, "brier_score") else None,
+                "n_real": int(obj.n_real),
+                "n_train": int(obj.n_train),
+                "model_version": getattr(obj, "model_version", None),
+                "model_type": getattr(obj, "model_type", None),
+                "classes": getattr(obj, "classes_", []),
+            })
+        except Exception:
+            result.append({"path": str(p), "filename": p.name, "error": "unreadable"})
+    return result
+
+
+@app.post("/v1/model/test")
+def model_test(body: dict) -> dict:
+    """Evaluate a snapshot pkl on a fresh synthetic test set and return metrics."""
+    agent = body.get("agent", "")
+    snapshot_path = body.get("snapshot_path", "")
+    if agent not in _CLASSIFIER_AGENTS:
+        raise HTTPException(status_code=400, detail=f"Unknown agent: {agent}")
+    p = Path(snapshot_path)
+    if not p.exists() or not p.is_relative_to(Path("data/calibration")):
+        raise HTTPException(status_code=400, detail="Invalid snapshot path")
+    try:
+        obj = pickle.loads(p.read_bytes())
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Could not load snapshot: {exc}")
+
+    # Generate a held-out synthetic test set using each classifier's generator.
+    try:
+        import numpy as np
+        from sklearn.metrics import accuracy_score
+        if agent == "tire":
+            from f1di.agents.tire_classifier import generate_synthetic
+            X_test, y_test = generate_synthetic(n=300, seed=99)
+        elif agent == "battery":
+            from f1di.agents.battery_classifier import generate_synthetic
+            X_test, y_test = generate_synthetic(n=300, seed=99)
+        elif agent == "weather":
+            from f1di.agents.weather_classifier import generate_synthetic
+            X_test, y_test = generate_synthetic(n=300, seed=99)
+        elif agent == "telemetry":
+            from f1di.agents.telemetry_classifier import generate_synthetic
+            X_test, y_test = generate_synthetic(n=300, seed=99)
+        else:
+            raise HTTPException(status_code=400, detail="No test generator for this agent")
+
+        X_s = obj._scaler.transform(X_test)
+        proba = obj._model.predict_proba(X_s)
+        preds = obj._model.predict(X_s)
+        acc = float(accuracy_score(y_test, preds))
+
+        from f1di.agents.battery_classifier import _multiclass_brier as _mb
+        brier = float(_mb(proba, y_test, obj._model.classes_))
+
+        return {
+            "agent": agent,
+            "snapshot": p.name,
+            "model_version": getattr(obj, "model_version", None),
+            "model_type": getattr(obj, "model_type", None),
+            "test_n": len(y_test),
+            "test_accuracy": round(acc, 4),
+            "test_brier": round(brier, 4),
+            "train_accuracy": round(float(obj.accuracy), 4),
+            "train_brier": round(float(obj.brier_score), 4) if hasattr(obj, "brier_score") else None,
+            "n_real": int(obj.n_real),
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Test failed: {exc}")
+
+
+@app.post("/v1/model/promote")
+def model_promote(body: dict) -> dict:
+    """Copy a versioned snapshot to the live classifier path."""
+    agent = body.get("agent", "")
+    snapshot_path = body.get("snapshot_path", "")
+    if agent not in _CLASSIFIER_AGENTS:
+        raise HTTPException(status_code=400, detail=f"Unknown agent: {agent}")
+    src = Path(snapshot_path)
+    if not src.exists() or not src.is_relative_to(Path("data/calibration")):
+        raise HTTPException(status_code=400, detail="Invalid snapshot path")
+    dst = _CLASSIFIER_AGENTS[agent]
+    try:
+        prev_accuracy: float | None = None
+        if dst.exists():
+            try:
+                prev = pickle.loads(dst.read_bytes())
+                prev_accuracy = float(prev.accuracy)
+            except Exception:
+                pass
+        import shutil
+        shutil.copy2(src, dst)
+        obj = pickle.loads(src.read_bytes())
+        logger.info(
+            "model_promote: agent=%s snapshot=%s acc=%.4f prev_acc=%s",
+            agent, src.name, obj.accuracy, prev_accuracy,
+        )
+        return {
+            "promoted": True,
+            "agent": agent,
+            "snapshot": src.name,
+            "accuracy": round(float(obj.accuracy), 4),
+            "prev_accuracy": round(prev_accuracy, 4) if prev_accuracy is not None else None,
+            "model_version": getattr(obj, "model_version", None),
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Promote failed: {exc}")
 
 
 # ---------------------------------------------------------------------------
@@ -1525,6 +1862,7 @@ def label_race_outcomes(
     year: int,
     round_num: int,
     dry_run: bool = False,
+    background_tasks: BackgroundTasks = None,
     _auth: None = Depends(_require_api_key),
 ) -> dict:
     """Label stored insights for one race by comparing against actual outcomes.
@@ -1539,6 +1877,9 @@ def label_race_outcomes(
     from f1di.data.outcome_labeler import label_race
     from dataclasses import asdict
     result = label_race(year=year, round_num=round_num, dry_run=dry_run)
+    if not dry_run and background_tasks is not None:
+        from f1di.agents.auto_retrain import maybe_retrain_all
+        background_tasks.add_task(maybe_retrain_all)
     return asdict(result)
 
 

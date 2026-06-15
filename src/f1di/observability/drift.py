@@ -17,6 +17,7 @@ _TRACKED = frozenset({
     "brake_temp_front_max", "battery_soc", "battery_soc_slope",
     "rain_intensity", "grip_estimate", "lockup_count",
     "mean_speed_kph", "axle_imbalance_fl_rl",
+    "laps_remaining", "stint_fraction", "race_phase",
 })
 
 

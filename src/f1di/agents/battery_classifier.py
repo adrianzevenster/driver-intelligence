@@ -1,0 +1,209 @@
+"""Logistic regression classifier for battery/ERS strategy risk level.
+
+Three classes: INFO (0), WATCH (1), WARNING (2).
+Same cold-start pattern as tire_classifier: synthetic rule-distilled data
+blended with real flywheel labels once ≥10 labeled examples exist.
+"""
+from __future__ import annotations
+
+import logging
+import pickle
+from pathlib import Path
+
+import numpy as np
+
+logger = logging.getLogger("f1di.agents.battery_classifier")
+
+_CLASSIFIER_PATH = Path("data/calibration/battery_classifier.pkl")
+
+FEATURE_NAMES: list[str] = [
+    "battery_soc",
+    "battery_soc_slope",
+    "mean_speed_kph",
+    "race_phase",
+    "laps_remaining",
+    "stint_fraction",
+]
+
+_LABEL_MAP: dict[int, str] = {0: "INFO", 1: "WATCH", 2: "WARNING"}
+_LABEL_INV: dict[str, int] = {v: k for k, v in _LABEL_MAP.items()}
+
+MODEL_VERSION = "lr-v1"
+MODEL_TYPE = "LogisticRegression"
+
+
+def _multiclass_brier(proba: np.ndarray, y: np.ndarray, classes: np.ndarray) -> float:
+    n, n_c = len(y), len(classes)
+    cls_idx = {int(c): i for i, c in enumerate(classes)}
+    Y_oh = np.zeros((n, n_c), dtype=np.float64)
+    for i, yi in enumerate(y):
+        Y_oh[i, cls_idx[int(yi)]] = 1.0
+    return float(np.mean(np.sum((proba - Y_oh) ** 2, axis=1)))
+
+
+def features_to_array(features) -> np.ndarray:
+    return np.array([
+        features.battery_soc,
+        features.battery_soc_slope,
+        features.mean_speed_kph,
+        features.race_phase,
+        features.laps_remaining,
+        features.stint_fraction,
+    ], dtype=np.float64)
+
+
+class BatteryClassifier:
+    def __init__(self) -> None:
+        from sklearn.linear_model import LogisticRegression
+        from sklearn.preprocessing import StandardScaler
+        self._scaler = StandardScaler()
+        self._model = LogisticRegression(C=1.0, max_iter=1000, solver="lbfgs", random_state=42)
+        self.classes_: list[str] = []
+        self.n_train: int = 0
+        self.n_real: int = 0
+        self.accuracy: float = 0.0
+        self.brier_score: float = 1.0
+        self.model_version: str = MODEL_VERSION
+        self.model_type: str = MODEL_TYPE
+
+    def fit(self, X: np.ndarray, y: np.ndarray, n_real: int = 0) -> "BatteryClassifier":
+        from sklearn.metrics import accuracy_score
+        X_s = self._scaler.fit_transform(X)
+        self._model.fit(X_s, y)
+        self.classes_ = [_LABEL_MAP[int(c)] for c in self._model.classes_]
+        self.n_train = int(len(y))
+        self.n_real = n_real
+        proba = self._model.predict_proba(X_s)
+        self.accuracy = float(accuracy_score(y, self._model.predict(X_s)))
+        self.brier_score = float(_multiclass_brier(proba, y, self._model.classes_))
+        logger.info("BatteryClassifier fitted: n=%d n_real=%d acc=%.3f brier=%.4f", self.n_train, self.n_real, self.accuracy, self.brier_score)
+        return self
+
+    def ood_score(self, features) -> float:
+        x = features_to_array(features)
+        z = np.abs((x - self._scaler.mean_) / np.maximum(self._scaler.scale_, 1e-8))
+        return float(z.max())
+
+    def predict(self, features) -> tuple[str, float, np.ndarray]:
+        x = features_to_array(features).reshape(1, -1)
+        x_s = self._scaler.transform(x)
+        proba = self._model.predict_proba(x_s)[0]
+        idx = int(np.argmax(proba))
+        return _LABEL_MAP[idx], float(proba[idx]), proba
+
+    def save(self, path: Path = _CLASSIFIER_PATH) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(pickle.dumps(self))
+
+    @staticmethod
+    def load(path: Path = _CLASSIFIER_PATH) -> "BatteryClassifier":
+        return pickle.loads(path.read_bytes())
+
+
+def _synthetic_label(soc: float, slope: float, speed: float) -> int:
+    from f1di.agents.thresholds import CircuitThresholds
+    t = CircuitThresholds()
+    if soc < t.battery_soc_warning and slope < -0.01:
+        return 2  # WARNING
+    if soc > 0.72 and speed < 220:
+        return 1  # WATCH
+    return 0  # INFO
+
+
+def generate_synthetic(n: int = 600, seed: int = 42) -> tuple[np.ndarray, np.ndarray]:
+    rng = np.random.default_rng(seed)
+    X, y = [], []
+    while len(X) < n:
+        soc    = float(rng.uniform(0.05, 0.95))
+        slope  = float(rng.uniform(-0.035, 0.005))
+        speed  = float(rng.uniform(160.0, 300.0))
+        phase  = float(rng.uniform(0.0, 1.0))
+        laps_r = float(rng.uniform(0.0, 45.0))
+        stint  = float(rng.uniform(0.0, 1.3))
+        X.append([soc, slope, speed, phase, laps_r, stint])
+        y.append(_synthetic_label(soc, slope, speed))
+    return np.array(X, dtype=np.float64), np.array(y, dtype=np.int32)
+
+
+def _load_labeled_from_db() -> tuple[np.ndarray, np.ndarray]:
+    try:
+        import json as _json
+        from sqlalchemy import select
+        from f1di.storage.database import db_session
+        from f1di.storage.models import FeedbackRecord, InsightRecord
+    except Exception:
+        return np.empty((0, len(FEATURE_NAMES))), np.empty(0, dtype=np.int32)
+
+    X, y = [], []
+    try:
+        with db_session() as session:
+            rows = session.execute(
+                select(FeedbackRecord, InsightRecord)
+                .outerjoin(InsightRecord, FeedbackRecord.insight_id == InsightRecord.insight_id)
+            ).all()
+    except Exception as exc:
+        logger.warning("battery_classifier DB query failed: %s", exc)
+        return np.empty((0, len(FEATURE_NAMES))), np.empty(0, dtype=np.int32)
+
+    for fb, ins in rows:
+        if ins is None:
+            continue
+        if fb.correct is not None:
+            is_correct = bool(fb.correct)
+        elif fb.rating is not None:
+            is_correct = int(fb.rating) >= 4
+        else:
+            continue
+        try:
+            findings = _json.loads(ins.findings_json or "[]")
+        except Exception:
+            continue
+        bat = next((f for f in findings if f.get("agent") == "battery"), None)
+        if bat is None:
+            continue
+        feats = bat.get("features", {})
+        pred_label = _LABEL_INV.get(bat.get("risk", ins.risk), 0)
+        true_label = pred_label if is_correct else max(0, pred_label - 1)
+        X.append([
+            float(feats.get("battery_soc", 0.5)),
+            float(feats.get("battery_soc_slope", 0.0)),
+            float(feats.get("mean_speed_kph", 220.0)),
+            float(feats.get("race_phase", 0.5)),
+            float(feats.get("laps_remaining", 20.0)),
+            float(feats.get("stint_fraction", 0.5)),
+        ])
+        y.append(true_label)
+
+    if not X:
+        return np.empty((0, len(FEATURE_NAMES))), np.empty(0, dtype=np.int32)
+    return np.array(X, dtype=np.float64), np.array(y, dtype=np.int32)
+
+
+def train_from_labels(
+    output_path: Path = _CLASSIFIER_PATH,
+    real_oversample: int = 5,
+    synthetic_n: int = 600,
+) -> dict:
+    X_s, y_s = generate_synthetic(n=synthetic_n)
+    X_r, y_r = _load_labeled_from_db()
+    n_real = len(y_r)
+
+    if n_real >= 10:
+        X = np.vstack([X_s, np.repeat(X_r, real_oversample, axis=0)])
+        y = np.concatenate([y_s, np.repeat(y_r, real_oversample)])
+    else:
+        X, y = X_s, y_s
+
+    unique, counts = np.unique(y, return_counts=True)
+    clf = BatteryClassifier().fit(X, y, n_real=n_real)
+    from f1di.agents.classifier_utils import save_with_snapshot, record_history
+    snap = save_with_snapshot(clf, output_path)
+    record_history(clf, agent="battery", versioned_path=snap["versioned_path"], blocked=snap["blocked"], history_path=output_path.parent / "model_history.json")
+    return {
+        "n_synthetic": len(y_s), "n_real": n_real, "n_total": len(y),
+        "accuracy": round(clf.accuracy, 4), "classes": clf.classes_,
+        "class_distribution": {_LABEL_MAP[int(k)]: int(v) for k, v in zip(unique, counts)},
+        "output_path": str(output_path),
+        "snapshot_blocked": snap["blocked"],
+        "versioned_path": snap["versioned_path"],
+    }

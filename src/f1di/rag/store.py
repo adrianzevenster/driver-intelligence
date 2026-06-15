@@ -37,6 +37,11 @@ class HybridMemoryRetriever:
         self.df: dict[str, int] = {}
         self._encoder = encoder
         self._doc_embeddings: list[Any] = []
+        # Tracks the highest raw BM25 score ever seen so scores are normalised
+        # against a corpus-level maximum rather than per-query.  This preserves
+        # cross-query discrimination: a query that finds a strong match scores
+        # near 1.0 while a query whose best match is weak scores proportionally lower.
+        self._global_max_score: float = 1.0
 
     def add_documents(self, docs: Iterable[KnowledgeDocument]) -> None:
         new_docs = list(docs)
@@ -92,8 +97,12 @@ class HybridMemoryRetriever:
         if not scored:
             return []
 
-        max_score = scored[0][0]
-        normalizer = max_score if max_score > 0 else 1.0
+        # Update the running corpus-level maximum, then normalise against it.
+        # Using a global max (rather than per-query max) means that a query which
+        # finds a weak best-match will produce scores < 1.0, giving evidence_strength
+        # genuine variance across different retrieval scenarios.
+        self._global_max_score = max(self._global_max_score, scored[0][0])
+        normalizer = self._global_max_score
 
         return [
             RetrievedEvidence(

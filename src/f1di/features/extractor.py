@@ -1,9 +1,18 @@
 from __future__ import annotations
 
 import statistics
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from f1di.domain.schemas import TelemetryWindow
+
+# Per-compound typical stint length (laps) — used for stint_fraction.
+_TYPICAL_STINT_LAPS: dict[str, float] = {
+    "SOFT": 18.0,
+    "MEDIUM": 26.0,
+    "HARD": 35.0,
+    "INTERMEDIATE": 22.0,
+    "WET": 15.0,
+}
 
 
 @dataclass(frozen=True)
@@ -29,6 +38,11 @@ class RaceFeatures:
     grip_estimate: float
     lockup_count: int
     throttle_smoothness: float
+    # Race-phase context — default to mid-race neutral values so existing
+    # callers that construct RaceFeatures directly remain valid.
+    laps_remaining: float = 20.0
+    stint_fraction: float = 0.5
+    race_phase: float = 0.5   # 0.0 = first lap, 1.0 = final lap
 
 
 def slope(values: list[float]) -> float:
@@ -53,6 +67,10 @@ def extract_features(window: TelemetryWindow) -> RaceFeatures:
     throttle = [s.throttle_pct for s in samples]
     throttle_delta = [abs(b - a) for a, b in zip(throttle, throttle[1:])]
 
+    total_laps = max(1, window.race_total_laps)
+    compound = latest.compound.value
+    typical_stint = _TYPICAL_STINT_LAPS.get(compound, 24.0)
+
     return RaceFeatures(
         lap=latest.lap,
         sector=latest.sector,
@@ -75,4 +93,7 @@ def extract_features(window: TelemetryWindow) -> RaceFeatures:
         grip_estimate=latest.grip_estimate,
         lockup_count=sum(1 for s in samples if s.lockup_event),
         throttle_smoothness=1.0 / (1.0 + (statistics.fmean(throttle_delta) if throttle_delta else 0.0)),
+        laps_remaining=max(0.0, float(total_laps - latest.lap)),
+        stint_fraction=min(1.0, latest.stint_lap / typical_stint),
+        race_phase=min(1.0, latest.lap / total_laps),
     )

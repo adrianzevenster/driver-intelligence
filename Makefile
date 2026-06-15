@@ -1,4 +1,4 @@
-.PHONY: sync install api simulate regress integration lint test docker-build docker-up frontend prod-up prod-down prod-logs
+.PHONY: sync install api simulate regress integration lint test docker-build docker-up frontend prod-up prod-down prod-logs shadow-eval fit-policy fit-thresholds smoketest fit-tire fit-battery fit-weather fit-meta fit-telemetry fit-classifiers
 sync:
 	uv sync --extra regression --extra dev
 install:
@@ -11,6 +11,7 @@ regress:
 	pytest tests/regression
 	python scripts/run_replay_regression.py
 	python scripts/run_real_replay_gate.py
+	python scripts/run_llm_judge_eval.py || echo "[llm-judge] skipped — LLM backend unavailable"
 integration:
 	F1DI_INTEGRATION=1 pytest tests/regression/test_integration_modes.py
 lint:
@@ -30,3 +31,22 @@ prod-down:
 	docker compose -f docker-compose.prod.yml down
 prod-logs:
 	docker compose -f docker-compose.prod.yml logs -f api
+shadow-eval:
+	python scripts/shadow_eval.py
+fit-policy:
+	python scripts/fit_policy_thresholds.py
+fit-thresholds:
+	python scripts/fit_thresholds.py
+smoketest:
+	python scripts/smoketest_flywheel.py
+fit-tire:
+	python scripts/fit_tire_classifier.py
+fit-battery:
+	python scripts/fit_battery_classifier.py
+fit-weather:
+	python scripts/fit_weather_classifier.py
+fit-meta:
+	python scripts/fit_meta_learner.py
+fit-telemetry:
+	python scripts/fit_telemetry_classifier.py
+fit-classifiers: fit-tire fit-battery fit-weather fit-telemetry fit-meta

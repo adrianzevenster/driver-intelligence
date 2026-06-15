@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from datetime import date
+from pathlib import Path
 
 logger = logging.getLogger("f1di.ingestion.scheduler")
 
 _DEFAULT_INTERVAL_HOURS = 6
 _CURRENT_YEAR = date.today().year
+_OUTCOME_LABELED_PATH = Path("data/calibration/outcome_labeled.json")
 
 
 class IngestionScheduler:
@@ -47,16 +50,181 @@ class IngestionScheduler:
                 await asyncio.get_event_loop().run_in_executor(None, self._run_pull)
             except Exception as exc:
                 logger.error("Ingestion pull failed: %s", exc, exc_info=True)
-            cycle += 1
-            if cycle % 4 == 0:
+
+            # Outcome labeling every other cycle (~12h at default interval).
+            new_outcome_labels = 0
+            if cycle % 2 == 0:
+                try:
+                    new_outcome_labels = await asyncio.get_event_loop().run_in_executor(
+                        None, self._run_outcome_labeling
+                    )
+                except Exception as exc:
+                    logger.warning("Outcome labeling failed: %s", exc)
+
+            # Retrain calibrator + adjust agent thresholds when new outcome labels arrive.
+            if cycle % 4 == 0 or new_outcome_labels > 0:
                 try:
                     await asyncio.get_event_loop().run_in_executor(None, self._run_retrain)
                 except Exception as exc:
                     logger.warning("Calibrator retrain failed: %s", exc)
+                if new_outcome_labels > 0:
+                    try:
+                        await asyncio.get_event_loop().run_in_executor(
+                            None, self._run_threshold_adjustment
+                        )
+                    except Exception as exc:
+                        logger.warning("Threshold adjustment failed: %s", exc)
+                    try:
+                        await asyncio.get_event_loop().run_in_executor(
+                            None, self._run_fit_tire_classifier
+                        )
+                    except Exception as exc:
+                        logger.warning("Tire classifier fit failed: %s", exc)
+                    try:
+                        await asyncio.get_event_loop().run_in_executor(
+                            None, self._run_fit_battery_classifier
+                        )
+                    except Exception as exc:
+                        logger.warning("Battery classifier fit failed: %s", exc)
+                    try:
+                        await asyncio.get_event_loop().run_in_executor(
+                            None, self._run_fit_weather_classifier
+                        )
+                    except Exception as exc:
+                        logger.warning("Weather classifier fit failed: %s", exc)
+                    try:
+                        await asyncio.get_event_loop().run_in_executor(
+                            None, self._run_fit_telemetry_classifier
+                        )
+                    except Exception as exc:
+                        logger.warning("Telemetry classifier fit failed: %s", exc)
+                    try:
+                        await asyncio.get_event_loop().run_in_executor(
+                            None, self._run_fit_meta_learner
+                        )
+                    except Exception as exc:
+                        logger.warning("Meta-learner fit failed: %s", exc)
+
+            cycle += 1
             try:
                 await asyncio.wait_for(self._stop.wait(), timeout=self.interval_seconds)
             except asyncio.TimeoutError:
                 pass
+
+    def _run_outcome_labeling(self) -> int:
+        """Label stored insights against FastF1 race outcomes for past rounds.
+
+        Tracks which (year, round_num) pairs have already been processed so
+        FastF1 is not re-downloaded on every cycle.  Returns the total number
+        of new FeedbackRecord rows written (correct + incorrect).
+        """
+        labeled: set[tuple[int, int]] = set()
+        if _OUTCOME_LABELED_PATH.exists():
+            try:
+                labeled = {tuple(pair) for pair in json.loads(_OUTCOME_LABELED_PATH.read_text())}
+            except Exception:
+                pass
+
+        new_labels_total = 0
+        for year in self.years:
+            try:
+                rounds = self._available_rounds(year)
+            except Exception as exc:
+                logger.warning("outcome_label: cannot fetch rounds for %d: %s", year, exc)
+                continue
+
+            for round_num in rounds:
+                if (year, round_num) in labeled:
+                    continue
+                try:
+                    from f1di.data.outcome_labeler import label_race
+                    report = label_race(year, round_num)
+                    n_new = report.n_labeled_correct + report.n_labeled_incorrect
+                    logger.info(
+                        "outcome_label year=%d round=%d correct=%d incorrect=%d no_match=%d",
+                        year, round_num,
+                        report.n_labeled_correct, report.n_labeled_incorrect, report.n_no_match,
+                    )
+                    # Mark as done only when FastF1 loaded successfully (incidents list
+                    # is populated even for clean races; empty means the load failed).
+                    if n_new > 0 or len(report.incidents_found) > 0:
+                        labeled.add((year, round_num))
+                        new_labels_total += n_new
+                except Exception as exc:
+                    logger.warning(
+                        "outcome_label_failed year=%d round=%d: %s", year, round_num, exc
+                    )
+
+        if labeled:
+            _OUTCOME_LABELED_PATH.parent.mkdir(parents=True, exist_ok=True)
+            _OUTCOME_LABELED_PATH.write_text(json.dumps(sorted(labeled)))
+
+        return new_labels_total
+
+    @staticmethod
+    def _run_threshold_adjustment() -> None:
+        try:
+            from f1di.agents.threshold_fitter import adjust_from_labels
+            result = adjust_from_labels()
+            n = result.get("n_circuits", 0)
+            if n > 0:
+                logger.info("threshold_adjustment: %d circuit(s) updated from outcome labels", n)
+        except Exception as exc:
+            logger.warning("threshold_adjustment_failed: %s", exc)
+
+    @staticmethod
+    def _run_fit_battery_classifier() -> None:
+        try:
+            from f1di.agents.battery_classifier import train_from_labels
+            r = train_from_labels()
+            logger.info("battery_classifier_retrained: n_real=%d acc=%.3f", r.get("n_real", 0), r.get("accuracy", 0))
+        except Exception as exc:
+            logger.warning("battery_classifier_fit_failed: %s", exc)
+
+    @staticmethod
+    def _run_fit_weather_classifier() -> None:
+        try:
+            from f1di.agents.weather_classifier import train_from_labels
+            r = train_from_labels()
+            logger.info("weather_classifier_retrained: n_real=%d acc=%.3f", r.get("n_real", 0), r.get("accuracy", 0))
+        except Exception as exc:
+            logger.warning("weather_classifier_fit_failed: %s", exc)
+
+    @staticmethod
+    def _run_fit_meta_learner() -> None:
+        try:
+            from f1di.inference.meta_learner import train_from_labels
+            r = train_from_labels()
+            logger.info(
+                "meta_learner_retrained: n_real=%d acc=%.3f active=%s",
+                r.get("n_real", 0), r.get("accuracy", 0), r.get("active_in_inference"),
+            )
+        except Exception as exc:
+            logger.warning("meta_learner_fit_failed: %s", exc)
+
+    @staticmethod
+    def _run_fit_telemetry_classifier() -> None:
+        try:
+            from f1di.agents.telemetry_classifier import train_from_labels
+            r = train_from_labels()
+            logger.info(
+                "telemetry_classifier_retrained: n_real=%d acc=%.3f",
+                r.get("n_real", 0), r.get("accuracy", 0),
+            )
+        except Exception as exc:
+            logger.warning("telemetry_classifier_fit_failed: %s", exc)
+
+    @staticmethod
+    def _run_fit_tire_classifier() -> None:
+        try:
+            from f1di.agents.tire_classifier import train_from_labels
+            report = train_from_labels()
+            logger.info(
+                "tire_classifier_retrained: n_real=%d acc=%.3f",
+                report.get("n_real", 0), report.get("accuracy", 0),
+            )
+        except Exception as exc:
+            logger.warning("tire_classifier_fit_failed: %s", exc)
 
     @staticmethod
     def _run_retrain() -> None:

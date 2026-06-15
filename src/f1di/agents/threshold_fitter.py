@@ -296,3 +296,138 @@ def fit_and_save(
         "output_path": str(output_path),
         "deltas": deltas,
     }
+
+
+def adjust_from_labels(
+    output_path: Path = _DEFAULT_PATH,
+    min_labeled: int = 5,
+    target_precision: float = 0.75,
+) -> dict:
+    """Adjust per-circuit wear thresholds using outcome-labeled insights from the DB.
+
+    For each circuit where the tire_strategy agent has ≥ min_labeled labeled
+    WARNING/CRITICAL predictions:
+    - precision < target_precision - 0.10 → raise thresholds (too many false alarms)
+    - precision > target_precision + 0.15 → lower thresholds (catching real events reliably)
+    - otherwise → leave unchanged
+
+    Bayesian shrinkage toward the prior keeps circuits with sparse data stable.
+    Requires per-agent features to be stored in findings_json (repository.py v2+).
+    """
+    import json as _json
+
+    try:
+        from sqlalchemy import select
+        from f1di.storage.database import db_session
+        from f1di.storage.models import FeedbackRecord, InsightRecord
+    except Exception as exc:
+        return {"error": f"persistence not available: {exc}"}
+
+    # (track_id) -> list of (wear_pressure, is_correct)
+    circuit_data: dict[str, list[tuple[float, bool]]] = {}
+
+    try:
+        with db_session() as session:
+            stmt = (
+                select(FeedbackRecord, InsightRecord)
+                .outerjoin(InsightRecord, FeedbackRecord.insight_id == InsightRecord.insight_id)
+                .where(InsightRecord.risk.in_(["WARNING", "CRITICAL"]))
+            )
+            for fb, ins in session.execute(stmt).all():
+                if ins is None or not ins.track_id:
+                    continue
+                if fb.correct is not None:
+                    is_correct = fb.correct
+                elif fb.rating is not None:
+                    is_correct = fb.rating >= 4
+                else:
+                    continue
+
+                try:
+                    findings = _json.loads(ins.findings_json or "[]")
+                except Exception:
+                    continue
+
+                tire_finding = next(
+                    (f for f in findings
+                     if f.get("agent") == "tire_strategy"
+                     and f.get("risk") in ("WARNING", "CRITICAL")),
+                    None,
+                )
+                if tire_finding is None:
+                    continue
+
+                # wear_pressure is stored in finding features (repository.py v2+).
+                # Fall back to the insight confidence as a coarser proxy.
+                wear = tire_finding.get("features", {}).get("wear_pressure", ins.confidence)
+                circuit_data.setdefault(ins.track_id, []).append((float(wear), is_correct))
+    except Exception as exc:
+        logger.warning("adjust_from_labels db query failed: %s", exc)
+        return {"error": str(exc)}
+
+    # Load current thresholds from disk.
+    current: dict[str, CircuitThresholds] = {}
+    if output_path.exists():
+        try:
+            raw = _json.loads(output_path.read_text())
+            for k, v in raw.items():
+                fields = {f: v[f] for f in CircuitThresholds.__dataclass_fields__ if f in v}
+                current[k] = CircuitThresholds(**fields)
+        except Exception:
+            pass
+
+    adjusted: list[dict] = []
+
+    for track_id, pairs in circuit_data.items():
+        if len(pairs) < min_labeled:
+            continue
+
+        correct = sum(1 for _, c in pairs if c)
+        precision = correct / len(pairs)
+        prior = current.get(track_id, _PRIOR)
+
+        if precision < target_precision - 0.10:
+            # Too many false alarms: raise thresholds to be more conservative.
+            new_warn = min(0.82, prior.wear_warning + 0.02)
+            new_crit = min(0.90, prior.wear_critical + 0.02)
+        elif precision > target_precision + 0.15:
+            # Very precise: lower thresholds slightly to catch more true positives.
+            new_warn = max(0.55, prior.wear_warning - 0.01)
+            new_crit = max(0.65, prior.wear_critical - 0.01)
+        else:
+            continue  # precision within acceptable band, no adjustment
+
+        # Bayesian shrinkage: require ≥20 samples before fully trusting the adjustment.
+        weight = min(1.0, len(pairs) / 20)
+        adj_warn = round(weight * new_warn + (1 - weight) * prior.wear_warning, 3)
+        adj_crit = round(weight * new_crit + (1 - weight) * prior.wear_critical, 3)
+
+        updated = CircuitThresholds(
+            wear_warning=adj_warn,
+            wear_critical=adj_crit,
+            brake_temp_critical_c=prior.brake_temp_critical_c,
+            fl_degradation_pressure_critical=round(max(0.55, adj_crit - 0.05), 3),
+            fl_degradation_pressure_warning=round(max(0.45, adj_warn - 0.08), 3),
+            rain_warning=prior.rain_warning,
+            battery_soc_warning=prior.battery_soc_warning,
+            crosswind_watch=prior.crosswind_watch,
+        )
+        current[track_id] = updated
+
+        adjusted.append({
+            "track_id": track_id,
+            "n_labeled": len(pairs),
+            "precision": round(precision, 3),
+            "wear_warning": f"{prior.wear_warning} → {adj_warn}",
+            "wear_critical": f"{prior.wear_critical} → {adj_crit}",
+        })
+        logger.info(
+            "threshold_adjusted circuit=%s precision=%.2f n=%d warn=%.3f→%.3f crit=%.3f→%.3f",
+            track_id, precision, len(pairs),
+            prior.wear_warning, adj_warn, prior.wear_critical, adj_crit,
+        )
+
+    if adjusted and current:
+        save(current, output_path)
+
+    return {"adjusted": adjusted, "n_circuits": len(adjusted)}

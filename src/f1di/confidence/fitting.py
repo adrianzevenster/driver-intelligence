@@ -146,6 +146,46 @@ def generate_calibration_dataset(
     return X, y
 
 
+def generate_feature_dataset(
+    n_races: int = 30,
+    seed: int = 42,
+    knowledge_path: Path = Path("data/knowledge"),
+) -> tuple[list[dict[str, float]], list[float]]:
+    """Like generate_calibration_dataset but returns the per-window calibration feature
+    dicts instead of the composite raw score.
+
+    Each feature dict contains:
+      agent_agreement, model_confidence, evidence_strength, risk_mean, risk_max
+
+    Used by scripts/fit_weights.py to validate the hardcoded weights in compute_raw_score.
+    """
+    sim = SyntheticRaceSimulator(seed=seed)
+    retriever = HybridMemoryRetriever()
+    if knowledge_path.exists():
+        retriever.add_documents(load_markdown_knowledge(knowledge_path))
+    per_type = max(1, n_races // 5)
+    scenarios = _build_scenarios(per_type)
+
+    features_list: list[dict[str, float]] = []
+    y: list[float] = []
+    for sc in scenarios:
+        samples = sim.generate_samples(
+            session_id=f"fw-{sc['profile'].driver_id}",
+            laps=sc["laps"],
+            profile=sc["profile"],
+            incidents=sc["incidents"],
+        )
+        for w in sim.rolling_windows(samples, size=12, step=4):
+            feats = extract_features(w)
+            findings = [agent.analyze(w, feats, retriever) for agent in _AGENTS]
+            _, cal_features = compute_raw_score(findings)
+            features_list.append(cal_features)
+            incident_kind = _incident_kind_for_window(w, sc["incidents"])
+            y.append(_ground_truth_label(w, feats, incident_kind))
+
+    return features_list, y
+
+
 def calibration_ece(
     calibrator: ConfidenceCalibrator,
     n_bins: int = 5,

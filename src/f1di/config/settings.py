@@ -61,6 +61,15 @@ class Settings(BaseSettings):
     tiered_hot_seasons: int = 2   # number of most-recent seasons in hot tier
     tiered_min_hot_results: int = 2
 
+    # Shadow challenger — runs weights-v2 in parallel on every insight request.
+    # Saved with shadow=True / challenger_version="weights-v2" for shadow_evaluate().
+    shadow_challenger_enabled: bool = False
+
+    # Repeat-alert cooldown: suppress WARNING/CRITICAL repeats within this lap window
+    # per (session, driver, risk_level) to prevent recommendation fatigue.
+    # Set to 0 to disable.
+    alert_cooldown_laps: int = 3
+
     def runtime_errors(self) -> list[str]:
         errors: list[str] = []
         if self.env not in {"local", "test", "production"}:
