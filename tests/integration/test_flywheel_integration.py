@@ -12,7 +12,6 @@ import json
 import uuid
 from pathlib import Path
 
-import numpy as np
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker

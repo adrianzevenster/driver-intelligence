@@ -160,7 +160,8 @@ def test_fusion_meta_learner_not_applied_below_threshold():
     X, y = generate_synthetic(n=200)
     meta = MetaLearner().fit(X, y, n_real=5)
 
-    import tempfile, pickle
+    import pickle
+    import tempfile
     with tempfile.NamedTemporaryFile(suffix=".pkl", delete=False) as f:
         f.write(pickle.dumps(meta))
         tmp_path = Path(f.name)

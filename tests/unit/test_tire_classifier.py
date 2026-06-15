@@ -9,7 +9,6 @@ from unittest.mock import MagicMock, patch
 from f1di.agents.tire_classifier import (
     FEATURE_NAMES,
     TireClassifier,
-    _LABEL_MAP,
     _synthetic_label,
     features_to_array,
     generate_synthetic,
@@ -211,29 +210,11 @@ def test_train_from_labels_with_real_data(tmp_path):
 
 def test_tire_agent_uses_classifier_when_available(tmp_path):
     from f1di.agents.tire import TireStrategyAgent
-    from f1di.domain.schemas import Compound, TelemetrySample, TelemetryWindow
 
     X, y = generate_synthetic(n=400, seed=42)
     clf = TireClassifier().fit(X, y)
     clf_path = tmp_path / "tire_clf.pkl"
     clf.save(clf_path)
-
-    sample = TelemetrySample(
-        session_id="t", driver_id="HAM", track_id="silverstone",
-        timestamp_ms=0, lap=20, sector=1, distance_m=0.0, corner_id="T1",
-        speed_kph=200.0, acceleration_g=0.0, throttle_pct=80.0, brake_pressure_bar=0.0,
-        steering_angle_deg=3.0, yaw_rate_deg_s=1.0, slip_angle_deg=0.0,
-        wheel_speed_fl=200.0, wheel_speed_fr=200.0, wheel_speed_rl=200.0, wheel_speed_rr=200.0,
-        compound=Compound.MEDIUM, stint_lap=14,
-        tire_temp_fl_c=95.0, tire_temp_fr_c=93.0, tire_temp_rl_c=88.0, tire_temp_rr_c=86.0,
-        tire_wear_fl=0.82, tire_wear_fr=0.80, tire_wear_rl=0.65, tire_wear_rr=0.63,
-        grip_estimate=0.52, battery_soc=0.50, ers_deploy_kw=60.0, ers_regen_kw=18.0,
-        pu_thermal_state=0.4, track_temp_c=38.0, ambient_temp_c=24.0, humidity_pct=45.0,
-        wind_speed_kph=8.0, wind_direction_deg=90.0, rain_intensity=0.0, evolving_grip=0.82,
-        brake_temp_fl_c=550.0, brake_temp_fr_c=540.0, brake_temp_rl_c=380.0, brake_temp_rr_c=370.0,
-        lockup_event=False,
-    )
-    window = TelemetryWindow(session_id="t", driver_id="HAM", track_id="silverstone", samples=[sample])
 
     retriever = MagicMock()
     retriever.search.return_value = []

@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from f1di.agents.battery_classifier import train_from_labels, _LABEL_MAP
+from f1di.agents.battery_classifier import train_from_labels
 
 report = train_from_labels()
 print(f"\nBatteryClassifier — n_real={report['n_real']}  n_total={report['n_total']}  acc={report['accuracy']:.4f}")

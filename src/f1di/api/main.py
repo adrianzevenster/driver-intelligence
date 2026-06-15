@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json as _json
 import logging
+import pickle
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -1084,7 +1086,6 @@ def model_test(body: dict) -> dict:
 
     # Generate a held-out synthetic test set using each classifier's generator.
     try:
-        import numpy as np
         from sklearn.metrics import accuracy_score
         if agent == "tire":
             from f1di.agents.tire_classifier import generate_synthetic

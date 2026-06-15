@@ -3,13 +3,13 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-logger = logging.getLogger("f1di.agents.telemetry")
-
 from f1di.agents.base import RaceAgent, multi_source_evidence
 from f1di.agents import thresholds as _thresh
 from f1di.domain.schemas import AgentFinding, RiskLevel, TelemetryWindow
 from f1di.features.extractor import RaceFeatures
 from f1di.rag.store import HybridMemoryRetriever
+
+logger = logging.getLogger("f1di.agents.telemetry")
 
 _CLASSIFIER_PATH = Path("data/calibration/telemetry_classifier.pkl")
 _clf_cache: object = None

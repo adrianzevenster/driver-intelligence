@@ -719,5 +719,65 @@
     "model_path": "/tmp/pytest-of-adrian/pytest-17/test_retrain_regression_guard_1/calibration/isotonic_20260615T082943Z.pkl",
     "feedback_snapshot": "/tmp/pytest-of-adrian/pytest-17/test_retrain_regression_guard_1/calibration/feedback_snapshot_20260615T082943Z.jsonl",
     "regression_detected": false
+  },
+  {
+    "fitted_at": "2026-06-15T08:42:39Z",
+    "ece": 0.0196,
+    "brier_score": 0.0547,
+    "previous_ece": 0.0001,
+    "n_feedback": 22,
+    "model_path": "/tmp/pytest-of-adrian/pytest-20/test_retrain_regression_guard_0/calibration/isotonic_20260615T084239Z.pkl",
+    "feedback_snapshot": "/tmp/pytest-of-adrian/pytest-20/test_retrain_regression_guard_0/calibration/feedback_snapshot_20260615T084239Z.jsonl",
+    "regression_detected": true
+  },
+  {
+    "fitted_at": "2026-06-15T08:42:50Z",
+    "ece": 0.0031,
+    "brier_score": 0.054,
+    "previous_ece": 0.99,
+    "n_feedback": 22,
+    "model_path": "/tmp/pytest-of-adrian/pytest-20/test_retrain_regression_guard_1/calibration/isotonic_20260615T084250Z.pkl",
+    "feedback_snapshot": "/tmp/pytest-of-adrian/pytest-20/test_retrain_regression_guard_1/calibration/feedback_snapshot_20260615T084250Z.jsonl",
+    "regression_detected": false
+  },
+  {
+    "fitted_at": "2026-06-15T08:43:12Z",
+    "ece": 0.0196,
+    "brier_score": 0.0547,
+    "previous_ece": 0.0001,
+    "n_feedback": 22,
+    "model_path": "/tmp/pytest-of-adrian/pytest-21/test_retrain_regression_guard_0/calibration/isotonic_20260615T084312Z.pkl",
+    "feedback_snapshot": "/tmp/pytest-of-adrian/pytest-21/test_retrain_regression_guard_0/calibration/feedback_snapshot_20260615T084312Z.jsonl",
+    "regression_detected": true
+  },
+  {
+    "fitted_at": "2026-06-15T08:43:23Z",
+    "ece": 0.0031,
+    "brier_score": 0.054,
+    "previous_ece": 0.99,
+    "n_feedback": 22,
+    "model_path": "/tmp/pytest-of-adrian/pytest-21/test_retrain_regression_guard_1/calibration/isotonic_20260615T084323Z.pkl",
+    "feedback_snapshot": "/tmp/pytest-of-adrian/pytest-21/test_retrain_regression_guard_1/calibration/feedback_snapshot_20260615T084323Z.jsonl",
+    "regression_detected": false
+  },
+  {
+    "fitted_at": "2026-06-15T08:43:45Z",
+    "ece": 0.0196,
+    "brier_score": 0.0547,
+    "previous_ece": 0.0001,
+    "n_feedback": 22,
+    "model_path": "/tmp/pytest-of-adrian/pytest-22/test_retrain_regression_guard_0/calibration/isotonic_20260615T084345Z.pkl",
+    "feedback_snapshot": "/tmp/pytest-of-adrian/pytest-22/test_retrain_regression_guard_0/calibration/feedback_snapshot_20260615T084345Z.jsonl",
+    "regression_detected": true
+  },
+  {
+    "fitted_at": "2026-06-15T08:43:56Z",
+    "ece": 0.0031,
+    "brier_score": 0.054,
+    "previous_ece": 0.99,
+    "n_feedback": 22,
+    "model_path": "/tmp/pytest-of-adrian/pytest-22/test_retrain_regression_guard_1/calibration/isotonic_20260615T084356Z.pkl",
+    "feedback_snapshot": "/tmp/pytest-of-adrian/pytest-22/test_retrain_regression_guard_1/calibration/feedback_snapshot_20260615T084356Z.jsonl",
+    "regression_detected": false
   }
 ]

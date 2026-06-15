@@ -9,8 +9,6 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-import pytest
-
 from f1di.domain.schemas import TelemetrySample, TelemetryWindow
 from f1di.inference.fusion import InferenceOrchestrator
 from f1di.inference.meta_learner import MetaLearner, generate_synthetic
