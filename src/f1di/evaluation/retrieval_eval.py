@@ -141,9 +141,13 @@ def evaluate_retriever(
     """Run gold QA set against retriever; return aggregate + per-topic metrics."""
     qa = qa_set or _GOLD_QA
 
+    # Build the set of source_ids actually loaded, for availability filtering.
+    # QdrantHybridRetriever.documents returns [None]*count as a size hint —
+    # filter those out. If no real source_ids are known, skip the filter and
+    # run all queries (Qdrant knows what it has; the retriever decides).
     available_ids: set[str] = set()
     if hasattr(retriever, "documents"):
-        available_ids = {doc.source_id for doc in retriever.documents}
+        available_ids = {doc.source_id for doc in retriever.documents if doc is not None and hasattr(doc, "source_id")}
 
     p1_list, p3_list, p5_list = [], [], []
     r3_list, r5_list, mrr_list, ndcg5_list = [], [], [], []
@@ -152,13 +156,13 @@ def evaluate_retriever(
 
     for item in qa:
         relevant_all = set(item["relevant"])
-        # Skip queries whose relevant docs aren't loaded into the retriever
+        # Only filter by availability when we actually know which docs are loaded.
         relevant = relevant_all & available_ids if available_ids else relevant_all
         if not relevant:
             continue
 
         results = retriever.search(item["query"], top_k=top_k)
-        retrieved = [r.source_id for r in results]
+        retrieved = [r.source_id for r in results if r is not None]
 
         p1 = _precision_at_k(retrieved, relevant, 1)
         p3 = _precision_at_k(retrieved, relevant, 3)
