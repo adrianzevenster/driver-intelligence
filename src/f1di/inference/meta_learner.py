@@ -250,7 +250,18 @@ def train_from_labels(
     unique, counts = np.unique(y, return_counts=True)
     meta = MetaLearner().fit(X, y, n_real=n_real)
     from f1di.agents.classifier_utils import save_with_snapshot
-    snap = save_with_snapshot(meta, output_path)
+    # First time real data is added the accuracy will naturally drop vs a
+    # synthetic-only model (synthetic is overfit to its own distribution).
+    # Allow up to 5 pp regression when the live model has zero real labels.
+    import pickle as _pkl
+    _prev_n_real = 0
+    if output_path.exists():
+        try:
+            _prev_n_real = int(_pkl.loads(output_path.read_bytes()).n_real)
+        except Exception:
+            pass
+    _delta = 0.05 if _prev_n_real == 0 else 0.02
+    snap = save_with_snapshot(meta, output_path, min_accuracy_delta=_delta)
     return {
         "n_synthetic": len(y_s), "n_real": n_real, "n_total": len(y),
         "accuracy": round(meta.accuracy, 4),
