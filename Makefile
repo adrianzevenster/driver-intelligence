@@ -1,4 +1,4 @@
-.PHONY: sync install api simulate regress integration lint test docker-build docker-up frontend prod-up prod-down prod-logs shadow-eval fit-policy fit-thresholds smoketest fit-tire fit-battery fit-weather fit-meta fit-telemetry fit-classifiers
+.PHONY: sync install api simulate regress integration lint test docker-build docker-up frontend prod-up prod-down prod-logs shadow-eval fit-policy fit-thresholds smoketest fit-tire fit-battery fit-weather fit-meta fit-telemetry fit-safety-car fit-fuel fit-classifiers
 sync:
 	uv sync --extra regression --extra dev
 install:
@@ -49,4 +49,8 @@ fit-meta:
 	python scripts/fit_meta_learner.py
 fit-telemetry:
 	python scripts/fit_telemetry_classifier.py
-fit-classifiers: fit-tire fit-battery fit-weather fit-telemetry fit-meta
+fit-safety-car:
+	python scripts/fit_safety_car_classifier.py
+fit-fuel:
+	python scripts/fit_fuel_classifier.py
+fit-classifiers: fit-tire fit-battery fit-weather fit-telemetry fit-safety-car fit-fuel fit-meta

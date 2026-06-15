@@ -5,6 +5,8 @@ import uuid
 from pathlib import Path
 
 from f1di.agents.battery import BatteryAgent
+from f1di.agents.fuel import FuelAgent
+from f1di.agents.safety_car import SafetyCarAgent
 from f1di.agents.telemetry import TelemetryAnalysisAgent
 from f1di.agents.tire import TireStrategyAgent
 from f1di.agents.weather import WeatherAgent
@@ -54,7 +56,7 @@ class InferenceOrchestrator:
             else:
                 # Qdrant: always upsert so new/updated circuit docs land with correct metadata
                 self.retriever.add_documents(load_markdown_knowledge(kb_path))
-        self.agents = [TelemetryAnalysisAgent(), TireStrategyAgent(), WeatherAgent(), BatteryAgent()]
+        self.agents = [TelemetryAnalysisAgent(), TireStrategyAgent(), WeatherAgent(), BatteryAgent(), SafetyCarAgent(), FuelAgent()]
         self.calibrator = self._load_calibrator()
 
     @staticmethod
@@ -166,6 +168,9 @@ class InferenceOrchestrator:
 
     def _rules_recommendation(self, risk: RiskLevel, findings, calibration_features: dict[str, float]) -> str:
         if risk == RiskLevel.CRITICAL:
+            sc = next((f for f in findings if f.agent == "safety_car" and f.risk == RiskLevel.CRITICAL), None)
+            if sc:
+                return "Safety car or VSC likely deployed — pit now if strategically beneficial. Alert driver to back off and close gap to car ahead."
             return "Prioritise stability: reduce push intensity, confirm brake/tire state, and prepare immediate strategy intervention."
 
         if risk == RiskLevel.WARNING:
@@ -188,6 +193,12 @@ class InferenceOrchestrator:
             battery = next((f for f in findings if f.agent == "battery" and f.risk == RiskLevel.WARNING), None)
             if battery:
                 return "ERS depletion rate exceeds recovery capacity; adjust deployment strategy and reduce harvest-zone aggression."
+            sc = next((f for f in findings if f.agent == "safety_car" and f.risk == RiskLevel.WARNING), None)
+            if sc:
+                return "Elevated SC/VSC probability — open pit window discussion now and monitor sector time updates for confirmation."
+            fuel = next((f for f in findings if f.agent == "fuel" and f.risk == RiskLevel.WARNING), None)
+            if fuel:
+                return "Fuel consumption above plan — engage lift-and-coast on straights and reduce deployment aggression."
             return "Adjust driving mode and monitor next telemetry window before escalating to driver comms."
 
         if risk == RiskLevel.WATCH:
@@ -204,6 +215,10 @@ class InferenceOrchestrator:
                 return "Track conditions evolving; prepare compound switch discussion if rain intensifies."
             if "battery" in agents:
                 return "Monitor ERS state; adjust deployment strategy if depletion rate persists beyond this sector."
+            if "safety_car" in agents:
+                return "Track conditions elevated; monitor for SC/VSC deployment before committing to track position."
+            if "fuel" in agents:
+                return "Fuel burn slightly elevated; begin light lift-and-coast on long straights and monitor next window."
             return "Keep monitoring; provide engineer-only context unless the next window confirms the trend."
 
         return "Continue current plan."

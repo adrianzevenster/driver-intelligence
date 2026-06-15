@@ -7,6 +7,7 @@ import {
   ThumbsUp, ThumbsDown, TrendingUp, Upload, Table, Search,
   Mic, LineChart, FileText,
   Bell, Mail, Plus, X, Settings, Clock, Play, Workflow,
+  Flag, Fuel, Zap, Cloud,
 } from 'lucide-react';
 import './style.css';
 
@@ -19,8 +20,20 @@ const RISK_META = {
   CRITICAL: { color: '#ef4444', bg: '#1e0707', order: 3 },
 };
 const AGENT_LABELS = {
-  telemetry: 'Telemetry', tire_strategy: 'Tire Strategy',
-  weather: 'Weather', battery: 'Battery / ERS',
+  telemetry:    'Telemetry',
+  tire_strategy:'Tire Strategy',
+  weather:      'Weather',
+  battery:      'Battery / ERS',
+  safety_car:   'Safety Car / VSC',
+  fuel:         'Fuel Strategy',
+};
+const AGENT_ICON = {
+  telemetry:    { Icon: Cpu,         color: '#38bdf8' },
+  tire_strategy:{ Icon: Activity,    color: '#a78bfa' },
+  weather:      { Icon: Cloud,       color: '#64748b' },
+  battery:      { Icon: Zap,         color: '#4ade80' },
+  safety_car:   { Icon: Flag,        color: '#fbbf24' },
+  fuel:         { Icon: Fuel,        color: '#f97316' },
 };
 const COMPOUNDS     = ['SOFT', 'MEDIUM', 'HARD', 'INTERMEDIATE', 'WET'];
 const COMPOUND_COLOR = { SOFT:'#ef4444', MEDIUM:'#eab308', HARD:'#cbd5e1', INTERMEDIATE:'#22c55e', WET:'#3b82f6' };
@@ -280,7 +293,16 @@ function StatsForm({ stats, onChange }) {
 
 function rm(risk) { return RISK_META[risk] ?? RISK_META.INFO; }
 function topFinding(findings) {
-  return [...findings].sort((a, b) => rm(b.risk).order - rm(a.risk).order)[0];
+  return sortFindings(findings)[0];
+}
+function sortFindings(findings) {
+  return [...findings].sort((a, b) => {
+    // Safety car CRITICAL always sorts first — most time-critical call
+    const scA = a.agent === 'safety_car' && a.risk === 'CRITICAL' ? 1 : 0;
+    const scB = b.agent === 'safety_car' && b.risk === 'CRITICAL' ? 1 : 0;
+    if (scB !== scA) return scB - scA;
+    return rm(b.risk).order - rm(a.risk).order;
+  });
 }
 
 function RiskPill({ risk, policy }) {
@@ -344,11 +366,31 @@ function AgentCard({ finding, isTop, expanded, onToggle }) {
   const entries = Object.entries(finding.features ?? {}).filter(([k, v]) => !SKIP_KEYS.has(k) && typeof v === 'number');
   const preview = entries.slice(0, 3);
   const hasProbs = finding.class_probabilities && Object.keys(finding.class_probabilities).length > 0;
+  const agentMeta = AGENT_ICON[finding.agent];
+  const isSCCritical = finding.agent === 'safety_car' && finding.risk === 'CRITICAL';
+  const isSCWarning  = finding.agent === 'safety_car' && finding.risk === 'WARNING';
+  const borderColor  = isSCCritical ? '#fbbf24' : isSCWarning ? '#fbbf2466' : m.color + (isTop ? 'aa' : '44');
   return (
-    <div className={`agent-card${isTop ? ' agent-top' : ''}`} style={{ borderColor: m.color+(isTop ? 'aa' : '44') }}>
+    <div className={`agent-card${isTop ? ' agent-top' : ''}`} style={{ borderColor }}>
+      {isSCCritical && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 6,
+          padding: '4px 10px', marginBottom: 2,
+          background: 'rgba(251,191,36,0.12)', borderBottom: '1px solid rgba(251,191,36,0.3)',
+          borderRadius: '6px 6px 0 0',
+        }}>
+          <Flag size={11} color="#fbbf24" />
+          <span style={{ fontSize: 10, color: '#fbbf24', fontWeight: 700, letterSpacing: '0.06em' }}>
+            SAFETY CAR DEPLOYED — PIT WINDOW OPEN
+          </span>
+        </div>
+      )}
       <button className="agent-header" onClick={onToggle}>
         <div className="agent-name-row">
-          {isTop && <span className="top-dot" style={{ background: m.color }} />}
+          {isTop && <span className="top-dot" style={{ background: isSCCritical ? '#fbbf24' : m.color }} />}
+          {agentMeta && (
+            <agentMeta.Icon size={11} color={agentMeta.color} style={{ marginRight: 4, flexShrink: 0 }} />
+          )}
           <span className="agent-name">{AGENT_LABELS[finding.agent] ?? finding.agent}</span>
           {finding.clf_source && (
             <span style={{
@@ -441,7 +483,7 @@ function InsightPanel({ insight, modelBackend }) {
       <ConfidenceBar confidence={insight.confidence} uncertainty={insight.uncertainty} />
       <h4>Agent Findings</h4>
       <div className="agent-grid">
-        {insight.findings.map(f => (
+        {sortFindings(insight.findings).map(f => (
           <AgentCard key={f.agent} finding={f} isTop={f.agent === top?.agent}
             expanded={expanded.has(f.agent)} onToggle={() => toggle(f.agent)} />
         ))}
@@ -2404,7 +2446,7 @@ function ClassifierHistoryChart({ history, agent }) {
 }
 
 function ClassifierModelsPanel({ clfHistory }) {
-  const AGENTS = ['tire', 'battery', 'weather', 'telemetry'];
+  const AGENTS = ['tire', 'battery', 'weather', 'telemetry', 'safety_car', 'fuel'];
   const [selectedAgent, setSelectedAgent] = useState('tire');
   const [snapshots, setSnapshots]         = useState([]);
   const [testResult, setTestResult]       = useState(null);
@@ -3321,7 +3363,7 @@ function FlywheelStatusCard() {
           {/* Agent classifiers */}
           <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--card-border)' }}>
             <h3 style={{ fontSize: 11, color: 'var(--muted)', margin: '0 0 8px' }}>Agent classifiers</h3>
-            {['tire', 'battery', 'weather', 'telemetry'].map(agent => {
+            {['tire', 'battery', 'weather', 'telemetry', 'safety_car', 'fuel'].map(agent => {
               const c = status.classifiers?.[agent];
               const rt = status.auto_retrain?.agents?.[agent];
               const exists = c?.exists;

@@ -25,10 +25,12 @@ logger = logging.getLogger("f1di.agents.auto_retrain")
 RETRAIN_THRESHOLD = 5
 
 _AGENT_PATHS: dict[str, Path] = {
-    "tire":      Path("data/calibration/tire_classifier.pkl"),
-    "battery":   Path("data/calibration/battery_classifier.pkl"),
-    "weather":   Path("data/calibration/weather_classifier.pkl"),
-    "telemetry": Path("data/calibration/telemetry_classifier.pkl"),
+    "tire":        Path("data/calibration/tire_classifier.pkl"),
+    "battery":     Path("data/calibration/battery_classifier.pkl"),
+    "weather":     Path("data/calibration/weather_classifier.pkl"),
+    "telemetry":   Path("data/calibration/telemetry_classifier.pkl"),
+    "safety_car":  Path("data/calibration/safety_car_classifier.pkl"),
+    "fuel":        Path("data/calibration/fuel_classifier.pkl"),
 }
 
 _lock = threading.Lock()
@@ -56,6 +58,10 @@ def _db_n_real(agent: str) -> int:
             from f1di.agents.weather_classifier import _load_labeled_from_db
         elif agent == "telemetry":
             from f1di.agents.telemetry_classifier import _load_labeled_from_db
+        elif agent == "safety_car":
+            from f1di.agents.safety_car_classifier import _load_labeled_from_db
+        elif agent == "fuel":
+            from f1di.agents.fuel_classifier import _load_labeled_from_db
         else:
             return 0
         _, y = _load_labeled_from_db()
@@ -75,6 +81,10 @@ def _do_retrain(agent: str) -> None:
             from f1di.agents.weather_classifier import train_from_labels
         elif agent == "telemetry":
             from f1di.agents.telemetry_classifier import train_from_labels
+        elif agent == "safety_car":
+            from f1di.agents.safety_car_classifier import train_from_labels
+        elif agent == "fuel":
+            from f1di.agents.fuel_classifier import train_from_labels
         else:
             return
         report = train_from_labels()

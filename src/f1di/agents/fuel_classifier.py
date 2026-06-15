@@ -1,0 +1,239 @@
+"""Logistic regression classifier for fuel strategy risk level.
+
+Three classes: INFO (0), WATCH (1), WARNING (2).
+WARNING = active fuel-save mode required to reach the end.
+WATCH   = consumption rate elevated; monitor and consider lift-and-coast.
+INFO    = fuel load on plan; no intervention needed.
+
+Features are derived entirely from existing RaceFeatures so no schema changes
+are required beyond the throttle_mean and ers_net_deploy_kw fields added to
+the extractor.
+"""
+from __future__ import annotations
+
+import logging
+import pickle
+from pathlib import Path
+
+import numpy as np
+
+logger = logging.getLogger("f1di.agents.fuel_classifier")
+
+_CLASSIFIER_PATH = Path("data/calibration/fuel_classifier.pkl")
+
+FEATURE_NAMES: list[str] = [
+    "throttle_mean",
+    "ers_net_deploy_kw",
+    "battery_soc",
+    "laps_remaining",
+    "race_phase",
+    "stint_fraction",
+    "throttle_smoothness",
+]
+
+_LABEL_MAP: dict[int, str] = {0: "INFO", 1: "WATCH", 2: "WARNING"}
+_LABEL_INV: dict[str, int] = {v: k for k, v in _LABEL_MAP.items()}
+
+MODEL_VERSION = "lr-v1"
+MODEL_TYPE = "LogisticRegression"
+
+
+def _multiclass_brier(proba: np.ndarray, y: np.ndarray, classes: np.ndarray) -> float:
+    n, n_c = len(y), len(classes)
+    cls_idx = {int(c): i for i, c in enumerate(classes)}
+    Y_oh = np.zeros((n, n_c), dtype=np.float64)
+    for i, yi in enumerate(y):
+        Y_oh[i, cls_idx[int(yi)]] = 1.0
+    return float(np.mean(np.sum((proba - Y_oh) ** 2, axis=1)))
+
+
+def features_to_array(features) -> np.ndarray:
+    return np.array([
+        features.throttle_mean,
+        features.ers_net_deploy_kw,
+        features.battery_soc,
+        features.laps_remaining,
+        features.race_phase,
+        features.stint_fraction,
+        features.throttle_smoothness,
+    ], dtype=np.float64)
+
+
+class FuelClassifier:
+    def __init__(self) -> None:
+        from sklearn.linear_model import LogisticRegression
+        from sklearn.preprocessing import StandardScaler
+        self._scaler = StandardScaler()
+        self._model = LogisticRegression(C=1.0, max_iter=1000, solver="lbfgs", random_state=42)
+        self.classes_: list[str] = []
+        self.n_train: int = 0
+        self.n_real: int = 0
+        self.accuracy: float = 0.0
+        self.brier_score: float = 1.0
+        self.model_version: str = MODEL_VERSION
+        self.model_type: str = MODEL_TYPE
+
+    def fit(self, X: np.ndarray, y: np.ndarray, n_real: int = 0) -> "FuelClassifier":
+        from sklearn.metrics import accuracy_score
+        X_s = self._scaler.fit_transform(X)
+        self._model.fit(X_s, y)
+        self.classes_ = [_LABEL_MAP[int(c)] for c in self._model.classes_]
+        self.n_train = int(len(y))
+        self.n_real = n_real
+        proba = self._model.predict_proba(X_s)
+        self.accuracy = float(accuracy_score(y, self._model.predict(X_s)))
+        self.brier_score = float(_multiclass_brier(proba, y, self._model.classes_))
+        logger.info(
+            "FuelClassifier fitted: n=%d n_real=%d acc=%.3f brier=%.4f",
+            self.n_train, self.n_real, self.accuracy, self.brier_score,
+        )
+        return self
+
+    def ood_score(self, features) -> float:
+        x = features_to_array(features)
+        z = np.abs((x - self._scaler.mean_) / np.maximum(self._scaler.scale_, 1e-8))
+        return float(z.max())
+
+    def predict(self, features) -> tuple[str, float, np.ndarray]:
+        x = features_to_array(features).reshape(1, -1)
+        x_s = self._scaler.transform(x)
+        proba = self._model.predict_proba(x_s)[0]
+        idx = int(np.argmax(proba))
+        return _LABEL_MAP[idx], float(proba[idx]), proba
+
+    def save(self, path: Path = _CLASSIFIER_PATH) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(pickle.dumps(self))
+
+    @staticmethod
+    def load(path: Path = _CLASSIFIER_PATH) -> "FuelClassifier":
+        return pickle.loads(path.read_bytes())
+
+
+def _synthetic_label(
+    throttle_mean: float,
+    ers_net_kw: float,
+    battery_soc: float,
+    laps_remaining: float,
+    race_phase: float,
+    smoothness: float,
+) -> int:
+    # Composite fuel pressure: high throttle − ERS offset − SOC buffer.
+    # Higher = burning faster than the ERS + battery can compensate.
+    fuel_pressure = (throttle_mean / 100.0) - (ers_net_kw / 500.0) - (battery_soc * 0.15)
+
+    if fuel_pressure > 0.65 and laps_remaining > 12 and smoothness < 0.60:
+        return 2  # WARNING — meaningful fuel save required
+    if fuel_pressure > 0.55 and laps_remaining > 8:
+        return 2  # WARNING
+    if fuel_pressure > 0.40 and laps_remaining > 6:
+        return 1  # WATCH
+    if race_phase < 0.25 and throttle_mean > 83:
+        return 1  # WATCH — opening laps, full fuel load, high throttle
+    return 0  # INFO
+
+
+def generate_synthetic(n: int = 600, seed: int = 42) -> tuple[np.ndarray, np.ndarray]:
+    rng = np.random.default_rng(seed)
+    X, y = [], []
+    while len(X) < n:
+        throttle  = float(rng.uniform(55.0, 95.0))
+        ers_net   = float(rng.uniform(-20.0, 120.0))
+        soc       = float(rng.uniform(0.15, 0.95))
+        laps_rem  = float(rng.uniform(0.0, 50.0))
+        phase     = float(rng.uniform(0.0, 1.0))
+        stint_fr  = float(rng.uniform(0.0, 1.3))
+        smoothness = float(rng.uniform(0.3, 1.0))
+        X.append([throttle, ers_net, soc, laps_rem, phase, stint_fr, smoothness])
+        y.append(_synthetic_label(throttle, ers_net, soc, laps_rem, phase, smoothness))
+    return np.array(X, dtype=np.float64), np.array(y, dtype=np.int32)
+
+
+def _load_labeled_from_db() -> tuple[np.ndarray, np.ndarray]:
+    try:
+        import json as _json
+        from sqlalchemy import select
+        from f1di.storage.database import db_session
+        from f1di.storage.models import FeedbackRecord, InsightRecord
+    except Exception:
+        return np.empty((0, len(FEATURE_NAMES))), np.empty(0, dtype=np.int32)
+
+    X, y = [], []
+    try:
+        with db_session() as session:
+            rows = session.execute(
+                select(FeedbackRecord, InsightRecord)
+                .outerjoin(InsightRecord, FeedbackRecord.insight_id == InsightRecord.insight_id)
+            ).all()
+    except Exception as exc:
+        logger.warning("fuel_classifier DB query failed: %s", exc)
+        return np.empty((0, len(FEATURE_NAMES))), np.empty(0, dtype=np.int32)
+
+    for fb, ins in rows:
+        if ins is None:
+            continue
+        if fb.correct is not None:
+            is_correct = bool(fb.correct)
+        elif fb.rating is not None:
+            is_correct = int(fb.rating) >= 4
+        else:
+            continue
+        try:
+            findings = _json.loads(ins.findings_json or "[]")
+        except Exception:
+            continue
+        fuel = next((f for f in findings if f.get("agent") == "fuel"), None)
+        if fuel is None:
+            continue
+        feats = fuel.get("features", {})
+        pred_label = _LABEL_INV.get(fuel.get("risk", ins.risk), 0)
+        true_label = pred_label if is_correct else max(0, pred_label - 1)
+        X.append([
+            float(feats.get("throttle_mean", 72.0)),
+            float(feats.get("ers_net_deploy_kw", 40.0)),
+            float(feats.get("battery_soc", 0.6)),
+            float(feats.get("laps_remaining", 20.0)),
+            float(feats.get("race_phase", 0.5)),
+            float(feats.get("stint_fraction", 0.5)),
+            float(feats.get("throttle_smoothness", 0.8)),
+        ])
+        y.append(true_label)
+
+    if not X:
+        return np.empty((0, len(FEATURE_NAMES))), np.empty(0, dtype=np.int32)
+    return np.array(X, dtype=np.float64), np.array(y, dtype=np.int32)
+
+
+def train_from_labels(
+    output_path: Path = _CLASSIFIER_PATH,
+    real_oversample: int = 5,
+    synthetic_n: int = 600,
+) -> dict:
+    X_s, y_s = generate_synthetic(n=synthetic_n)
+    X_r, y_r = _load_labeled_from_db()
+    n_real = len(y_r)
+
+    if n_real >= 10:
+        X = np.vstack([X_s, np.repeat(X_r, real_oversample, axis=0)])
+        y = np.concatenate([y_s, np.repeat(y_r, real_oversample)])
+    else:
+        X, y = X_s, y_s
+
+    unique, counts = np.unique(y, return_counts=True)
+    clf = FuelClassifier().fit(X, y, n_real=n_real)
+    from f1di.agents.classifier_utils import save_with_snapshot, record_history
+    snap = save_with_snapshot(clf, output_path)
+    record_history(
+        clf, agent="fuel",
+        versioned_path=snap["versioned_path"],
+        blocked=snap["blocked"],
+        history_path=output_path.parent / "model_history.json",
+    )
+    return {
+        "n_synthetic": len(y_s), "n_real": n_real, "n_total": len(y),
+        "accuracy": round(clf.accuracy, 4), "classes": clf.classes_,
+        "class_distribution": {_LABEL_MAP[int(k)]: int(v) for k, v in zip(unique, counts)},
+        "output_path": str(output_path),
+        "snapshot_blocked": snap["blocked"],
+        "versioned_path": snap["versioned_path"],
+    }

@@ -1013,10 +1013,12 @@ def _auto_retrain_status() -> dict:
 # ---------------------------------------------------------------------------
 
 _CLASSIFIER_AGENTS = {
-    "tire":      Path("data/calibration/tire_classifier.pkl"),
-    "battery":   Path("data/calibration/battery_classifier.pkl"),
-    "weather":   Path("data/calibration/weather_classifier.pkl"),
-    "telemetry": Path("data/calibration/telemetry_classifier.pkl"),
+    "tire":       Path("data/calibration/tire_classifier.pkl"),
+    "battery":    Path("data/calibration/battery_classifier.pkl"),
+    "weather":    Path("data/calibration/weather_classifier.pkl"),
+    "telemetry":  Path("data/calibration/telemetry_classifier.pkl"),
+    "safety_car": Path("data/calibration/safety_car_classifier.pkl"),
+    "fuel":       Path("data/calibration/fuel_classifier.pkl"),
 }
 
 _HISTORY_PATH = Path("data/calibration/model_history.json")

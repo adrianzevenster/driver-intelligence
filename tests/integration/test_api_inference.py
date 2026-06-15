@@ -112,7 +112,7 @@ class TestInferenceEndpoint:
         resp = client.post("/v1/insights", json=_window_payload())
         assert resp.status_code == 200
         findings = resp.json()["findings"]
-        assert len(findings) == 4
+        assert len(findings) == 6
         for f in findings:
             assert "class_probabilities" in f, f"missing class_probabilities in {f['agent']}"
             assert "ood_score" in f, f"missing ood_score in {f['agent']}"
@@ -126,14 +126,16 @@ class TestInferenceEndpoint:
             patch("f1di.agents.battery._get_classifier", return_value=fake),
             patch("f1di.agents.weather._get_classifier", return_value=fake),
             patch("f1di.agents.telemetry._get_classifier", return_value=fake),
+            patch("f1di.agents.safety_car._get_classifier", return_value=fake),
+            patch("f1di.agents.fuel._get_classifier", return_value=fake),
         ):
             resp = client.post("/v1/insights", json=_window_payload())
 
         assert resp.status_code == 200
         findings = resp.json()["findings"]
         classifier_findings = [f for f in findings if f.get("clf_source") == "classifier"]
-        assert len(classifier_findings) == 4, (
-            f"Expected all 4 findings to use classifier; got {len(classifier_findings)}"
+        assert len(classifier_findings) == 6, (
+            f"Expected all 6 findings to use classifier; got {len(classifier_findings)}"
         )
         for f in classifier_findings:
             assert f["class_probabilities"], f"Expected non-empty class_probabilities for {f['agent']}"

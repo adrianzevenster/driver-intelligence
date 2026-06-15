@@ -43,6 +43,8 @@ class RaceFeatures:
     laps_remaining: float = 20.0
     stint_fraction: float = 0.5
     race_phase: float = 0.5   # 0.0 = first lap, 1.0 = final lap
+    throttle_mean: float = 72.0
+    ers_net_deploy_kw: float = 40.0
 
 
 def slope(values: list[float]) -> float:
@@ -71,6 +73,8 @@ def extract_features(window: TelemetryWindow) -> RaceFeatures:
     compound = latest.compound.value
     typical_stint = _TYPICAL_STINT_LAPS.get(compound, 24.0)
 
+    ers_net = [s.ers_deploy_kw - s.ers_regen_kw for s in samples]
+
     return RaceFeatures(
         lap=latest.lap,
         sector=latest.sector,
@@ -96,4 +100,6 @@ def extract_features(window: TelemetryWindow) -> RaceFeatures:
         laps_remaining=max(0.0, float(total_laps - latest.lap)),
         stint_fraction=min(1.0, latest.stint_lap / typical_stint),
         race_phase=min(1.0, latest.lap / total_laps),
+        throttle_mean=statistics.fmean(throttle),
+        ers_net_deploy_kw=statistics.fmean(ers_net),
     )

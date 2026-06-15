@@ -140,7 +140,7 @@ class TestMaybeRetrainAll:
         with patch("f1di.agents.auto_retrain.maybe_retrain",
                    side_effect=lambda agent, threshold=RETRAIN_THRESHOLD: called.append(agent)):
             maybe_retrain_all()
-        assert set(called) == {"tire", "battery", "weather", "telemetry"}
+        assert set(called) == {"tire", "battery", "weather", "telemetry", "safety_car", "fuel"}
 
 
 class TestRetrainStatus:
