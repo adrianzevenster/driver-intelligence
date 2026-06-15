@@ -968,11 +968,13 @@ def flywheel_status() -> dict:
             return {"exists": True, "accuracy": None, "brier_score": None, "n_real": None, "n_train": None, "model_version": None, "model_type": None}
 
     classifiers = {
-        "tire":      _clf_info(Path("data/calibration/tire_classifier.pkl")),
-        "battery":   _clf_info(Path("data/calibration/battery_classifier.pkl")),
-        "weather":   _clf_info(Path("data/calibration/weather_classifier.pkl")),
-        "telemetry": _clf_info(Path("data/calibration/telemetry_classifier.pkl")),
-        "meta":      _clf_info(Path("data/calibration/meta_learner.pkl")),
+        "tire":        _clf_info(Path("data/calibration/tire_classifier.pkl")),
+        "battery":     _clf_info(Path("data/calibration/battery_classifier.pkl")),
+        "weather":     _clf_info(Path("data/calibration/weather_classifier.pkl")),
+        "telemetry":   _clf_info(Path("data/calibration/telemetry_classifier.pkl")),
+        "safety_car":  _clf_info(Path("data/calibration/safety_car_classifier.pkl")),
+        "fuel":        _clf_info(Path("data/calibration/fuel_classifier.pkl")),
+        "meta":        _clf_info(Path("data/calibration/meta_learner.pkl")),
     }
     meta_active = (
         classifiers["meta"]["exists"]

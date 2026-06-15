@@ -18,6 +18,8 @@ RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu 
 RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2'); print('Embedding model cached.')" || true
 COPY src ./src
 COPY data ./data
+COPY scripts ./scripts
+COPY Makefile ./
 COPY migrations ./migrations
 COPY alembic.ini ./
 COPY --from=frontend-build /app/frontend/dist ./frontend/dist

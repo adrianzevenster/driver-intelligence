@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from datetime import date
 from pathlib import Path
 
@@ -11,6 +12,8 @@ logger = logging.getLogger("f1di.ingestion.scheduler")
 _DEFAULT_INTERVAL_HOURS = 6
 _CURRENT_YEAR = date.today().year
 _OUTCOME_LABELED_PATH = Path("data/calibration/outcome_labeled.json")
+_OUTCOME_ROUNDS_PER_CYCLE = 4   # process at most this many new rounds per cycle
+_FASTF1_REQUEST_DELAY_S = 3.0   # seconds between FastF1 API calls to avoid rate limits
 
 
 class IngestionScheduler:
@@ -126,16 +129,24 @@ class IngestionScheduler:
                 pass
 
         new_labels_total = 0
+        rounds_processed = 0
         for year in self.years:
+            if rounds_processed >= _OUTCOME_ROUNDS_PER_CYCLE:
+                break
             try:
                 rounds = self._available_rounds(year)
             except Exception as exc:
                 logger.warning("outcome_label: cannot fetch rounds for %d: %s", year, exc)
                 continue
 
-            for round_num in rounds:
+            # Process most-recent rounds first so new data is prioritised
+            for round_num in reversed(rounds):
+                if rounds_processed >= _OUTCOME_ROUNDS_PER_CYCLE:
+                    break
                 if (year, round_num) in labeled:
                     continue
+                if rounds_processed > 0:
+                    time.sleep(_FASTF1_REQUEST_DELAY_S)
                 try:
                     from f1di.data.outcome_labeler import label_race
                     report = label_race(year, round_num)
@@ -150,10 +161,12 @@ class IngestionScheduler:
                     if n_new > 0 or len(report.incidents_found) > 0:
                         labeled.add((year, round_num))
                         new_labels_total += n_new
+                    rounds_processed += 1
                 except Exception as exc:
                     logger.warning(
                         "outcome_label_failed year=%d round=%d: %s", year, round_num, exc
                     )
+                    rounds_processed += 1
 
         if labeled:
             _OUTCOME_LABELED_PATH.parent.mkdir(parents=True, exist_ok=True)

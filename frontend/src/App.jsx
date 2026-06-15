@@ -3300,18 +3300,19 @@ function FlywheelStatusCard() {
   }
   useEffect(load, []);
 
-  function Chip({ ok, label, detail }) {
-    const on  = ok === true;
-    const off = ok === false;
+  function Chip({ ok, warn, label, detail }) {
+    const on   = ok === true;
+    const off  = ok === false && !warn;
+    const caution = warn === true && ok !== true;
     return (
       <div style={{
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         padding: '6px 10px', borderRadius: 8, marginBottom: 6,
-        background: on ? '#052e16' : off ? '#1f0a0a' : '#1e293b',
-        border: `1px solid ${on ? '#166534' : off ? '#7f1d1d' : '#334155'}`,
+        background: on ? '#052e16' : caution ? '#1c1407' : off ? '#1f0a0a' : '#1e293b',
+        border: `1px solid ${on ? '#166534' : caution ? '#78350f' : off ? '#7f1d1d' : '#334155'}`,
       }}>
-        <span style={{ fontSize: 12, color: on ? '#4ade80' : off ? '#f87171' : '#94a3b8', fontWeight: 600 }}>
-          {on ? '✓' : off ? '✗' : '–'} {label}
+        <span style={{ fontSize: 12, color: on ? '#4ade80' : caution ? '#fbbf24' : off ? '#f87171' : '#94a3b8', fontWeight: 600 }}>
+          {on ? '✓' : caution ? '⚠' : off ? '✗' : '–'} {label}
         </span>
         {detail != null && (
           <span style={{ fontSize: 11, color: '#64748b', fontFamily: 'monospace' }}>{detail}</span>
@@ -3356,8 +3357,9 @@ function FlywheelStatusCard() {
           />
           <Chip
             ok={status.outcome_cache_exists}
+            warn={!status.outcome_cache_exists}
             label="Outcome labels cache"
-            detail={status.rounds_labeled > 0 ? `${status.rounds_labeled} rounds` : 'none yet'}
+            detail={status.rounds_labeled > 0 ? `${status.rounds_labeled} rounds` : 'none yet — auto-labeling on next cycle'}
           />
 
           {/* Agent classifiers */}
