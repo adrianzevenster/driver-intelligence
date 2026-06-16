@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
+from functools import lru_cache
 from pathlib import Path
 
 import pandas as pd
@@ -69,8 +70,19 @@ def get_races(year: int) -> list[dict]:
     return races
 
 
+@lru_cache(maxsize=16)
 def _load_session_laps(year: int, round_num: int, session_type: str = "R"):
-    """Load session with laps only; swallow non-fatal FastF1 sub-loader errors."""
+    """Load session with laps only; swallow non-fatal FastF1 sub-loader errors.
+
+    Cached per-process: FastF1's own disk cache avoids re-fetching from the
+    network, but still re-parses ~tens of MB of pickled timing data into
+    pandas frames on every call. Session objects here are read-only after
+    load (laps/weather/event are only ever read, never mutated), so sharing
+    one across requests for the same session is safe and avoids paying that
+    parse cost — and the double-parse inside a single /v1/session/strategy
+    request (actual_strategy + build_all_lap_windows each loading the same
+    session) — every time.
+    """
     ff1 = _ff1()
     session = ff1.get_session(year, round_num, _check_session_type(session_type))
     try:
@@ -242,10 +254,20 @@ def get_lap_trace(
     return result
 
 
+@lru_cache(maxsize=8)
 def _load_race_session(year: int, round_num: int, session_type: str = "R"):
-    """Load a race or sprint session with laps/telemetry/weather. Cached on
-    disk by FastF1 after the first call, so repeated calls for the same
-    session are fast.
+    """Load a race or sprint session with laps/telemetry/weather.
+
+    FastF1 caches the raw pickles on disk after the first fetch, but loading
+    ~80MB of car_data/position_data into pandas frames is itself the slow
+    part (seconds, not milliseconds) — and a single /v1/session/strategy
+    request calls this twice (once via actual_strategy, once via
+    build_all_lap_windows). Caching the parsed Session object per-process
+    avoids paying that twice in one request and on every repeat request for
+    the same session. Session objects are read-only after load here (laps/
+    weather/event are only ever read), so sharing one across requests is
+    safe. maxsize=8 keeps memory bounded — telemetry-heavy sessions are
+    tens of MB each in memory.
     """
     ff1 = _ff1()
     session = ff1.get_session(year, round_num, _check_session_type(session_type))
