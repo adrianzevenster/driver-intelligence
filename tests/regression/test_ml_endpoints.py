@@ -66,6 +66,7 @@ def test_retrain_regression_guard_blocks_live_model(tmp_path):
     cal_dir.mkdir()
     quality_path = cal_dir / "quality.json"
     live_pkl = cal_dir / "isotonic.pkl"
+    history_path = cal_dir / "model_history.json"
 
     # prev_ece deliberately tiny — any real calibrator ECE will exceed it by >0.01
     quality_path.write_text(json.dumps({"ece": 0.0001, "model_path": "old.pkl"}))
@@ -89,6 +90,9 @@ def test_retrain_regression_guard_blocks_live_model(tmp_path):
 
     updated = json.loads(quality_path.read_text())
     assert updated["regression_detected"] is True
+    assert history_path.exists()
+    history = json.loads(history_path.read_text())
+    assert history[-1]["regression_detected"] is True
 
 
 def test_retrain_regression_guard_passes_when_ece_improves(tmp_path):
@@ -98,6 +102,7 @@ def test_retrain_regression_guard_passes_when_ece_improves(tmp_path):
     cal_dir.mkdir()
     quality_path = cal_dir / "quality.json"
     live_pkl = cal_dir / "isotonic.pkl"
+    history_path = cal_dir / "model_history.json"
 
     # prev_ece very high — retrain should always beat this
     quality_path.write_text(json.dumps({"ece": 0.99, "model_path": "old.pkl"}))
@@ -114,3 +119,6 @@ def test_retrain_regression_guard_passes_when_ece_improves(tmp_path):
     assert result["skipped"] is False
     assert result["regression_detected"] is False
     assert live_pkl.exists(), "live isotonic.pkl must be written when ECE passes the guard"
+    assert history_path.exists()
+    history = json.loads(history_path.read_text())
+    assert history[-1]["regression_detected"] is False

@@ -5,12 +5,36 @@ import logging
 import shutil
 import time
 from pathlib import Path
+from typing import Callable
 
 logger = logging.getLogger("f1di.confidence.online")
 
 _CALIBRATOR_PATH = Path("data/calibration/isotonic.pkl")
 _QUALITY_PATH = Path("data/calibration/quality.json")
 _HISTORY_PATH = Path("data/calibration/model_history.json")
+
+
+def _file_op(action: str, path: Path, fn: Callable[[], object]) -> object:
+    try:
+        return fn()
+    except OSError as exc:
+        raise RuntimeError(f"{action} {path}: {exc}") from exc
+
+
+def _promote_live_model(versioned_path: Path, live_path: Path) -> None:
+    tmp_path = live_path.with_name(f".{live_path.name}.tmp")
+
+    def _copy_and_replace() -> None:
+        shutil.copyfile(versioned_path, tmp_path)
+        tmp_path.replace(live_path)
+
+    try:
+        _file_op("promote live calibrator", live_path, _copy_and_replace)
+    finally:
+        try:
+            tmp_path.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 def per_agent_accuracy() -> dict[str, dict]:
@@ -102,12 +126,14 @@ def retrain(
     min_feedback: int = 20,
     calibrator_path: Path = _CALIBRATOR_PATH,
     quality_path: Path = _QUALITY_PATH,
+    history_path: Path | None = None,
 ) -> dict:
     """Retrain isotonic calibrator augmenting synthetic base with human feedback.
 
     Uses calibrated confidence as a proxy for raw score — reasonable approximation
     since the isotonic mapping is near-identity and we're only fine-tuning.
     """
+    history_path = history_path or calibrator_path.parent / _HISTORY_PATH.name
     try:
         pairs = _feedback_pairs()
     except Exception as exc:
@@ -128,7 +154,11 @@ def retrain(
     )
 
     ts = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
-    calibrator_path.parent.mkdir(parents=True, exist_ok=True)
+    _file_op(
+        "create calibration directory",
+        calibrator_path.parent,
+        lambda: calibrator_path.parent.mkdir(parents=True, exist_ok=True),
+    )
 
     # --- read previous ECE for lineage record ---
     prev_ece: float | None = None
@@ -143,9 +173,12 @@ def retrain(
 
     # --- snapshot training data ---
     snapshot_path = calibrator_path.parent / f"feedback_snapshot_{ts}.jsonl"
-    with snapshot_path.open("w") as fh:
-        for confidence, label in pairs:
-            fh.write(json.dumps({"confidence": confidence, "label": label}) + "\n")
+    def _write_snapshot() -> None:
+        with snapshot_path.open("w") as fh:
+            for confidence, label in pairs:
+                fh.write(json.dumps({"confidence": confidence, "label": label}) + "\n")
+
+    _file_op("write feedback snapshot", snapshot_path, _write_snapshot)
 
     # --- train ---
     X_syn, y_syn = generate_calibration_dataset(n_races=30, seed=42)
@@ -158,7 +191,7 @@ def retrain(
 
     # --- save versioned copy; live copy only written if quality passes ---
     versioned_path = calibrator_path.parent / f"isotonic_{ts}.pkl"
-    calibrator.save(versioned_path)
+    _file_op("write versioned calibrator", versioned_path, lambda: calibrator.save(versioned_path))
 
     ece = calibration_ece(calibrator, n_races=15, seed=999)
     brier = calibration_brier(calibrator, n_races=15, seed=999)
@@ -168,7 +201,7 @@ def retrain(
     # The versioned pkl is always written for audit; only the live copy is held back.
     regression_detected = prev_ece is not None and ece > prev_ece + 0.01
     if not regression_detected:
-        shutil.copy2(versioned_path, calibrator_path)
+        _promote_live_model(versioned_path, calibrator_path)
     else:
         logger.warning(
             "Calibrator retrain BLOCKED — ECE %.4f regressed from %.4f (delta=%.4f > 0.01); "
@@ -194,13 +227,17 @@ def retrain(
         },
         "per_agent_accuracy": per_agent_accuracy(),
     }
-    quality_path.write_text(json.dumps(quality, indent=2))
+    _file_op(
+        "write calibration quality",
+        quality_path,
+        lambda: quality_path.write_text(json.dumps(quality, indent=2)),
+    )
 
     # --- append to rolling model history ---
     history: list = []
-    if _HISTORY_PATH.exists():
+    if history_path.exists():
         try:
-            history = json.loads(_HISTORY_PATH.read_text())
+            history = json.loads(history_path.read_text())
         except Exception:
             pass
     history.append({
@@ -213,7 +250,11 @@ def retrain(
         "feedback_snapshot": str(snapshot_path),
         "regression_detected": regression_detected,
     })
-    _HISTORY_PATH.write_text(json.dumps(history, indent=2))
+    _file_op(
+        "write calibration history",
+        history_path,
+        lambda: history_path.write_text(json.dumps(history, indent=2)),
+    )
 
     if regression_detected:
         return {
