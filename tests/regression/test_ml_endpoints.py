@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 
 def _init_db():
     from f1di.storage.database import get_engine
@@ -39,6 +41,22 @@ def test_capture_fixtures_no_incorrect_predictions():
     result = capture_fixtures_from_feedback(max_cases=50)
     assert "captured" in result
     assert result["captured"] >= 0
+
+
+def test_retrain_endpoint_converts_internal_failure_to_http_error():
+    from fastapi import HTTPException
+    from f1di.api.main import retrain_calibrator
+    import f1di.confidence.online as online
+
+    def _boom(*, min_feedback: int = 20):
+        raise RuntimeError("training backend unavailable")
+
+    with patch.object(online, "retrain", side_effect=_boom):
+        with pytest.raises(HTTPException) as exc_info:
+            retrain_calibrator()
+
+    assert exc_info.value.status_code == 500
+    assert exc_info.value.detail == "Calibrator retrain failed: training backend unavailable"
 
 
 def test_retrain_regression_guard_blocks_live_model(tmp_path):

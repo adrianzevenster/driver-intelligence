@@ -2063,8 +2063,17 @@ function CalibrationCard() {
     setRetraining(true); setResult(null); setError('');
     try {
       const res = await fetch('/api/v1/calibrator/retrain', { method: 'POST', headers: authHeaders() });
-      const d = await res.json();
-      if (!res.ok) throw new Error(d.detail ?? `Error ${res.status}`);
+      const text = await res.text();
+      let d = null;
+      if (text) {
+        try {
+          d = JSON.parse(text);
+        } catch {
+          d = { detail: text };
+        }
+      }
+      if (!res.ok) throw new Error(d?.detail ?? `Error ${res.status}`);
+      if (!d) throw new Error('Empty retrain response');
       setResult(d);
       load();
     } catch (e) {

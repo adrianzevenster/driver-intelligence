@@ -1385,7 +1385,13 @@ def retrain_calibrator(
         from f1di.confidence.online import retrain
     except ImportError:
         raise HTTPException(status_code=503, detail="Persistence layer not installed.")
-    result = retrain(min_feedback=min_feedback)
+
+    try:
+        result = retrain(min_feedback=min_feedback)
+    except Exception as exc:
+        logger.exception("Calibrator retrain failed")
+        raise HTTPException(status_code=500, detail=f"Calibrator retrain failed: {exc}") from exc
+
     if not result.get("skipped"):
         try:
             from f1di.observability.metrics import CALIBRATION_ECE_GAUGE, CALIBRATION_REGRESSION_BLOCKED
