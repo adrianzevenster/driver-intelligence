@@ -60,21 +60,52 @@ class WeatherClassifier:
         self.n_real: int = 0
         self.accuracy: float = 0.0
         self.brier_score: float = 1.0
+        self.cv_n_splits: int = 0
+        self.cv_accuracy_std: float | None = None
+        self.cv_brier_std: float | None = None
+        self.cv_fold_accuracies: list[float] | None = None
+        self.cv_fold_briers: list[float] | None = None
+        self.real_sample_weight: float | None = None
+        self.prior_cv_accuracy: float | None = None
         self.model_version: str = MODEL_VERSION
         self.model_type: str = MODEL_TYPE
 
-    def fit(self, X: np.ndarray, y: np.ndarray, n_real: int = 0) -> "WeatherClassifier":
+    def fit(self, X: np.ndarray, y: np.ndarray, n_real: int = 0, sample_weight: np.ndarray | None = None) -> "WeatherClassifier":
         from sklearn.metrics import accuracy_score
         X_s = self._scaler.fit_transform(X)
-        self._model.fit(X_s, y)
+        self._model.fit(X_s, y, sample_weight=sample_weight)
         self.classes_ = [_LABEL_MAP[int(c)] for c in self._model.classes_]
         self.n_train = int(len(y))
         self.n_real = n_real
-        proba = self._model.predict_proba(X_s)
-        self.accuracy = float(accuracy_score(y, self._model.predict(X_s)))
-        self.brier_score = float(_multiclass_brier(proba, y, self._model.classes_))
-        logger.info("WeatherClassifier fitted: n=%d n_real=%d acc=%.3f brier=%.4f", self.n_train, self.n_real, self.accuracy, self.brier_score)
+
+        from f1di.agents.classifier_utils import cross_val_eval
+        cv = cross_val_eval(self._build_pipeline, X, y, _multiclass_brier, sample_weight=sample_weight)
+        if cv is not None:
+            self.accuracy = cv["cv_accuracy"]
+            self.brier_score = cv["cv_brier"]
+            self.cv_n_splits = cv["n_splits"]
+            self.cv_accuracy_std = cv["cv_accuracy_std"]
+            self.cv_brier_std = cv["cv_brier_std"]
+            self.cv_fold_accuracies = cv["fold_accuracies"]
+            self.cv_fold_briers = cv["fold_briers"]
+        else:
+            proba = self._model.predict_proba(X_s)
+            self.accuracy = float(accuracy_score(y, self._model.predict(X_s)))
+            self.brier_score = float(_multiclass_brier(proba, y, self._model.classes_))
+            self.cv_n_splits = 0
+            self.cv_accuracy_std = None
+            self.cv_brier_std = None
+            self.cv_fold_accuracies = None
+            self.cv_fold_briers = None
+
+        logger.info("WeatherClassifier fitted: n=%d n_real=%d cv_acc=%.3f cv_brier=%.4f n_splits=%d", self.n_train, self.n_real, self.accuracy, self.brier_score, self.cv_n_splits)
         return self
+
+    @staticmethod
+    def _build_pipeline():
+        from sklearn.linear_model import LogisticRegression
+        from sklearn.preprocessing import StandardScaler
+        return StandardScaler(), LogisticRegression(C=1.0, max_iter=1000, solver="lbfgs", random_state=42)
 
     def ood_score(self, features) -> float:
         x = features_to_array(features)
@@ -183,17 +214,21 @@ def train_from_labels(
     X_r, y_r = _load_labeled_from_db()
     n_real = len(y_r)
 
-    if n_real >= 10:
-        X = np.vstack([X_s, np.repeat(X_r, real_oversample, axis=0)])
-        y = np.concatenate([y_s, np.repeat(y_r, real_oversample)])
-    else:
-        X, y = X_s, y_s
+    from f1di.agents.classifier_utils import blend_with_transfer
+    blend = blend_with_transfer(
+        WeatherClassifier._build_pipeline, X_s, y_s, X_r, y_r, n_real,
+        _multiclass_brier, weight_cap=real_oversample,
+    )
+    X, y, sample_weight = blend["X"], blend["y"], blend["sample_weight"]
 
     unique, counts = np.unique(y, return_counts=True)
-    clf = WeatherClassifier().fit(X, y, n_real=n_real)
+    clf = WeatherClassifier().fit(X, y, n_real=n_real, sample_weight=sample_weight)
+    clf.real_sample_weight = blend["real_weight"]
+    clf.prior_cv_accuracy = blend["prior_cv"]["cv_accuracy"] if blend["prior_cv"] else None
+
     from f1di.agents.classifier_utils import save_with_snapshot, record_history
     snap = save_with_snapshot(clf, output_path)
-    record_history(clf, agent="weather", versioned_path=snap["versioned_path"], blocked=snap["blocked"], history_path=output_path.parent / "model_history.json")
+    record_history(clf, agent="weather", versioned_path=snap["versioned_path"], blocked=snap["blocked"], history_path=output_path.parent / "model_history.json", threshold=snap.get("threshold"))
     return {
         "n_synthetic": len(y_s), "n_real": n_real, "n_total": len(y),
         "accuracy": round(clf.accuracy, 4), "classes": clf.classes_,
@@ -201,4 +236,7 @@ def train_from_labels(
         "output_path": str(output_path),
         "snapshot_blocked": snap["blocked"],
         "versioned_path": snap["versioned_path"],
+        "real_sample_weight": round(clf.real_sample_weight, 4) if clf.real_sample_weight is not None else None,
+        "prior_accuracy": round(clf.prior_cv_accuracy, 4) if clf.prior_cv_accuracy is not None else None,
+        "transfer_lift": round(clf.accuracy - clf.prior_cv_accuracy, 4) if clf.prior_cv_accuracy is not None else None,
     }

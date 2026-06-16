@@ -103,10 +103,31 @@ class IngestionScheduler:
                         logger.warning("Telemetry classifier fit failed: %s", exc)
                     try:
                         await asyncio.get_event_loop().run_in_executor(
+                            None, self._run_fit_safety_car_classifier
+                        )
+                    except Exception as exc:
+                        logger.warning("Safety car classifier fit failed: %s", exc)
+                    try:
+                        await asyncio.get_event_loop().run_in_executor(
+                            None, self._run_fit_fuel_classifier
+                        )
+                    except Exception as exc:
+                        logger.warning("Fuel classifier fit failed: %s", exc)
+                    try:
+                        await asyncio.get_event_loop().run_in_executor(
                             None, self._run_fit_meta_learner
                         )
                     except Exception as exc:
                         logger.warning("Meta-learner fit failed: %s", exc)
+
+            # Save retrieval eval snapshot after every knowledge pull cycle.
+            if cycle % 2 == 0:
+                try:
+                    await asyncio.get_event_loop().run_in_executor(
+                        None, self._run_retrieval_eval
+                    )
+                except Exception as exc:
+                    logger.debug("Retrieval eval skipped: %s", exc)
 
             cycle += 1
             try:
@@ -238,6 +259,39 @@ class IngestionScheduler:
             )
         except Exception as exc:
             logger.warning("tire_classifier_fit_failed: %s", exc)
+
+    @staticmethod
+    def _run_fit_safety_car_classifier() -> None:
+        try:
+            from f1di.agents.safety_car_classifier import train_from_labels
+            r = train_from_labels()
+            logger.info(
+                "safety_car_classifier_retrained: n_real=%d acc=%.3f",
+                r.get("n_real", 0), r.get("accuracy", 0),
+            )
+        except Exception as exc:
+            logger.warning("safety_car_classifier_fit_failed: %s", exc)
+
+    @staticmethod
+    def _run_fit_fuel_classifier() -> None:
+        try:
+            from f1di.agents.fuel_classifier import train_from_labels
+            r = train_from_labels()
+            logger.info(
+                "fuel_classifier_retrained: n_real=%d acc=%.3f",
+                r.get("n_real", 0), r.get("accuracy", 0),
+            )
+        except Exception as exc:
+            logger.warning("fuel_classifier_fit_failed: %s", exc)
+
+    def _run_retrieval_eval(self) -> None:
+        try:
+            from f1di.evaluation.retrieval_eval import evaluate_retriever, save_eval_report
+            metrics = evaluate_retriever(self.orchestrator.retriever)
+            save_eval_report(metrics)
+            logger.info("retrieval_eval_saved: %s", metrics.summary())
+        except Exception as exc:
+            logger.debug("retrieval_eval_failed: %s", exc)
 
     @staticmethod
     def _run_retrain() -> None:

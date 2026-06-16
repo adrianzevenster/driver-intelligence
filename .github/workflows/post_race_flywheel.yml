@@ -113,6 +113,12 @@ jobs:
                 print('Threshold refit — circuits updated:', r.get('n_fitted',0), \
                       '| skipped:', len(r.get('skipped',[])))\"" || true
 
+      - name: Audit synthetic label quality
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
+            "docker exec f1di-api-1 python scripts/audit_synthetic_quality.py --min-real 5 2>&1 | tail -30" || true
+
       - name: Record quality snapshot
         run: |
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \

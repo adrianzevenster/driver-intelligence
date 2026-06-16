@@ -959,13 +959,18 @@ def flywheel_status() -> dict:
                 "exists": True,
                 "accuracy": round(float(obj.accuracy), 4),
                 "brier_score": round(float(obj.brier_score), 4) if hasattr(obj, "brier_score") else None,
+                "cv_n_splits": getattr(obj, "cv_n_splits", 0),
+                "cv_accuracy_std": round(s, 4) if (s := getattr(obj, "cv_accuracy_std", None)) is not None else None,
+                "real_sample_weight": round(w, 4) if (w := getattr(obj, "real_sample_weight", None)) is not None else None,
+                "prior_cv_accuracy": round(p, 4) if (p := getattr(obj, "prior_cv_accuracy", None)) is not None else None,
+                "transfer_lift": round(float(obj.accuracy) - p, 4) if (p := getattr(obj, "prior_cv_accuracy", None)) is not None else None,
                 "n_real": int(obj.n_real),
                 "n_train": int(obj.n_train),
                 "model_version": getattr(obj, "model_version", None),
                 "model_type": getattr(obj, "model_type", None),
             }
         except Exception:
-            return {"exists": True, "accuracy": None, "brier_score": None, "n_real": None, "n_train": None, "model_version": None, "model_type": None}
+            return {"exists": True, "accuracy": None, "brier_score": None, "cv_n_splits": None, "cv_accuracy_std": None, "real_sample_weight": None, "prior_cv_accuracy": None, "transfer_lift": None, "n_real": None, "n_train": None, "model_version": None, "model_type": None}
 
     classifiers = {
         "tire":        _clf_info(Path("data/calibration/tire_classifier.pkl")),
@@ -1021,6 +1026,7 @@ _CLASSIFIER_AGENTS = {
     "telemetry":  Path("data/calibration/telemetry_classifier.pkl"),
     "safety_car": Path("data/calibration/safety_car_classifier.pkl"),
     "fuel":       Path("data/calibration/fuel_classifier.pkl"),
+    "meta":       Path("data/calibration/meta_learner.pkl"),
 }
 
 _HISTORY_PATH = Path("data/calibration/model_history.json")
@@ -1062,6 +1068,14 @@ def model_snapshots(agent: str) -> list[dict]:
                 "fitted_at": p.stem.split("_")[-1],
                 "accuracy": round(float(obj.accuracy), 4),
                 "brier_score": round(float(obj.brier_score), 4) if hasattr(obj, "brier_score") else None,
+                "cv_n_splits": getattr(obj, "cv_n_splits", 0),
+                "cv_accuracy_std": round(s, 4) if (s := getattr(obj, "cv_accuracy_std", None)) is not None else None,
+                "cv_brier_std": round(s, 4) if (s := getattr(obj, "cv_brier_std", None)) is not None else None,
+                "cv_fold_accuracies": [round(v, 4) for v in fa] if (fa := getattr(obj, "cv_fold_accuracies", None)) else None,
+                "cv_fold_briers": [round(v, 4) for v in fb] if (fb := getattr(obj, "cv_fold_briers", None)) else None,
+                "real_sample_weight": round(w, 4) if (w := getattr(obj, "real_sample_weight", None)) is not None else None,
+                "prior_cv_accuracy": round(p, 4) if (p := getattr(obj, "prior_cv_accuracy", None)) is not None else None,
+                "transfer_lift": round(float(obj.accuracy) - p, 4) if (p := getattr(obj, "prior_cv_accuracy", None)) is not None else None,
                 "n_real": int(obj.n_real),
                 "n_train": int(obj.n_train),
                 "model_version": getattr(obj, "model_version", None),
@@ -1103,6 +1117,15 @@ def model_test(body: dict) -> dict:
         elif agent == "telemetry":
             from f1di.agents.telemetry_classifier import generate_synthetic
             X_test, y_test = generate_synthetic(n=300, seed=99)
+        elif agent == "safety_car":
+            from f1di.agents.safety_car_classifier import generate_synthetic
+            X_test, y_test = generate_synthetic(n=300, seed=99)
+        elif agent == "fuel":
+            from f1di.agents.fuel_classifier import generate_synthetic
+            X_test, y_test = generate_synthetic(n=300, seed=99)
+        elif agent == "meta":
+            from f1di.inference.meta_learner import generate_synthetic
+            X_test, y_test = generate_synthetic(n=300, seed=99)
         else:
             raise HTTPException(status_code=400, detail="No test generator for this agent")
 
@@ -1111,8 +1134,14 @@ def model_test(body: dict) -> dict:
         preds = obj._model.predict(X_s)
         acc = float(accuracy_score(y_test, preds))
 
-        from f1di.agents.battery_classifier import _multiclass_brier as _mb
-        brier = float(_mb(proba, y_test, obj._model.classes_))
+        if agent == "meta":
+            # Binary Brier: mean((p_correct - y)^2), matching MetaLearner.fit's own scoring.
+            import numpy as _np
+            p_correct_idx = int(_np.where(obj._model.classes_ == 1)[0][0])
+            brier = float(_np.mean((proba[:, p_correct_idx] - y_test.astype(_np.float64)) ** 2))
+        else:
+            from f1di.agents.classifier_utils import multiclass_brier as _mb
+            brier = float(_mb(proba, y_test, obj._model.classes_))
 
         return {
             "agent": agent,
@@ -1122,8 +1151,13 @@ def model_test(body: dict) -> dict:
             "test_n": len(y_test),
             "test_accuracy": round(acc, 4),
             "test_brier": round(brier, 4),
-            "train_accuracy": round(float(obj.accuracy), 4),
-            "train_brier": round(float(obj.brier_score), 4) if hasattr(obj, "brier_score") else None,
+            # cv_accuracy/cv_brier come from the k-fold CV done at fit time (see
+            # classifier_utils.cross_val_eval) — already a held-out estimate, not a
+            # train-set score. test_accuracy above re-checks against a fresh
+            # synthetic draw as a second, independent sanity check.
+            "cv_accuracy": round(float(obj.accuracy), 4),
+            "cv_brier": round(float(obj.brier_score), 4) if hasattr(obj, "brier_score") else None,
+            "cv_n_splits": getattr(obj, "cv_n_splits", 0),
             "n_real": int(obj.n_real),
         }
     except HTTPException:

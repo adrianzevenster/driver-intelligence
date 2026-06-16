@@ -91,6 +91,17 @@ const VEC_META = {
   pgvector: { label: 'pgvector',  color: '#818cf8' },
 };
 
+// ── API key helpers (stored in localStorage) ──────────────────────────────
+
+function getApiKey() {
+  return localStorage.getItem('f1di_api_key') || '';
+}
+
+function authHeaders(extra = {}) {
+  const key = getApiKey();
+  return key ? { 'X-API-Key': key, ...extra } : { ...extra };
+}
+
 // ── Build TelemetryWindow ──────────────────────────────────────────────────
 
 function buildWindow(s) {
@@ -661,7 +672,7 @@ function KnowledgeBar() {
     const fd = new FormData();
     fd.append('file', file);
     try {
-      const res = await fetch('/api/v1/documents/ingest', { method: 'POST', body: fd });
+      const res = await fetch('/api/v1/documents/ingest', { method: 'POST', body: fd, headers: authHeaders() });
       const data = await res.json();
       refreshStatus();
       setUploadResult(`Indexed ${data.chunks_indexed ?? 0} chunks from "${data.filename ?? file.name}"`);
@@ -676,7 +687,7 @@ function KnowledgeBar() {
     setResult('');
     try {
       const nParam = source === 'fastf1' ? Math.min(n, 5) : n;
-      const res = await fetch(`${meta.endpoint}?years=${encodeURIComponent(years)}&n=${nParam}`, { method: 'POST' });
+      const res = await fetch(`${meta.endpoint}?years=${encodeURIComponent(years)}&n=${nParam}`, { method: 'POST', headers: authHeaders() });
       const data = await res.json();
       refreshStatus();
       setResult(`[${meta.label}] Indexed ${data.ingested} — ${data.documents_total} docs total (${data.latency_ms}ms)`);
@@ -831,7 +842,7 @@ function ChatPanel({ version }) {
     const fd = new FormData();
     fd.append('file', file);
     try {
-      const res = await fetch('/api/v1/documents/analyse', { method: 'POST', body: fd });
+      const res = await fetch('/api/v1/documents/analyse', { method: 'POST', body: fd, headers: authHeaders() });
       if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
       const data = await res.json();
       setMessages(prev => [...prev, { role: 'document', ...data }]);
@@ -2051,7 +2062,7 @@ function CalibrationCard() {
   async function retrain() {
     setRetraining(true); setResult(null); setError('');
     try {
-      const res = await fetch('/api/v1/calibrator/retrain', { method: 'POST' });
+      const res = await fetch('/api/v1/calibrator/retrain', { method: 'POST', headers: authHeaders() });
       const d = await res.json();
       if (!res.ok) throw new Error(d.detail ?? `Error ${res.status}`);
       setResult(d);
@@ -2435,9 +2446,9 @@ function ClassifierHistoryChart({ history, agent }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, color: 'var(--muted)', marginTop: 3 }}>
         <span>{agentHistory[0].fitted_at?.slice(0, 10)}</span>
         <div style={{ display: 'flex', gap: 10 }}>
-          <span style={{ color: '#22c55e' }}>— acc (↑)</span>
-          <span style={{ color: '#f59e0b' }}>— brier (↓)</span>
-          <span>latest: acc {latest.accuracy?.toFixed(3)}  brier {latest.brier_score?.toFixed(3)}  real {latest.n_real}</span>
+          <span style={{ color: '#22c55e' }}>— cv acc (↑)</span>
+          <span style={{ color: '#f59e0b' }}>— cv brier (↓)</span>
+          <span>latest: cv acc {latest.accuracy?.toFixed(3)}  cv brier {latest.brier_score?.toFixed(3)}  real {latest.n_real}</span>
         </div>
         <span>{latest.fitted_at?.slice(0, 10)}</span>
       </div>
@@ -2445,8 +2456,39 @@ function ClassifierHistoryChart({ history, agent }) {
   );
 }
 
+// Shows each k-fold CV accuracy as a dot against the mean, so a tight cluster
+// (trustworthy mean) is visually distinguishable from a wide spread (noisy
+// mean — the kind of run save_with_snapshot's z-score guard now widens its
+// block threshold for instead of treating every drop as a real regression).
+function FoldSpread({ accuracies, mean }) {
+  if (!accuracies || accuracies.length < 2) return null;
+  const lo = Math.min(...accuracies, mean ?? 1);
+  const hi = Math.max(...accuracies, mean ?? 0);
+  const range = (hi - lo) || 0.01;
+  const pad = range * 0.15;
+  const W = 200, H = 18;
+  const xFor = (v) => 6 + ((v - (lo - pad)) / (range + 2 * pad)) * (W - 12);
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
+      <span style={{ fontSize: 9, color: 'var(--muted)' }}>folds</span>
+      <svg width={W} height={H} style={{ flexShrink: 0 }}>
+        <line x1={6} y1={H / 2} x2={W - 6} y2={H / 2} stroke="rgba(255,255,255,0.08)" strokeWidth="1" />
+        {mean != null && (
+          <line x1={xFor(mean)} y1={2} x2={xFor(mean)} y2={H - 2} stroke="#64748b" strokeWidth="1.5" strokeDasharray="2,2" />
+        )}
+        {accuracies.map((v, i) => (
+          <circle key={i} cx={xFor(v)} cy={H / 2} r={3} fill={Math.abs(v - (mean ?? v)) > 0.05 ? '#f59e0b' : '#22c55e'} />
+        ))}
+      </svg>
+      <span style={{ fontSize: 9, color: 'var(--muted)', fontFamily: 'monospace' }}>
+        {accuracies.map(v => v.toFixed(2)).join(' ')}
+      </span>
+    </div>
+  );
+}
+
 function ClassifierModelsPanel({ clfHistory }) {
-  const AGENTS = ['tire', 'battery', 'weather', 'telemetry', 'safety_car', 'fuel'];
+  const AGENTS = ['tire', 'battery', 'weather', 'telemetry', 'safety_car', 'fuel', 'meta'];
   const [selectedAgent, setSelectedAgent] = useState('tire');
   const [snapshots, setSnapshots]         = useState([]);
   const [testResult, setTestResult]       = useState(null);
@@ -2554,16 +2596,29 @@ function ClassifierModelsPanel({ clfHistory }) {
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 14, marginTop: 4, fontSize: 10, color: '#64748b', fontFamily: 'monospace' }}>
-                {snap.accuracy != null && <span>acc {snap.accuracy.toFixed(3)}</span>}
-                {snap.brier_score != null && <span>brier {snap.brier_score.toFixed(3)}</span>}
+                {snap.accuracy != null && (
+                  <span title={snap.cv_n_splits ? `${snap.cv_n_splits}-fold cross-validated` : 'no CV — single train-set score (too little data to fold)'}>
+                    cv acc {snap.accuracy.toFixed(3)}{snap.cv_accuracy_std != null && <span style={{ color: '#475569' }}> ±{snap.cv_accuracy_std.toFixed(3)}</span>}
+                  </span>
+                )}
+                {snap.brier_score != null && (
+                  <span>cv brier {snap.brier_score.toFixed(3)}{snap.cv_brier_std != null && <span style={{ color: '#475569' }}> ±{snap.cv_brier_std.toFixed(3)}</span>}</span>
+                )}
                 {snap.n_real != null && <span>real {snap.n_real}</span>}
                 {snap.n_train != null && <span>train {snap.n_train}</span>}
               </div>
+              {snap.transfer_lift != null && (
+                <div style={{ marginTop: 3, fontSize: 10, fontFamily: 'monospace', color: snap.transfer_lift >= 0 ? '#4ade80' : '#f59e0b' }}
+                  title={`synthetic-only prior would score ${snap.prior_cv_accuracy?.toFixed(3)} — real labels weighted ${snap.real_sample_weight?.toFixed(2)}x a synthetic row`}>
+                  transfer lift {snap.transfer_lift >= 0 ? '+' : ''}{(snap.transfer_lift * 100).toFixed(1)}pp vs prior-only ({snap.prior_cv_accuracy?.toFixed(3)}, weight {snap.real_sample_weight?.toFixed(2)}x)
+                </div>
+              )}
+              {snap.cv_fold_accuracies && <FoldSpread accuracies={snap.cv_fold_accuracies} mean={snap.accuracy} />}
               {tested && (
                 <div style={{ marginTop: 5, padding: '4px 8px', borderRadius: 4, background: '#0d1b2e', border: '1px solid #1e3a5f', fontSize: 10, fontFamily: 'monospace', color: '#93c5fd' }}>
-                  held-out test (n={tested.test_n}): acc {tested.test_accuracy.toFixed(3)}  brier {tested.test_brier.toFixed(3)}
-                  {Math.abs(tested.test_accuracy - tested.train_accuracy) > 0.05 && (
-                    <span style={{ color: '#f59e0b', marginLeft: 8 }}>⚠ train/test gap {((tested.train_accuracy - tested.test_accuracy) * 100).toFixed(1)}pp</span>
+                  fresh-synthetic test (n={tested.test_n}): acc {tested.test_accuracy.toFixed(3)}  brier {tested.test_brier.toFixed(3)}
+                  {Math.abs(tested.test_accuracy - tested.cv_accuracy) > 0.05 && (
+                    <span style={{ color: '#f59e0b', marginLeft: 8 }}>⚠ cv/test gap {((tested.cv_accuracy - tested.test_accuracy) * 100).toFixed(1)}pp</span>
                   )}
                 </div>
               )}
@@ -3193,7 +3248,7 @@ function SchedulerSection() {
   async function trigger() {
     setTriggering(true); setTriggerMsg(null);
     const qs = `source=${source}&n=${n}${years ? `&years=${years}` : ''}`;
-    const r = await fetch(`/api/v1/ingestion/trigger?${qs}`, { method: 'POST' });
+    const r = await fetch(`/api/v1/ingestion/trigger?${qs}`, { method: 'POST', headers: authHeaders() });
     const d = await r.json();
     setTriggerMsg(d.status === 'ingestion_triggered'
       ? `Triggered ${source} ingestion (${d.years ? `years: ${d.years.join(',')}` : 'auto'}, n=${n})`
@@ -3392,7 +3447,7 @@ function FlywheelStatusCard() {
                     {retraining
                       ? 'retraining…'
                       : exists
-                        ? `acc ${acc}  brier ${brier}  real ${real}${delta > 0 ? `  +${delta} new` : ''}`
+                        ? `cv acc ${acc}  cv brier ${brier}  real ${real}${delta > 0 ? `  +${delta} new` : ''}`
                         : 'run make fit-' + agent}
                     {!retraining && delta > 0 && delta < threshold && (
                       <span style={{ color: '#f59e0b', marginLeft: 4 }}>({threshold - delta} until auto-retrain)</span>
@@ -3421,8 +3476,8 @@ function FlywheelStatusCard() {
                   <span style={{ fontSize: 10, color: '#64748b', fontFamily: 'monospace' }}>
                     {exists
                       ? (active
-                          ? `active · real ${real}${brier ? '  brier ' + brier : ''}`
-                          : `inactive · need ${Math.max(0, 20 - real)} more labels${brier ? '  brier ' + brier : ''}`)
+                          ? `active · real ${real}${brier ? '  cv brier ' + brier : ''}`
+                          : `inactive · need ${Math.max(0, 20 - real)} more labels${brier ? '  cv brier ' + brier : ''}`)
                       : 'run make fit-meta'}
                   </span>
                 </div>
@@ -3462,6 +3517,53 @@ function FlywheelStatusCard() {
   );
 }
 
+function ApiKeySection() {
+  const [key, setKey] = useState(() => localStorage.getItem('f1di_api_key') || '');
+  const [saved, setSaved] = useState(false);
+
+  function save() {
+    if (key.trim()) localStorage.setItem('f1di_api_key', key.trim());
+    else localStorage.removeItem('f1di_api_key');
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  }
+
+  return (
+    <div className="card">
+      <h3 style={{ fontSize: 12, color: 'var(--muted)', margin: '0 0 10px', textTransform: 'uppercase', letterSpacing: 1 }}>
+        API Key
+      </h3>
+      <p style={{ fontSize: 11, color: '#64748b', margin: '0 0 10px' }}>
+        Required for write operations (retrain, ingest, documents). Set <code>F1DI_API_KEY</code> on the server and paste the same value here.
+      </p>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <input
+          type="password"
+          value={key}
+          onChange={e => setKey(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && save()}
+          placeholder="Paste API key…"
+          style={{
+            flex: 1, background: '#0f172a', border: '1px solid #334155',
+            borderRadius: 6, padding: '6px 10px', color: '#e2e8f0', fontSize: 12,
+          }}
+        />
+        <button
+          onClick={save}
+          style={{
+            padding: '6px 14px', borderRadius: 6, fontSize: 12, cursor: 'pointer',
+            background: saved ? '#052e16' : '#1e3a5f',
+            border: `1px solid ${saved ? '#166534' : '#1e40af'}`,
+            color: saved ? '#4ade80' : '#93c5fd',
+          }}>
+          {saved ? '✓ Saved' : 'Save'}
+        </button>
+      </div>
+      {key && <p style={{ fontSize: 10, color: '#475569', margin: '6px 0 0' }}>Key stored in browser localStorage — never sent to any third party.</p>}
+    </div>
+  );
+}
+
 function SystemPanel() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -3469,6 +3571,7 @@ function SystemPanel() {
         <DeliverySection />
         <SchedulerSection />
       </div>
+      <ApiKeySection />
       <FlywheelStatusCard />
     </div>
   );

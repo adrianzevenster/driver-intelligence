@@ -42,6 +42,11 @@ FEATURE_NAMES: list[str] = [
 _MAX_RW_STD = 0.5
 
 
+def _binary_brier(proba: np.ndarray, y_true: np.ndarray, classes: np.ndarray) -> float:
+    p_correct_idx = int(np.where(classes == 1)[0][0])
+    return float(np.mean((proba[:, p_correct_idx] - y_true.astype(np.float64)) ** 2))
+
+
 def findings_to_array(findings: list, iso_confidence: float) -> np.ndarray:
     """Pack 4-agent findings + iso_confidence into the meta-learner feature vector."""
     from f1di.confidence.calibration import RISK_WEIGHT
@@ -79,22 +84,52 @@ class MetaLearner:
         self.n_real: int = 0
         self.accuracy: float = 0.0
         self.brier_score: float = 1.0
+        self.cv_n_splits: int = 0
+        self.cv_accuracy_std: float | None = None
+        self.cv_brier_std: float | None = None
+        self.cv_fold_accuracies: list[float] | None = None
+        self.cv_fold_briers: list[float] | None = None
+        self.real_sample_weight: float | None = None
+        self.prior_cv_accuracy: float | None = None
 
-    def fit(self, X: np.ndarray, y: np.ndarray, n_real: int = 0) -> "MetaLearner":
+    def fit(self, X: np.ndarray, y: np.ndarray, n_real: int = 0, sample_weight: np.ndarray | None = None) -> "MetaLearner":
         from sklearn.metrics import accuracy_score
         X_s = self._scaler.fit_transform(X)
-        self._model.fit(X_s, y)
+        self._model.fit(X_s, y, sample_weight=sample_weight)
         self.n_train = int(len(y))
         self.n_real = n_real
-        proba = self._model.predict_proba(X_s)  # (N, 2): [P(incorrect), P(correct)]
-        self.accuracy = float(accuracy_score(y, self._model.predict(X_s)))
-        # Binary Brier score: mean((p_correct - y)^2)
-        self.brier_score = float(np.mean((proba[:, 1] - y.astype(np.float64)) ** 2))
+
+        from f1di.agents.classifier_utils import cross_val_eval
+        cv = cross_val_eval(self._build_pipeline, X, y, _binary_brier, sample_weight=sample_weight)
+        if cv is not None:
+            self.accuracy = cv["cv_accuracy"]
+            self.brier_score = cv["cv_brier"]
+            self.cv_n_splits = cv["n_splits"]
+            self.cv_accuracy_std = cv["cv_accuracy_std"]
+            self.cv_brier_std = cv["cv_brier_std"]
+            self.cv_fold_accuracies = cv["fold_accuracies"]
+            self.cv_fold_briers = cv["fold_briers"]
+        else:
+            proba = self._model.predict_proba(X_s)  # (N, 2): [P(incorrect), P(correct)]
+            self.accuracy = float(accuracy_score(y, self._model.predict(X_s)))
+            self.brier_score = float(np.mean((proba[:, 1] - y.astype(np.float64)) ** 2))
+            self.cv_n_splits = 0
+            self.cv_accuracy_std = None
+            self.cv_brier_std = None
+            self.cv_fold_accuracies = None
+            self.cv_fold_briers = None
+
         logger.info(
-            "MetaLearner fitted: n=%d n_real=%d acc=%.3f brier=%.4f",
-            self.n_train, self.n_real, self.accuracy, self.brier_score,
+            "MetaLearner fitted: n=%d n_real=%d cv_acc=%.3f cv_brier=%.4f n_splits=%d",
+            self.n_train, self.n_real, self.accuracy, self.brier_score, self.cv_n_splits,
         )
         return self
+
+    @staticmethod
+    def _build_pipeline():
+        from sklearn.linear_model import LogisticRegression
+        from sklearn.preprocessing import StandardScaler
+        return StandardScaler(), LogisticRegression(C=0.5, max_iter=1000, solver="lbfgs", random_state=42)
 
     def ood_score(self, findings: list, iso_confidence: float) -> float:
         """Max absolute Z-score of meta-learner features vs training distribution."""
@@ -241,14 +276,18 @@ def train_from_labels(
     X_r, y_r = _load_labeled_from_db()
     n_real = len(y_r)
 
-    if n_real >= 10:
-        X = np.vstack([X_s, np.repeat(X_r, real_oversample, axis=0)])
-        y = np.concatenate([y_s, np.repeat(y_r, real_oversample)])
-    else:
-        X, y = X_s, y_s
+    from f1di.agents.classifier_utils import blend_with_transfer
+    blend = blend_with_transfer(
+        MetaLearner._build_pipeline, X_s, y_s, X_r, y_r, n_real,
+        _binary_brier, weight_cap=real_oversample,
+    )
+    X, y, sample_weight = blend["X"], blend["y"], blend["sample_weight"]
 
     unique, counts = np.unique(y, return_counts=True)
-    meta = MetaLearner().fit(X, y, n_real=n_real)
+    meta = MetaLearner().fit(X, y, n_real=n_real, sample_weight=sample_weight)
+    meta.real_sample_weight = blend["real_weight"]
+    meta.prior_cv_accuracy = blend["prior_cv"]["cv_accuracy"] if blend["prior_cv"] else None
+
     from f1di.agents.classifier_utils import save_with_snapshot
     # First time real data is added the accuracy will naturally drop vs a
     # synthetic-only model (synthetic is overfit to its own distribution).
@@ -270,4 +309,7 @@ def train_from_labels(
         "output_path": str(output_path),
         "snapshot_blocked": snap["blocked"],
         "versioned_path": snap["versioned_path"],
+        "real_sample_weight": round(meta.real_sample_weight, 4) if meta.real_sample_weight is not None else None,
+        "prior_accuracy": round(meta.prior_cv_accuracy, 4) if meta.prior_cv_accuracy is not None else None,
+        "transfer_lift": round(meta.accuracy - meta.prior_cv_accuracy, 4) if meta.prior_cv_accuracy is not None else None,
     }

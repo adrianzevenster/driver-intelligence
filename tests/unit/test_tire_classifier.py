@@ -202,8 +202,17 @@ def test_train_from_labels_with_real_data(tmp_path):
         report = train_from_labels(output_path=out, synthetic_n=200, real_oversample=3)
 
     assert report["n_real"] == 15
-    # Total should be synthetic + real × oversample
-    assert report["n_total"] == 200 + 15 * 3
+    # Real rows are blended via sample_weight now, not literal duplication —
+    # n_total is just synthetic + real, one row each.
+    assert report["n_total"] == 200 + 15
+    # Weight ramps from 1.0 at the n_real=10 floor toward the real_oversample
+    # cap (3) as n_real grows toward the saturation point (50).
+    from f1di.agents.classifier_utils import REAL_WEIGHT_FLOOR, REAL_WEIGHT_SATURATION
+    growth = min(1.0, (15 - REAL_WEIGHT_FLOOR) / (REAL_WEIGHT_SATURATION - REAL_WEIGHT_FLOOR))
+    expected_weight = 1.0 + (3 - 1.0) * growth
+    assert report["real_sample_weight"] == pytest.approx(expected_weight, abs=1e-6)
+    assert report["prior_accuracy"] is not None
+    assert report["transfer_lift"] is not None
 
 
 # ── TireStrategyAgent with classifier ─────────────────────────────────────

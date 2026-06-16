@@ -76,24 +76,57 @@ class TireClassifier:
         self.n_real: int = 0
         self.accuracy: float = 0.0
         self.brier_score: float = 1.0
+        self.cv_n_splits: int = 0
+        self.cv_accuracy_std: float | None = None
+        self.cv_brier_std: float | None = None
+        self.cv_fold_accuracies: list[float] | None = None
+        self.cv_fold_briers: list[float] | None = None
+        self.real_sample_weight: float | None = None
+        self.prior_cv_accuracy: float | None = None
         self.model_version: str = MODEL_VERSION
         self.model_type: str = MODEL_TYPE
 
-    def fit(self, X: np.ndarray, y: np.ndarray, n_real: int = 0) -> "TireClassifier":
+    def fit(self, X: np.ndarray, y: np.ndarray, n_real: int = 0, sample_weight: np.ndarray | None = None) -> "TireClassifier":
         from sklearn.metrics import accuracy_score
         X_scaled = self._scaler.fit_transform(X)
-        self._model.fit(X_scaled, y)
+        self._model.fit(X_scaled, y, sample_weight=sample_weight)
         self.classes_ = [_LABEL_MAP[int(c)] for c in self._model.classes_]
         self.n_train = int(len(y))
         self.n_real = n_real
-        proba = self._model.predict_proba(X_scaled)
-        self.accuracy = float(accuracy_score(y, self._model.predict(X_scaled)))
-        self.brier_score = float(_multiclass_brier(proba, y, self._model.classes_))
+
+        from f1di.agents.classifier_utils import cross_val_eval
+        cv = cross_val_eval(self._build_pipeline, X, y, _multiclass_brier, sample_weight=sample_weight)
+        if cv is not None:
+            self.accuracy = cv["cv_accuracy"]
+            self.brier_score = cv["cv_brier"]
+            self.cv_n_splits = cv["n_splits"]
+            self.cv_accuracy_std = cv["cv_accuracy_std"]
+            self.cv_brier_std = cv["cv_brier_std"]
+            self.cv_fold_accuracies = cv["fold_accuracies"]
+            self.cv_fold_briers = cv["fold_briers"]
+        else:
+            # Too little data/too few classes to cross-validate honestly — fall
+            # back to the train-set score (optimistic, but the only signal we have).
+            proba = self._model.predict_proba(X_scaled)
+            self.accuracy = float(accuracy_score(y, self._model.predict(X_scaled)))
+            self.brier_score = float(_multiclass_brier(proba, y, self._model.classes_))
+            self.cv_n_splits = 0
+            self.cv_accuracy_std = None
+            self.cv_brier_std = None
+            self.cv_fold_accuracies = None
+            self.cv_fold_briers = None
+
         logger.info(
-            "TireClassifier fitted: n_total=%d n_real=%d acc=%.3f brier=%.4f classes=%s",
-            self.n_train, self.n_real, self.accuracy, self.brier_score, self.classes_,
+            "TireClassifier fitted: n_total=%d n_real=%d cv_acc=%.3f cv_brier=%.4f n_splits=%d classes=%s",
+            self.n_train, self.n_real, self.accuracy, self.brier_score, self.cv_n_splits, self.classes_,
         )
         return self
+
+    @staticmethod
+    def _build_pipeline():
+        from sklearn.linear_model import LogisticRegression
+        from sklearn.preprocessing import StandardScaler
+        return StandardScaler(), LogisticRegression(C=1.0, max_iter=1000, solver="lbfgs", random_state=42)
 
     def ood_score(self, features, wear_pressure: float) -> float:
         """Max absolute Z-score of features vs training distribution. >4.0 = OOD."""
@@ -258,33 +291,42 @@ def train_from_labels(
 ) -> dict:
     """Train TireClassifier from synthetic cold-start + real flywheel labels.
 
-    Real examples are repeated `real_oversample` times so a modest number of
-    confirmed outcomes can already override the synthetic prior, giving a
-    graceful cold-start → data-driven transition.
+    Real examples are blended in via a continuous sample weight (see
+    classifier_utils.blend_with_transfer) rather than literal duplication, so
+    their influence grows smoothly with n_real instead of jumping at a fixed
+    threshold. `real_oversample` is now the weight cap a real row asymptotes
+    to as more labels accumulate, not a literal repeat count.
     """
     X_synth, y_synth = generate_synthetic(n=synthetic_n)
     X_real, y_real = _load_labeled_from_db()
     n_real = len(y_real)
 
-    if n_real >= 10:
-        X = np.vstack([X_synth, np.repeat(X_real, real_oversample, axis=0)])
-        y = np.concatenate([y_synth, np.repeat(y_real, real_oversample)])
-    else:
-        X, y = X_synth, y_synth
-        if n_real > 0:
-            logger.info(
-                "tire_classifier: %d real examples (min 10 to blend) — "
-                "training on synthetic only this cycle", n_real,
-            )
+    from f1di.agents.classifier_utils import blend_with_transfer
+    blend = blend_with_transfer(
+        TireClassifier._build_pipeline, X_synth, y_synth, X_real, y_real, n_real,
+        _multiclass_brier, weight_cap=real_oversample,
+    )
+    X, y, sample_weight = blend["X"], blend["y"], blend["sample_weight"]
+    if 0 < n_real < 10:
+        logger.info(
+            "tire_classifier: %d real examples (min 10 to blend) — "
+            "training on synthetic only this cycle", n_real,
+        )
 
     unique, counts = np.unique(y, return_counts=True)
     class_dist = {_LABEL_MAP[int(k)]: int(v) for k, v in zip(unique, counts)}
 
-    clf = TireClassifier().fit(X, y, n_real=n_real)
+    clf = TireClassifier().fit(X, y, n_real=n_real, sample_weight=sample_weight)
+    clf.real_sample_weight = blend["real_weight"]
+    clf.prior_cv_accuracy = blend["prior_cv"]["cv_accuracy"] if blend["prior_cv"] else None
+
     from f1di.agents.classifier_utils import save_with_snapshot, record_history
     snap = save_with_snapshot(clf, output_path)
-    record_history(clf, agent="tire", versioned_path=snap["versioned_path"], blocked=snap["blocked"], history_path=output_path.parent / "model_history.json")
+    record_history(clf, agent="tire", versioned_path=snap["versioned_path"], blocked=snap["blocked"], history_path=output_path.parent / "model_history.json", threshold=snap.get("threshold"))
 
+    transfer_lift = (
+        round(clf.accuracy - clf.prior_cv_accuracy, 4) if clf.prior_cv_accuracy is not None else None
+    )
     return {
         "n_synthetic": len(y_synth),
         "n_real": n_real,
@@ -295,4 +337,7 @@ def train_from_labels(
         "output_path": str(output_path),
         "snapshot_blocked": snap["blocked"],
         "versioned_path": snap["versioned_path"],
+        "real_sample_weight": round(clf.real_sample_weight, 4) if clf.real_sample_weight is not None else None,
+        "prior_accuracy": round(clf.prior_cv_accuracy, 4) if clf.prior_cv_accuracy is not None else None,
+        "transfer_lift": transfer_lift,
     }

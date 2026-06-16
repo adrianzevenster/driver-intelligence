@@ -52,19 +52,34 @@ def get_races(year: int) -> list[dict]:
     return races
 
 
-def get_drivers(year: int, round_num: int) -> list[dict]:
+def _load_session_laps(year: int, round_num: int):
+    """Load session with laps only; swallow non-fatal FastF1 sub-loader errors."""
     ff1 = _ff1()
     session = ff1.get_session(year, round_num, "R")
-    session.load(laps=True, telemetry=False, weather=False, messages=False)
-    codes = sorted(session.laps["Driver"].dropna().unique())
+    try:
+        session.load(laps=True, telemetry=False, weather=False, messages=False)
+    except Exception:
+        # Some sub-loaders (session_info, driver_info) raise SessionNotAvailableError
+        # for older rounds. Lap data is usually still populated — check before returning.
+        pass
+    return session
+
+
+def get_drivers(year: int, round_num: int) -> list[dict]:
+    session = _load_session_laps(year, round_num)
+    try:
+        codes = sorted(session.laps["Driver"].dropna().unique())
+    except Exception:
+        return []
     return [{"code": str(c)} for c in codes]
 
 
 def get_laps(year: int, round_num: int, driver: str) -> list[dict]:
-    ff1 = _ff1()
-    session = ff1.get_session(year, round_num, "R")
-    session.load(laps=True, telemetry=False, weather=False, messages=False)
-    driver_laps = session.laps.pick_drivers(driver.upper())
+    session = _load_session_laps(year, round_num)
+    try:
+        driver_laps = session.laps.pick_drivers(driver.upper())
+    except Exception:
+        return []
     result = []
     for _, lap in driver_laps.iterrows():
         lt = lap.get("LapTime")
@@ -145,7 +160,7 @@ def _build_lap_samples(
             corner_id=None,
             speed_kph=speed,
             acceleration_g=round(accel_g, 3),
-            throttle_pct=throttle,
+            throttle_pct=max(0.0, min(100.0, throttle)),
             brake_pressure_bar=brake_bar,
             steering_angle_deg=0.0,
             yaw_rate_deg_s=0.0,
@@ -245,11 +260,15 @@ def build_window(
 
     start_lap = max(1, end_lap - window_laps + 1)
 
-    weather = session.weather_data
-    track_temp = float(weather["TrackTemp"].mean()) if len(weather) > 0 else 30.0
-    ambient_temp = float(weather["AirTemp"].mean()) if len(weather) > 0 else 22.0
-    humidity = float(weather["Humidity"].mean()) if len(weather) > 0 else 50.0
-    rainfall = bool(weather["Rainfall"].any()) if len(weather) > 0 else False
+    try:
+        weather = session.weather_data
+        has_weather = weather is not None and len(weather) > 0
+    except Exception:
+        has_weather = False
+    track_temp = float(weather["TrackTemp"].mean()) if has_weather else 30.0
+    ambient_temp = float(weather["AirTemp"].mean()) if has_weather else 22.0
+    humidity = float(weather["Humidity"].mean()) if has_weather else 50.0
+    rainfall = bool(weather["Rainfall"].any()) if has_weather else False
 
     all_samples: list[TelemetrySample] = []
     time_offset = 0

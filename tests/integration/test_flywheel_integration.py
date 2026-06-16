@@ -210,6 +210,79 @@ class TestMetaLearnerFlywheelLoop:
         assert hasattr(ml, "ood_score")
 
 
+class TestSafetyCarFlywheelLoop:
+    def test_blended_training_with_real_labels(self, sqlite_session, tmp_path):
+        for i in range(12):
+            iid = str(uuid.uuid4())
+            _write_insight(sqlite_session, iid, "safety_car", "WARNING", {
+                "mean_speed_kph": 90.0 - i * 2,
+                "speed_delta_kph": -50.0 - i,
+                "rain_intensity": 0.55 + i * 0.01,
+                "grip_estimate": 0.55 - i * 0.01,
+                "lockup_count": float(i % 3),
+                "throttle_smoothness": 0.50,
+                "race_phase": 0.45,
+                "brake_temp_front_max": 420.0,
+            })
+            _write_feedback(sqlite_session, iid, correct=True)
+
+        out = tmp_path / "sc_clf.pkl"
+        from f1di.agents.safety_car_classifier import train_from_labels
+        result = train_from_labels(output_path=out, synthetic_n=400)
+
+        assert out.exists()
+        assert result["n_real"] == 12
+        assert result["accuracy"] > 0.65
+        import pickle
+        clf = pickle.loads(out.read_bytes())
+        assert hasattr(clf, "brier_score")
+        assert hasattr(clf, "ood_score")
+        assert result.get("snapshot_blocked") is False
+
+    def test_snapshot_written_alongside_live(self, sqlite_session, tmp_path):
+        out = tmp_path / "sc_clf.pkl"
+        from f1di.agents.safety_car_classifier import train_from_labels
+        result = train_from_labels(output_path=out, synthetic_n=300)
+        assert out.exists()
+        assert Path(result["versioned_path"]).exists()
+
+
+class TestFuelFlywheelLoop:
+    def test_blended_training_with_real_labels(self, sqlite_session, tmp_path):
+        for i in range(12):
+            iid = str(uuid.uuid4())
+            _write_insight(sqlite_session, iid, "fuel", "WARNING", {
+                "throttle_mean": 82.0 + i * 0.5,
+                "ers_net_deploy_kw": 45.0 + i,
+                "battery_soc": 0.60 - i * 0.02,
+                "laps_remaining": float(35 - i),
+                "race_phase": 0.35 + i * 0.02,
+                "stint_fraction": 0.55 + i * 0.02,
+                "throttle_smoothness": 0.55,
+            })
+            _write_feedback(sqlite_session, iid, correct=True)
+
+        out = tmp_path / "fuel_clf.pkl"
+        from f1di.agents.fuel_classifier import train_from_labels
+        result = train_from_labels(output_path=out, synthetic_n=400)
+
+        assert out.exists()
+        assert result["n_real"] == 12
+        assert result["accuracy"] > 0.65
+        import pickle
+        clf = pickle.loads(out.read_bytes())
+        assert hasattr(clf, "brier_score")
+        assert hasattr(clf, "ood_score")
+        assert result.get("snapshot_blocked") is False
+
+    def test_snapshot_written_alongside_live(self, sqlite_session, tmp_path):
+        out = tmp_path / "fuel_clf.pkl"
+        from f1di.agents.fuel_classifier import train_from_labels
+        result = train_from_labels(output_path=out, synthetic_n=300)
+        assert out.exists()
+        assert Path(result["versioned_path"]).exists()
+
+
 class TestOodScore:
     def test_in_distribution_features_low_ood(self):
         from f1di.agents.battery_classifier import BatteryClassifier, generate_synthetic
