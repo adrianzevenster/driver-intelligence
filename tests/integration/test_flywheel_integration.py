@@ -283,6 +283,71 @@ class TestFuelFlywheelLoop:
         assert Path(result["versioned_path"]).exists()
 
 
+class TestRegressionGuardWithRealNoise:
+    """Unit tests for blend_with_transfer/save_with_snapshot use small, fixed
+    fixtures. These exercise the same guard against more realistic conditions:
+    n_real past the weight-cap saturation point, a stable re-train that must
+    NOT trip the noise-aware threshold, and a genuinely corrupted re-train that
+    must trip it.
+    """
+
+    def _seed(self, session, n: int, correct: bool = True) -> None:
+        for i in range(n):
+            iid = str(uuid.uuid4())
+            _write_insight(session, iid, "safety_car", "WARNING", {
+                "mean_speed_kph": 90.0 - (i % 10) * 2,
+                "speed_delta_kph": -50.0 - (i % 20),
+                "rain_intensity": 0.5 + (i % 10) * 0.01,
+                "grip_estimate": 0.55 - (i % 10) * 0.01,
+                "lockup_count": float(i % 3),
+                "throttle_smoothness": 0.50,
+                "race_phase": 0.45,
+                "brake_temp_front_max": 420.0,
+            })
+            _write_feedback(session, iid, correct=correct)
+
+    def test_real_weight_saturates_at_cap(self, sqlite_session, tmp_path):
+        from f1di.agents.classifier_utils import REAL_WEIGHT_SATURATION
+        from f1di.agents.safety_car_classifier import train_from_labels
+
+        self._seed(sqlite_session, REAL_WEIGHT_SATURATION + 10)
+        out = tmp_path / "sc.pkl"
+        result = train_from_labels(output_path=out, synthetic_n=400)
+
+        assert result["n_real"] == REAL_WEIGHT_SATURATION + 10
+        assert result["real_sample_weight"] == 5.0  # default weight_cap
+
+    def test_stable_real_data_does_not_spuriously_block_retrain(self, sqlite_session, tmp_path):
+        from f1di.agents.safety_car_classifier import train_from_labels
+
+        self._seed(sqlite_session, 60)
+        out = tmp_path / "sc.pkl"
+        first = train_from_labels(output_path=out, synthetic_n=400)
+        assert first["snapshot_blocked"] is False
+
+        second = train_from_labels(output_path=out, synthetic_n=400)
+        assert second["snapshot_blocked"] is False, (
+            "re-training on the same stable real data must not trip the "
+            "fold-noise-aware regression guard"
+        )
+
+    def test_corrupted_real_labels_trigger_genuine_block(self, sqlite_session, tmp_path):
+        from f1di.agents.safety_car_classifier import train_from_labels
+
+        self._seed(sqlite_session, 60, correct=True)
+        out = tmp_path / "sc.pkl"
+        first = train_from_labels(output_path=out, synthetic_n=400)
+        assert first["snapshot_blocked"] is False
+
+        # Same features, but every label is now wrong (correct=False shifts the
+        # true label away from what the features indicate) -- a real regression,
+        # not fold noise, and the guard must catch it.
+        self._seed(sqlite_session, 60, correct=False)
+        second = train_from_labels(output_path=out, synthetic_n=400)
+        assert second["accuracy"] < first["accuracy"] - 0.05
+        assert second["snapshot_blocked"] is True
+
+
 class TestOodScore:
     def test_in_distribution_features_low_ood(self):
         from f1di.agents.battery_classifier import BatteryClassifier, generate_synthetic

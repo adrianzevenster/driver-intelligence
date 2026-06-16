@@ -1119,6 +1119,76 @@ function LapBadge({ lap }) {
 
 const RISK_COLOURS = { INFO: '#4a5568', WATCH: '#d69e2e', WARNING: '#e53e3e', CRITICAL: '#805ad5' };
 
+function StrategyOverview({ strategy }) {
+  const { actual_strategy: stints, calculated, model_pit_calls, driver, year, round_num, session_type } = strategy;
+  if (!calculated.length) return null;
+
+  const minLap = calculated[0].lap;
+  const maxLap = calculated[calculated.length - 1].lap;
+  const span = Math.max(1, maxLap - minLap + 1);
+  const pctFor = lap => ((lap - minLap) / span) * 100;
+  const actualPitLaps = stints.slice(1).map(s => s.start_lap);
+
+  return (
+    <div className="card" style={{ marginTop: 16 }}>
+      <h2 style={{ marginBottom: 2 }}>
+        <BarChart2 size={15} /> Strategy Overview — {driver} · {year} R{round_num}{session_type === 'S' ? ' (Sprint)' : ''}
+      </h2>
+      <p className="muted" style={{ fontSize: '0.72rem', marginBottom: 12 }}>
+        Actual pit strategy (FastF1) vs the tire_strategy agent's calculated risk, replayed lap by lap.
+      </p>
+
+      <span style={{ fontSize: '0.66rem', fontWeight: 700, color: 'var(--muted)', letterSpacing: '0.03em' }}>ACTUAL STRATEGY</span>
+      <svg width="100%" height="20" style={{ display: 'block', overflow: 'visible', marginTop: 4 }}>
+        {stints.map(s => (
+          <rect key={s.stint}
+            x={`${pctFor(s.start_lap)}%`} y="0"
+            width={`${((s.end_lap - s.start_lap + 1) / span) * 100}%`} height="20"
+            fill={COMPOUND_COLOURS[s.compound] ?? '#555'} />
+        ))}
+        {actualPitLaps.map(lap => (
+          <line key={lap} x1={`${pctFor(lap)}%`} y1="-3" x2={`${pctFor(lap)}%`} y2="23" stroke="white" strokeWidth="2" opacity="0.9" />
+        ))}
+      </svg>
+      <div style={{ display: 'flex', gap: 10, fontSize: '0.62rem', color: 'var(--muted)', marginTop: 3, flexWrap: 'wrap' }}>
+        {stints.map(s => <span key={s.stint}>{s.compound[0]} L{s.start_lap}–{s.end_lap}</span>)}
+      </div>
+
+      <span style={{ fontSize: '0.66rem', fontWeight: 700, color: 'var(--muted)', letterSpacing: '0.03em', display: 'block', marginTop: 14 }}>
+        CALCULATED TIRE RISK
+      </span>
+      <svg width="100%" height="20" style={{ display: 'block', overflow: 'visible', marginTop: 4 }}>
+        {calculated.filter(row => row.tire_risk).map(row => (
+          <rect key={row.lap}
+            x={`${pctFor(row.lap)}%`} y="0"
+            width={`${(1 / span) * 100}%`} height="20"
+            fill={RISK_COLOURS[row.tire_risk] ?? '#333'} />
+        ))}
+        {model_pit_calls.map(c => (
+          <line key={c.lap} x1={`${pctFor(c.lap)}%`} y1="-3" x2={`${pctFor(c.lap)}%`} y2="23" stroke="#38bdf8" strokeWidth="2" opacity="0.9" />
+        ))}
+      </svg>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.6rem', color: 'var(--muted)', marginTop: 2 }}>
+        <span>L{minLap}</span><span>L{maxLap}</span>
+      </div>
+      <div style={{ display: 'flex', gap: 10, fontSize: '0.62rem', color: 'var(--muted)', marginTop: 3, flexWrap: 'wrap' }}>
+        {Object.entries(RISK_COLOURS).map(([risk, color]) => (
+          <span key={risk} style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+            <span style={{ width: 7, height: 7, borderRadius: '50%', background: color, display: 'inline-block' }} />
+            {risk}
+          </span>
+        ))}
+      </div>
+
+      <p style={{ fontSize: '0.74rem', marginTop: 14, color: 'var(--text)' }}>
+        {model_pit_calls.length === 0
+          ? 'Model never flagged a tire WARNING/CRITICAL pit window in this replay — actual stops were likely scheduled/strategic rather than wear-driven, or the classifier is conservative on real (vs synthetic) telemetry.'
+          : `Model flagged a tire pit window at: ${model_pit_calls.map(c => `L${c.lap}`).join(', ')}. Actual pit lap(s): ${actualPitLaps.map(l => `L${l}`).join(', ') || '—'}.`}
+      </p>
+    </div>
+  );
+}
+
 function InsightHistoryStrip({ history, onRestore }) {
   if (!history.length) return null;
   return (
@@ -1264,6 +1334,10 @@ function LivePanel({ version }) {
   const [loading, setLoading]         = useState(false);
   const [loadingDrivers, setLoadingDrivers] = useState(false);
   const [year, setYear]               = useState(2024);
+  const [sessionType, setSessionType] = useState('R');
+  const [strategy, setStrategy]               = useState(null);
+  const [strategyLoading, setStrategyLoading] = useState(false);
+  const [strategyError, setStrategyError]     = useState('');
 
   useEffect(() => {
     setError(''); setRaces([]); setRoundNum('');
@@ -1282,8 +1356,9 @@ function LivePanel({ version }) {
     setLaps([]); setLaps2([]); setSelectedLap(null);
     setInsight(null); setInsight2(null);
     setHistory([]); setTrace([]); setTrace2([]);
+    setStrategy(null); setStrategyError('');
     setLoadingDrivers(true);
-    fetch(`/api/v1/session/drivers/${year}/${roundNum}`)
+    fetch(`/api/v1/session/drivers/${year}/${roundNum}?session_type=${sessionType}`)
       .then(r => r.ok ? r.json() : [])
       .then(rows => {
         setDrivers(rows);
@@ -1291,33 +1366,49 @@ function LivePanel({ version }) {
       })
       .catch(() => {})
       .finally(() => setLoadingDrivers(false));
-  }, [year, roundNum]);
+  }, [year, roundNum, sessionType]);
 
   useEffect(() => {
     if (!roundNum || !driver) return;
     setLaps([]); setSelectedLap(null); setInsight(null); setHistory([]); setTrace([]);
-    fetch(`/api/v1/session/laps/${year}/${roundNum}/${driver}`)
+    setStrategy(null); setStrategyError('');
+    fetch(`/api/v1/session/laps/${year}/${roundNum}/${driver}?session_type=${sessionType}`)
       .then(r => r.ok ? r.json() : [])
       .then(rows => {
         setLaps(rows);
         if (rows.length) setSelectedLap(rows[rows.length - 1].lap_number);
       })
       .catch(() => {});
-  }, [year, roundNum, driver]);
+  }, [year, roundNum, driver, sessionType]);
+
+  async function fetchStrategy() {
+    if (!roundNum || !driver) return;
+    setStrategyError(''); setStrategyLoading(true);
+    try {
+      const res = await fetch(`/api/v1/session/strategy/${year}/${roundNum}/${driver}?session_type=${sessionType}`);
+      if (!res.ok) throw new Error(await res.text());
+      setStrategy(await res.json());
+    } catch (e) {
+      setStrategyError(String(e.message ?? e));
+      setStrategy(null);
+    } finally {
+      setStrategyLoading(false);
+    }
+  }
 
   useEffect(() => {
     if (!roundNum || !driver2) { setLaps2([]); setInsight2(null); setTrace2([]); return; }
-    fetch(`/api/v1/session/laps/${year}/${roundNum}/${driver2}`)
+    fetch(`/api/v1/session/laps/${year}/${roundNum}/${driver2}?session_type=${sessionType}`)
       .then(r => r.ok ? r.json() : [])
       .then(setLaps2)
       .catch(() => {});
-  }, [year, roundNum, driver2]);
+  }, [year, roundNum, driver2, sessionType]);
 
   async function fetchTrace(lap) {
     if (!roundNum || !driver || lap == null) return;
     const [r1, r2] = await Promise.all([
-      fetch(`/api/v1/session/trace/${year}/${roundNum}/${driver}/${lap}`),
-      driver2 ? fetch(`/api/v1/session/trace/${year}/${roundNum}/${driver2}/${lap}`) : Promise.resolve(null),
+      fetch(`/api/v1/session/trace/${year}/${roundNum}/${driver}/${lap}?session_type=${sessionType}`),
+      driver2 ? fetch(`/api/v1/session/trace/${year}/${roundNum}/${driver2}/${lap}?session_type=${sessionType}`) : Promise.resolve(null),
     ]);
     setTrace(r1.ok ? await r1.json() : []);
     setTrace2(r2 && r2.ok ? await r2.json() : []);
@@ -1328,7 +1419,7 @@ function LivePanel({ version }) {
     setError(''); setLoading(true);
     const lap = lapOverride ?? (replayMode ? selectedLap : null);
     const lapParam = lap != null ? `&lap_number=${lap}` : '';
-    const base = `/api/v1/session/insight?year=${year}&round_num=${roundNum}&audience=${audience}${lapParam}`;
+    const base = `/api/v1/session/insight?year=${year}&round_num=${roundNum}&audience=${audience}&session_type=${sessionType}${lapParam}`;
     try {
       const reqs = [fetch(`${base}&driver=${driver}`, { method: 'POST' })];
       if (driver2) reqs.push(fetch(`${base}&driver=${driver2}`, { method: 'POST' }));
@@ -1377,6 +1468,7 @@ function LivePanel({ version }) {
   }
 
   return (
+    <>
     <div className="grid">
       <div className="card input-card">
         <div className="input-header">
@@ -1398,7 +1490,7 @@ function LivePanel({ version }) {
               </label>
               <label style={{ flex: 2 }}><span>Race</span>
                 <select className="text-input" value={roundNum}
-                  onChange={e => setRoundNum(e.target.value)}>
+                  onChange={e => { setRoundNum(e.target.value); setSessionType('R'); }}>
                   <option value="">— select —</option>
                   {races.map(r => (
                     <option key={r.round} value={r.round}>
@@ -1412,6 +1504,14 @@ function LivePanel({ version }) {
               <p className="muted" style={{ fontSize: '0.72rem', marginTop: 4 }}>
                 {selectedRace.circuit} · {selectedRace.country}
               </p>
+            )}
+            {selectedRace?.has_sprint && (
+              <div className="seg" style={{ marginTop: 8, width: 'fit-content' }}>
+                {['R', 'S'].map(t => (
+                  <button key={t} className={`seg-btn${sessionType === t ? ' active' : ''}`}
+                    onClick={() => setSessionType(t)}>{t === 'R' ? 'Race' : 'Sprint'}</button>
+                ))}
+              </div>
             )}
           </Section>
 
@@ -1470,6 +1570,13 @@ function LivePanel({ version }) {
                   </>
                 )}
               </div>
+              <button className="kb-btn" style={{ marginTop: 8, width: '100%' }}
+                onClick={fetchStrategy} disabled={strategyLoading}>
+                {strategyLoading
+                  ? `Replaying ${sessionType === 'S' ? 'sprint' : 'race'}…`
+                  : `Compare full-${sessionType === 'S' ? 'sprint' : 'race'} strategy`}
+              </button>
+              {strategyError && <pre className="error" style={{ marginTop: 6 }}>{strategyError}</pre>}
             </Section>
           )}
         </div>
@@ -1538,6 +1645,8 @@ function LivePanel({ version }) {
         )}
       </div>
     </div>
+    {strategy && <StrategyOverview strategy={strategy} />}
+    </>
   );
 }
 

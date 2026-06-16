@@ -68,15 +68,28 @@ class InferenceOrchestrator:
                 pass
         return ConfidenceCalibrator()
 
-    def analyze(self, window: TelemetryWindow, audience: InsightAudience = InsightAudience.DRIVER) -> DriverInsight:
+    def analyze(
+        self,
+        window: TelemetryWindow,
+        audience: InsightAudience = InsightAudience.DRIVER,
+        skip_llm: bool = False,
+        record_drift: bool = True,
+    ) -> DriverInsight:
+        """skip_llm and record_drift exist for batch replay callers (e.g. a
+        whole-race lap-by-lap strategy comparison) that need many analyses
+        per call: skip_llm avoids paying for an LLM narrative on every lap,
+        and record_drift=False keeps replayed laps out of the live drift
+        tracker's baseline, which should only reflect real-time traffic.
+        """
         start = time.perf_counter()
         features = extract_features(window)
 
-        try:
-            from f1di.observability.drift import features_as_dict, get_tracker
-            get_tracker().update(features_as_dict(features), track_id=window.track_id)
-        except Exception:
-            pass
+        if record_drift:
+            try:
+                from f1di.observability.drift import features_as_dict, get_tracker
+                get_tracker().update(features_as_dict(features), track_id=window.track_id)
+            except Exception:
+                pass
 
         findings = [agent.analyze(window, features, self.retriever) for agent in self.agents]
         highest = max(findings, key=lambda f: RISK_WEIGHT[f.risk])
@@ -89,7 +102,7 @@ class InferenceOrchestrator:
             uncertainty = round(max(0.0, 1.0 - confidence), 4)
 
         recommendation = self._rules_recommendation(highest.risk, findings, calibration_features)
-        if settings.llm_backend != "rules" and not settings.deterministic:
+        if not skip_llm and settings.llm_backend != "rules" and not settings.deterministic:
             recommendation = self._llm_recommendation(
                 window, findings, highest, audience, confidence, recommendation
             )

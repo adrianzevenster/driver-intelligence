@@ -37,25 +37,42 @@ def _ff1():
     return fastf1
 
 
+# FastF1 session identifiers we expose. "R" (Race) is the default everywhere
+# below for backward compatibility; "S" (Sprint) is the same race-format
+# session run on sprint weekends and works through every function here
+# unchanged — it's a shorter race with its own laps/stints/telemetry.
+_VALID_SESSION_TYPES = {"R", "S"}
+
+
+def _check_session_type(session_type: str) -> str:
+    st = session_type.upper()
+    if st not in _VALID_SESSION_TYPES:
+        raise ValueError(f"Unsupported session_type {session_type!r}; expected one of {_VALID_SESSION_TYPES}")
+    return st
+
+
 def get_races(year: int) -> list[dict]:
     ff1 = _ff1()
     schedule = ff1.get_event_schedule(year, include_testing=False)
+    session_cols = [c for c in schedule.columns if c.startswith("Session") and not c.endswith(("Date", "DateUtc"))]
     races = []
     for _, row in schedule.iterrows():
+        has_sprint = any(str(row.get(c, "")) == "Sprint" for c in session_cols)
         races.append({
             "round": int(row["RoundNumber"]),
             "name": str(row["EventName"]),
             "circuit": str(row["Location"]),
             "country": str(row["Country"]),
             "date": str(row["EventDate"])[:10],
+            "has_sprint": has_sprint,
         })
     return races
 
 
-def _load_session_laps(year: int, round_num: int):
+def _load_session_laps(year: int, round_num: int, session_type: str = "R"):
     """Load session with laps only; swallow non-fatal FastF1 sub-loader errors."""
     ff1 = _ff1()
-    session = ff1.get_session(year, round_num, "R")
+    session = ff1.get_session(year, round_num, _check_session_type(session_type))
     try:
         session.load(laps=True, telemetry=False, weather=False, messages=False)
     except Exception:
@@ -65,8 +82,8 @@ def _load_session_laps(year: int, round_num: int):
     return session
 
 
-def get_drivers(year: int, round_num: int) -> list[dict]:
-    session = _load_session_laps(year, round_num)
+def get_drivers(year: int, round_num: int, session_type: str = "R") -> list[dict]:
+    session = _load_session_laps(year, round_num, session_type)
     try:
         codes = sorted(session.laps["Driver"].dropna().unique())
     except Exception:
@@ -74,8 +91,8 @@ def get_drivers(year: int, round_num: int) -> list[dict]:
     return [{"code": str(c)} for c in codes]
 
 
-def get_laps(year: int, round_num: int, driver: str) -> list[dict]:
-    session = _load_session_laps(year, round_num)
+def get_laps(year: int, round_num: int, driver: str, session_type: str = "R") -> list[dict]:
+    session = _load_session_laps(year, round_num, session_type)
     try:
         driver_laps = session.laps.pick_drivers(driver.upper())
     except Exception:
@@ -193,10 +210,13 @@ def _build_lap_samples(
     return samples
 
 
-def get_lap_trace(year: int, round_num: int, driver: str, lap_number: int, n_points: int = 150) -> list[dict]:
+def get_lap_trace(
+    year: int, round_num: int, driver: str, lap_number: int,
+    n_points: int = 150, session_type: str = "R",
+) -> list[dict]:
     """Return downsampled car-data trace for a single lap (speed, throttle, brake, DRS, distance)."""
     ff1 = _ff1()
-    session = ff1.get_session(year, round_num, "R")
+    session = ff1.get_session(year, round_num, _check_session_type(session_type))
     session.load(laps=True, telemetry=True, weather=False, messages=False)
     driver_laps = session.laps.pick_drivers(driver.upper())
     matching = driver_laps[driver_laps["LapNumber"] == lap_number]
@@ -222,44 +242,18 @@ def get_lap_trace(year: int, round_num: int, driver: str, lap_number: int, n_poi
     return result
 
 
-def build_window(
-    year: int,
-    round_num: int,
-    driver: str,
-    lap_number: int | None = None,
-    n_samples: int = 20,
-    window_laps: int = 5,
-) -> TelemetryWindow:
-    """Build a multi-lap TelemetryWindow from FastF1 data.
-
-    Uses `window_laps` consecutive laps ending at `lap_number` (or the fastest
-    lap when omitted). A multi-lap window gives the inference agents trend
-    signals (wear slope, SOC drift, brake temps) that a single lap cannot.
+def _load_race_session(year: int, round_num: int, session_type: str = "R"):
+    """Load a race or sprint session with laps/telemetry/weather. Cached on
+    disk by FastF1 after the first call, so repeated calls for the same
+    session are fast.
     """
     ff1 = _ff1()
-    session = ff1.get_session(year, round_num, "R")
+    session = ff1.get_session(year, round_num, _check_session_type(session_type))
     session.load(laps=True, telemetry=True, weather=True, messages=False)
+    return session
 
-    location = session.event.get("Location", "unknown")
-    track_id = canonical_track_id(str(location))
-    session_id = f"fastf1_{year}_{round_num}"
 
-    driver_laps = session.laps.pick_drivers(driver.upper())
-    valid_laps = driver_laps[driver_laps["LapTime"].notna()]
-
-    # Determine end lap of the window
-    if lap_number is None:
-        anchor = (
-            valid_laps.loc[valid_laps["LapTime"].idxmin()]
-            if len(valid_laps) > 0
-            else driver_laps.iloc[-1]
-        )
-        end_lap = int(anchor["LapNumber"])
-    else:
-        end_lap = lap_number
-
-    start_lap = max(1, end_lap - window_laps + 1)
-
+def _session_weather(session) -> tuple[float, float, float, bool]:
     try:
         weather = session.weather_data
         has_weather = weather is not None and len(weather) > 0
@@ -269,7 +263,25 @@ def build_window(
     ambient_temp = float(weather["AirTemp"].mean()) if has_weather else 22.0
     humidity = float(weather["Humidity"].mean()) if has_weather else 50.0
     rainfall = bool(weather["Rainfall"].any()) if has_weather else False
+    return track_temp, ambient_temp, humidity, rainfall
 
+
+def _window_for_lap_range(
+    driver_laps,
+    driver: str,
+    track_id: str,
+    session_id: str,
+    start_lap: int,
+    end_lap: int,
+    weather: tuple[float, float, float, bool],
+    n_samples: int,
+) -> TelemetryWindow | None:
+    """Build a TelemetryWindow from `start_lap`-`end_lap` of an already-loaded
+    driver_laps frame. Returns None if no telemetry exists for the range
+    (e.g. an out-lap or a gap with no car data) rather than raising, so a
+    caller iterating many ranges (one per race lap) can skip and continue.
+    """
+    track_temp, ambient_temp, humidity, rainfall = weather
     all_samples: list[TelemetrySample] = []
     time_offset = 0
 
@@ -293,11 +305,130 @@ def build_window(
         time_offset += n_samples * 3700 + 90_000  # ~90 s per lap gap
 
     if not all_samples:
-        raise ValueError(
-            f"No telemetry for {driver} laps {start_lap}-{end_lap} in {year} R{round_num}"
-        )
-
+        return None
     return TelemetryWindow(
         session_id=session_id, driver_id=driver.upper(),
         track_id=track_id, samples=all_samples,
     )
+
+
+def _fastf1_session_id(year: int, round_num: int, session_type: str) -> str:
+    # Race keeps the original "fastf1_{year}_{round_num}" format unchanged —
+    # outcome_labeler.py matches insights via a LIKE "fastf1_{year}_{round}%"
+    # prefix, and race is the only session type it labels. Sprint gets a
+    # distinct prefix so the two never collide.
+    if session_type.upper() == "S":
+        return f"fastf1_sprint_{year}_{round_num}"
+    return f"fastf1_{year}_{round_num}"
+
+
+def build_window(
+    year: int,
+    round_num: int,
+    driver: str,
+    lap_number: int | None = None,
+    n_samples: int = 20,
+    window_laps: int = 5,
+    session_type: str = "R",
+) -> TelemetryWindow:
+    """Build a multi-lap TelemetryWindow from FastF1 data.
+
+    Uses `window_laps` consecutive laps ending at `lap_number` (or the fastest
+    lap when omitted). A multi-lap window gives the inference agents trend
+    signals (wear slope, SOC drift, brake temps) that a single lap cannot.
+    """
+    session = _load_race_session(year, round_num, session_type)
+    location = session.event.get("Location", "unknown")
+    track_id = canonical_track_id(str(location))
+    session_id = _fastf1_session_id(year, round_num, session_type)
+
+    driver_laps = session.laps.pick_drivers(driver.upper())
+    valid_laps = driver_laps[driver_laps["LapTime"].notna()]
+
+    if lap_number is None:
+        anchor = (
+            valid_laps.loc[valid_laps["LapTime"].idxmin()]
+            if len(valid_laps) > 0
+            else driver_laps.iloc[-1]
+        )
+        end_lap = int(anchor["LapNumber"])
+    else:
+        end_lap = lap_number
+    start_lap = max(1, end_lap - window_laps + 1)
+
+    window = _window_for_lap_range(
+        driver_laps, driver, track_id, session_id, start_lap, end_lap,
+        _session_weather(session), n_samples,
+    )
+    if window is None:
+        raise ValueError(
+            f"No telemetry for {driver} laps {start_lap}-{end_lap} in {year} R{round_num}"
+        )
+    return window
+
+
+def build_all_lap_windows(
+    year: int,
+    round_num: int,
+    driver: str,
+    n_samples: int = 20,
+    window_laps: int = 5,
+    session_type: str = "R",
+) -> dict[int, TelemetryWindow]:
+    """Build a {lap_number: TelemetryWindow} map for every completed lap a
+    driver ran in a race or sprint, loading the session once instead of once
+    per lap.
+
+    Used to replay a whole session through the inference pipeline (e.g. to
+    compare the system's calculated risk/strategy against the driver's
+    actual strategy lap by lap), rather than analysing a single lap window
+    as build_window() does.
+    """
+    session = _load_race_session(year, round_num, session_type)
+    location = session.event.get("Location", "unknown")
+    track_id = canonical_track_id(str(location))
+    session_id = _fastf1_session_id(year, round_num, session_type)
+
+    driver_laps = session.laps.pick_drivers(driver.upper())
+    valid_laps = driver_laps[driver_laps["LapTime"].notna()]
+    if valid_laps.empty:
+        return {}
+
+    weather = _session_weather(session)
+    windows: dict[int, TelemetryWindow] = {}
+    for end_lap in sorted(int(n) for n in valid_laps["LapNumber"].unique()):
+        start_lap = max(1, end_lap - window_laps + 1)
+        window = _window_for_lap_range(
+            driver_laps, driver, track_id, session_id, start_lap, end_lap, weather, n_samples,
+        )
+        if window is not None:
+            windows[end_lap] = window
+    return windows
+
+
+def actual_strategy(year: int, round_num: int, driver: str, session_type: str = "R") -> list[dict]:
+    """Return the driver's real pit strategy for a race or sprint as a list of
+    stints ({stint, compound, start_lap, end_lap, tyre_life}), derived from
+    FastF1's own Stint column (more reliable than inferring stints from
+    compound changes, since it's what FastF1 itself uses to detect pit
+    stops).
+    """
+    session = _load_race_session(year, round_num, session_type)
+    driver_laps = session.laps.pick_drivers(driver.upper())
+    valid = driver_laps[driver_laps["LapNumber"].notna()].copy()
+    if valid.empty or "Stint" not in valid.columns:
+        return []
+
+    stints = []
+    for stint_n, grp in valid.groupby("Stint"):
+        grp = grp.sort_values("LapNumber")
+        compound = str(grp["Compound"].iloc[0]) if "Compound" in grp.columns else "UNKNOWN"
+        tyre_life = grp["TyreLife"].max()
+        stints.append({
+            "stint": int(stint_n),
+            "compound": compound.upper(),
+            "start_lap": int(grp["LapNumber"].min()),
+            "end_lap": int(grp["LapNumber"].max()),
+            "tyre_life": int(tyre_life) if pd.notna(tyre_life) else None,
+        })
+    return sorted(stints, key=lambda s: s["start_lap"])

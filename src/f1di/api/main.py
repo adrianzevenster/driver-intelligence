@@ -26,6 +26,7 @@ from f1di.domain.schemas import (
     InsightAudience,
     RaceProjection,
     RetrievedEvidence,
+    RiskLevel,
     StrategyComparison,
     TelemetryWindow,
 )
@@ -1718,21 +1719,25 @@ def session_races(year: int = 2024) -> list[dict]:
 
 
 @app.get("/v1/session/drivers/{year}/{round_num}")
-def session_drivers(year: int, round_num: int) -> list[dict]:
+def session_drivers(year: int, round_num: int, session_type: str = "R") -> list[dict]:
     from f1di.knowledge.fastf1_session import get_drivers
-    return get_drivers(year=year, round_num=round_num)
+    return get_drivers(year=year, round_num=round_num, session_type=session_type)
 
 
 @app.get("/v1/session/laps/{year}/{round_num}/{driver}")
-def session_laps(year: int, round_num: int, driver: str) -> list[dict]:
+def session_laps(year: int, round_num: int, driver: str, session_type: str = "R") -> list[dict]:
     from f1di.knowledge.fastf1_session import get_laps
-    return get_laps(year=year, round_num=round_num, driver=driver)
+    return get_laps(year=year, round_num=round_num, driver=driver, session_type=session_type)
 
 
 @app.get("/v1/session/trace/{year}/{round_num}/{driver}/{lap_number}")
-def session_trace(year: int, round_num: int, driver: str, lap_number: int) -> list[dict]:
+def session_trace(
+    year: int, round_num: int, driver: str, lap_number: int, session_type: str = "R",
+) -> list[dict]:
     from f1di.knowledge.fastf1_session import get_lap_trace
-    return get_lap_trace(year=year, round_num=round_num, driver=driver, lap_number=lap_number)
+    return get_lap_trace(
+        year=year, round_num=round_num, driver=driver, lap_number=lap_number, session_type=session_type,
+    )
 
 
 @app.post("/v1/session/insight", response_model=DriverInsight)
@@ -1742,12 +1747,84 @@ def session_insight(
     driver: str,
     audience: InsightAudience = InsightAudience.DRIVER,
     lap_number: int | None = None,
+    session_type: str = "R",
 ) -> DriverInsight:
     from f1di.knowledge.fastf1_session import build_window
-    window = build_window(year=year, round_num=round_num, driver=driver, lap_number=lap_number)
+    try:
+        window = build_window(
+            year=year, round_num=round_num, driver=driver, lap_number=lap_number, session_type=session_type,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     insight = get_orchestrator().analyze(window, audience=audience)
     _persist_insight(insight, window)
     return insight
+
+
+@app.get("/v1/session/strategy/{year}/{round_num}/{driver}")
+def session_strategy(year: int, round_num: int, driver: str, session_type: str = "R") -> dict:
+    """Replay every lap of a race through the inference pipeline and compare
+    the system's calculated risk/pit-window calls against the driver's real
+    strategy (FastF1 stints) — a single overview of "what we said" vs "what
+    actually happened" for one driver in one race.
+
+    skip_llm=True / record_drift=False on every analyze() call: this is a
+    batch historical replay, not live traffic, so it should be fast and must
+    not feed the drift tracker's live-traffic baseline.
+    """
+    from f1di.confidence.calibration import RISK_WEIGHT
+    from f1di.knowledge.fastf1_session import actual_strategy, build_all_lap_windows
+
+    try:
+        actual = actual_strategy(year=year, round_num=round_num, driver=driver, session_type=session_type)
+        windows = build_all_lap_windows(year=year, round_num=round_num, driver=driver, session_type=session_type)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    if not windows:
+        raise HTTPException(status_code=404, detail=f"No laps found for {driver} in {year} R{round_num}")
+
+    orchestrator = get_orchestrator()
+    calculated: list[dict] = []
+    for lap in sorted(windows):
+        insight = orchestrator.analyze(windows[lap], skip_llm=True, record_drift=False)
+        top = next((f for f in insight.findings if f.risk == insight.risk), insight.findings[0])
+        tire = next((f for f in insight.findings if f.agent == "tire_strategy"), None)
+        calculated.append({
+            "lap": lap,
+            "risk": insight.risk.value,
+            "confidence": round(insight.confidence, 4),
+            "top_agent": top.agent,
+            "summary": top.summary,
+            "tire_risk": tire.risk.value if tire else None,
+            "tire_summary": tire.summary if tire else None,
+        })
+
+    # Model "pit calls": laps where the tire_strategy agent specifically — not
+    # whichever agent happens to be highest risk that lap — first rises to
+    # WARNING/CRITICAL after the previous lap was below that level. safety_car
+    # and fuel findings can outrank tire risk in `insight.risk` but they're
+    # not a pit-timing signal, so deriving pit calls from the overall highest
+    # risk would misattribute e.g. a safety-car warning as a tire pit call.
+    pit_threshold = RISK_WEIGHT[RiskLevel.WARNING]
+    model_pit_calls: list[dict] = []
+    prev_above = False
+    for row in calculated:
+        if row["tire_risk"] is None:
+            continue
+        above = RISK_WEIGHT[RiskLevel(row["tire_risk"])] >= pit_threshold
+        if above and not prev_above:
+            model_pit_calls.append({"lap": row["lap"], "risk": row["tire_risk"], "summary": row["tire_summary"]})
+        prev_above = above
+
+    return {
+        "year": year,
+        "round_num": round_num,
+        "driver": driver.upper(),
+        "session_type": session_type.upper(),
+        "actual_strategy": actual,
+        "calculated": calculated,
+        "model_pit_calls": model_pit_calls,
+    }
 
 
 # ---------------------------------------------------------------------------

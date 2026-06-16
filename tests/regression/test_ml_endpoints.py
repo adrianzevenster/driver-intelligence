@@ -122,3 +122,41 @@ def test_retrain_regression_guard_passes_when_ece_improves(tmp_path):
     assert history_path.exists()
     history = json.loads(history_path.read_text())
     assert history[-1]["regression_detected"] is False
+
+
+def test_model_snapshots_endpoint_surfaces_transfer_lift(tmp_path, monkeypatch):
+    """model_snapshots() reads data/calibration relative to cwd, so chdir into a
+    tmp dir shaped like the real one rather than touching the repo's actual
+    classifier pkls.
+    """
+    monkeypatch.chdir(tmp_path)
+    cal_dir = tmp_path / "data" / "calibration"
+    cal_dir.mkdir(parents=True)
+
+    import numpy as np
+    from f1di.agents.safety_car_classifier import SafetyCarClassifier, generate_synthetic
+    from f1di.agents.classifier_utils import blend_with_transfer
+
+    X_s, y_s = generate_synthetic(n=400)
+    rng = np.random.default_rng(0)
+    X_r, y_r = generate_synthetic(n=60, seed=1)
+    blend = blend_with_transfer(
+        SafetyCarClassifier._build_pipeline, X_s, y_s, X_r, y_r, n_real=60,
+    )
+    clf = SafetyCarClassifier().fit(blend["X"], blend["y"], n_real=60, sample_weight=blend["sample_weight"])
+    clf.real_sample_weight = blend["real_weight"]
+    clf.prior_cv_accuracy = blend["prior_cv"]["cv_accuracy"]
+
+    snap_path = cal_dir / "safety_car_classifier_20260101T000000Z.pkl"
+    import pickle
+    snap_path.write_bytes(pickle.dumps(clf))
+
+    from f1di.api.main import model_snapshots
+    result = model_snapshots("safety_car")
+
+    assert len(result) == 1
+    snap = result[0]
+    assert snap["real_sample_weight"] == 5.0
+    assert snap["transfer_lift"] is not None
+    assert snap["cv_fold_accuracies"] is not None
+    assert snap["n_real"] == 60
