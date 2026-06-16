@@ -144,6 +144,10 @@ def _session_id_for_race(year: int, round_num: int, track_id: str) -> list[str]:
         f"replay_{year}_{round_num}",
         f"{track_id}_{year}",
         f"f1_{year}_{round_num}",
+        # build_window() in knowledge/fastf1_session.py — the only path that
+        # replays real FastF1 telemetry — stamps insights with this prefix.
+        # Without it, no real FastF1-replayed insight could ever be matched.
+        f"fastf1_{year}_{round_num}",
     ]
 
 
