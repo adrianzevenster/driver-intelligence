@@ -133,12 +133,10 @@ def test_model_snapshots_endpoint_surfaces_transfer_lift(tmp_path, monkeypatch):
     cal_dir = tmp_path / "data" / "calibration"
     cal_dir.mkdir(parents=True)
 
-    import numpy as np
     from f1di.agents.safety_car_classifier import SafetyCarClassifier, generate_synthetic
     from f1di.agents.classifier_utils import blend_with_transfer
 
     X_s, y_s = generate_synthetic(n=400)
-    rng = np.random.default_rng(0)
     X_r, y_r = generate_synthetic(n=60, seed=1)
     blend = blend_with_transfer(
         SafetyCarClassifier._build_pipeline, X_s, y_s, X_r, y_r, n_real=60,
