@@ -27,10 +27,10 @@ def test_api_insight_and_session_routes_smoke(monkeypatch):
 
     window = _fixture_window()
 
-    def fake_trace(*, year: int, round_num: int, driver: str, lap_number: int):
+    def fake_trace(*, year: int, round_num: int, driver: str, lap_number: int, session_type: str = "R"):
         return [{"dist": 0.0, "speed": 280.0, "throttle": 90.0, "brake": False, "drs": True}]
 
-    def fake_build_window(*, year: int, round_num: int, driver: str, lap_number: int | None = None):
+    def fake_build_window(*, year: int, round_num: int, driver: str, lap_number: int | None = None, session_type: str = "R"):
         return window
 
     monkeypatch.setattr("f1di.knowledge.fastf1_session.get_lap_trace", fake_trace)

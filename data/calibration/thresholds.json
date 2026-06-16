@@ -1,55 +1,5 @@
 {
-  "bahrain": {
-    "wear_critical": 0.7,
-    "wear_warning": 0.55,
-    "brake_temp_critical_c": 950.0,
-    "fl_degradation_pressure_critical": 0.72,
-    "fl_degradation_pressure_warning": 0.6,
-    "rain_warning": 0.35,
-    "battery_soc_warning": 0.35,
-    "crosswind_watch": 12.0
-  },
-  "melbourne": {
-    "wear_critical": 0.7,
-    "wear_warning": 0.55,
-    "brake_temp_critical_c": 950.0,
-    "fl_degradation_pressure_critical": 0.72,
-    "fl_degradation_pressure_warning": 0.6,
-    "rain_warning": 0.35,
-    "battery_soc_warning": 0.35,
-    "crosswind_watch": 12.0
-  },
-  "miami": {
-    "wear_critical": 0.7,
-    "wear_warning": 0.55,
-    "brake_temp_critical_c": 950.0,
-    "fl_degradation_pressure_critical": 0.72,
-    "fl_degradation_pressure_warning": 0.6,
-    "rain_warning": 0.35,
-    "battery_soc_warning": 0.35,
-    "crosswind_watch": 12.0
-  },
-  "montreal": {
-    "wear_critical": 0.7,
-    "wear_warning": 0.55,
-    "brake_temp_critical_c": 950.0,
-    "fl_degradation_pressure_critical": 0.72,
-    "fl_degradation_pressure_warning": 0.6,
-    "rain_warning": 0.35,
-    "battery_soc_warning": 0.35,
-    "crosswind_watch": 12.0
-  },
   "silverstone": {
-    "wear_critical": 0.7,
-    "wear_warning": 0.55,
-    "brake_temp_critical_c": 950.0,
-    "fl_degradation_pressure_critical": 0.72,
-    "fl_degradation_pressure_warning": 0.6,
-    "rain_warning": 0.35,
-    "battery_soc_warning": 0.35,
-    "crosswind_watch": 12.0
-  },
-  "spa": {
     "wear_critical": 0.7,
     "wear_warning": 0.55,
     "brake_temp_critical_c": 950.0,
