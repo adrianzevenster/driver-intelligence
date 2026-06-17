@@ -1145,7 +1145,6 @@ def model_test(body: dict) -> dict:
             brier = float(_mb(proba, y_test, obj._model.classes_))
 
         from sklearn.metrics import confusion_matrix as _cm
-        import numpy as _np2
         cm = _cm(y_test, preds).tolist()
         classes_list = [str(c) for c in obj._model.classes_]
         if hasattr(obj, "classes_") and obj.classes_:
