@@ -4,7 +4,6 @@ from __future__ import annotations
 import math
 import types
 
-import numpy as np
 import pytest
 
 from f1di.strategy.undercut import (

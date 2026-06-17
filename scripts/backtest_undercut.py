@@ -100,8 +100,6 @@ def _position_at(laps, driver: str, lap: int) -> int | None:
 def _undercut_scenarios(session, year: int, round_num: int, verbose: bool) -> list[dict]:
     """Find undercut attempts and evaluate model predictions vs actual outcomes."""
     import pandas as pd
-    from unittest.mock import patch
-    from f1di.knowledge.fastf1_session import build_window
 
     laps = session.laps
     drivers = list(laps["Driver"].dropna().unique())
@@ -214,7 +212,6 @@ def _summarise_undercut(records: list[dict]) -> dict:
     if not records:
         return {}
 
-    import math
     n = len(records)
     actual = [r["actual_success"] for r in records]
     pred = [r["predicted_prob"] for r in records]
