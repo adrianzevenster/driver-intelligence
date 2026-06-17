@@ -1119,6 +1119,219 @@ function LapBadge({ lap }) {
 
 const RISK_COLOURS = { INFO: '#4a5568', WATCH: '#d69e2e', WARNING: '#e53e3e', CRITICAL: '#805ad5' };
 
+// ── Cliff projection card ──────────────────────────────────────────────────
+
+function CliffProjectionCard({ year, roundNum, driver, lap, sessionType }) {
+  const [result, setResult]   = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError]     = useState('');
+
+  const canRun = year && roundNum && driver && lap != null;
+
+  async function run() {
+    setLoading(true); setError(''); setResult(null);
+    try {
+      const r = await fetch(
+        `/api/v1/strategy/cliff/${year}/${roundNum}/${driver}/${lap}?session_type=${sessionType}`
+      );
+      if (!r.ok) throw new Error(await r.text());
+      setResult(await r.json());
+    } catch (e) {
+      setError(String(e.message ?? e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // reset when session changes
+  React.useEffect(() => { setResult(null); setError(''); }, [year, roundNum, driver, sessionType]);
+
+  const probEntries = result
+    ? Object.entries(result.probability_by_lap).map(([k, v]) => [Number(k), v]).sort((a, b) => a[0] - b[0])
+    : [];
+
+  const etaColor = result?.eta_laps == null ? '#64748b'
+    : result.eta_laps <= 5 ? '#ef4444'
+    : result.eta_laps <= 10 ? '#f59e0b'
+    : '#4ade80';
+
+  return (
+    <div className="card" style={{ marginTop: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+        <h2 style={{ margin: 0 }}><Activity size={14} /> Cliff Projection — {driver}{lap != null ? ` · L${lap}` : ''}</h2>
+        <button className="kb-btn" onClick={run} disabled={loading || !canRun} style={{ fontSize: 11, padding: '3px 12px' }}>
+          {loading ? '…' : 'Project'}
+        </button>
+      </div>
+      {error && <pre className="error" style={{ fontSize: 10 }}>{error}</pre>}
+      {!result && !loading && (
+        <p className="muted" style={{ fontSize: 11 }}>Monte Carlo tire-cliff projection (2 000 trajectories). Select a lap and click Project.</p>
+      )}
+      {result && (
+        <div>
+          <div style={{ display: 'flex', gap: 20, marginBottom: 12, flexWrap: 'wrap' }}>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: 28, fontWeight: 700, fontFamily: 'monospace', color: etaColor, lineHeight: 1 }}>
+                {result.eta_laps != null ? `${result.eta_laps.toFixed(1)}` : '—'}
+              </div>
+              <div style={{ fontSize: 9, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: 2 }}>
+                {result.eta_laps != null ? 'laps to cliff (median)' : 'no confident call'}
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+              {[
+                ['FL wear', result.fl_wear?.toFixed(3)],
+                ['FR wear', result.fr_wear?.toFixed(3)],
+                ['Critical', result.wear_critical?.toFixed(3)],
+                ['Stint %', result.stint_fraction != null ? `${(result.stint_fraction * 100).toFixed(0)}%` : '—'],
+                ['Track', result.track_id],
+                ['Compound', result.compound],
+              ].map(([label, val]) => (
+                <div key={label}>
+                  <div style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--text)' }}>{val ?? '—'}</div>
+                  <div style={{ fontSize: 9, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {probEntries.length > 0 && (
+            <div>
+              <div style={{ fontSize: 9, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>
+                Cumulative P(cliff crossed by lap N) · horizon {result.horizon_laps} laps · {result.n_sims} sims
+              </div>
+              <svg width="100%" height="48" viewBox={`0 0 ${probEntries.length * 14} 48`} preserveAspectRatio="none"
+                   style={{ display: 'block', background: '#080e1a', borderRadius: 4 }}>
+                {probEntries.map(([lap, p], i) => {
+                  const barH = Math.max(1, p * 44);
+                  const col = p >= 0.8 ? '#ef4444' : p >= 0.5 ? '#f59e0b' : '#38bdf8';
+                  return (
+                    <g key={lap}>
+                      <rect x={i * 14 + 1} y={44 - barH} width={12} height={barH} fill={col} opacity="0.85" rx="1" />
+                    </g>
+                  );
+                })}
+                {result.eta_laps != null && (() => {
+                  const etaIdx = probEntries.findIndex(([l]) => l >= result.eta_laps);
+                  const x = (etaIdx >= 0 ? etaIdx : probEntries.length - 1) * 14 + 7;
+                  return <line x1={x} y1={0} x2={x} y2={48} stroke="#ffffff" strokeWidth="1" strokeDasharray="3,2" opacity="0.5" />;
+                })()}
+              </svg>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, color: 'var(--muted)', marginTop: 2 }}>
+                <span>+1 lap</span>
+                <span>+{result.horizon_laps} laps</span>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Undercut window card ───────────────────────────────────────────────────
+
+function UndercutCard({ year, roundNum, driver, lap, sessionType, drivers }) {
+  const [rival, setRival]     = useState('');
+  const [gapS, setGapS]       = useState('0');
+  const [result, setResult]   = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError]     = useState('');
+
+  const canRun = year && roundNum && driver && rival && lap != null && rival !== driver;
+
+  async function run() {
+    setLoading(true); setError(''); setResult(null);
+    try {
+      const gap = parseFloat(gapS) || 0;
+      const r = await fetch(
+        `/api/v1/strategy/undercut/${year}/${roundNum}/${driver}/${rival}/${lap}` +
+        `?session_type=${sessionType}&gap_s=${gap}`
+      );
+      if (!r.ok) throw new Error(await r.text());
+      setResult(await r.json());
+    } catch (e) {
+      setError(String(e.message ?? e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  React.useEffect(() => { setResult(null); setError(''); }, [year, roundNum, driver, sessionType]);
+
+  const prob = result?.undercut_success_probability;
+  const probColor = prob == null ? '#64748b'
+    : prob >= 0.4 ? '#4ade80'
+    : prob >= 0.2 ? '#f59e0b'
+    : '#ef4444';
+
+  return (
+    <div className="card" style={{ marginTop: 16 }}>
+      <h2 style={{ marginBottom: 10 }}><BarChart2 size={14} /> Undercut Window — {driver}</h2>
+
+      <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', marginBottom: 10, flexWrap: 'wrap' }}>
+        <div>
+          <label style={{ fontSize: 9, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: 3 }}>Rival</label>
+          <select value={rival} onChange={e => setRival(e.target.value)}
+            style={{ fontSize: 12, background: '#0d1b2e', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 4, padding: '3px 8px' }}>
+            <option value="">— pick rival —</option>
+            {drivers.filter(d => d.code !== driver).map(d => (
+              <option key={d.code} value={d.code}>{d.code} — {d.name ?? d.code}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label style={{ fontSize: 9, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: 3 }}>Gap to rival (s)</label>
+          <input type="number" step="0.1" value={gapS} onChange={e => setGapS(e.target.value)}
+            style={{ fontSize: 12, background: '#0d1b2e', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 4, padding: '3px 8px', width: 70 }} />
+        </div>
+        <button className="kb-btn" onClick={run} disabled={loading || !canRun} style={{ fontSize: 11, padding: '4px 14px' }}>
+          {loading ? '…' : 'Analyse'}
+        </button>
+      </div>
+
+      {error && <pre className="error" style={{ fontSize: 10 }}>{error}</pre>}
+      {!result && !loading && (
+        <p className="muted" style={{ fontSize: 11 }}>Pick a rival and gap, then click Analyse. Probability is tire-dynamics only — see caveat below.</p>
+      )}
+      {result && (
+        <div>
+          <div style={{ display: 'flex', gap: 20, marginBottom: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+            <div style={{ textAlign: 'center', minWidth: 70 }}>
+              <div style={{ fontSize: 34, fontWeight: 700, fontFamily: 'monospace', color: probColor, lineHeight: 1 }}>
+                {prob != null ? `${(prob * 100).toFixed(0)}%` : '—'}
+              </div>
+              <div style={{ fontSize: 9, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: 2 }}>
+                success prob (tire)
+              </div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 20px', fontSize: 11, fontFamily: 'monospace' }}>
+              {[
+                [`${result.driver} wear`, result.driver_current_wear?.toFixed(3)],
+                [`${result.rival} wear`, result.rival_current_wear?.toFixed(3)],
+                [`${result.driver} cliff`, result.driver_cliff_eta_laps != null ? `+${result.driver_cliff_eta_laps.toFixed(1)} laps` : 'no call'],
+                [`${result.rival} cliff`, result.rival_cliff_eta_laps != null ? `+${result.rival_cliff_eta_laps.toFixed(1)} laps` : 'no call'],
+                ['Pit loss', `${result.pit_loss_s}s`],
+                ['Gap', `${result.gap_s}s`],
+                ['Break-even (linear)', result.laps_to_break_even != null ? `${result.laps_to_break_even.toFixed(1)} laps` : '—'],
+                ['Break-even (quad)', result.laps_to_break_even_quad != null ? `${result.laps_to_break_even_quad.toFixed(1)} laps` : '—'],
+              ].map(([label, val]) => (
+                <div key={label} style={{ display: 'flex', gap: 6 }}>
+                  <span style={{ color: 'var(--muted)', fontSize: 10 }}>{label}</span>
+                  <span style={{ color: 'var(--text)' }}>{val ?? '—'}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <p style={{ fontSize: 10, color: '#475569', margin: 0, lineHeight: 1.5, borderTop: '1px solid var(--border)', paddingTop: 8 }}>
+            {result.model_caveat}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function StrategyOverview({ strategy }) {
   const { actual_strategy: stints, calculated, model_pit_calls, driver, year, round_num, session_type } = strategy;
   if (!calculated.length) return null;
@@ -1646,6 +1859,18 @@ function LivePanel({ version }) {
       </div>
     </div>
     {strategy && <StrategyOverview strategy={strategy} />}
+    {roundNum && driver && (
+      <>
+        <CliffProjectionCard
+          year={year} roundNum={roundNum} driver={driver}
+          lap={selectedLap} sessionType={sessionType}
+        />
+        <UndercutCard
+          year={year} roundNum={roundNum} driver={driver}
+          lap={selectedLap} sessionType={sessionType} drivers={drivers}
+        />
+      </>
+    )}
     </>
   );
 }
