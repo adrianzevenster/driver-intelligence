@@ -45,6 +45,11 @@ class RaceFeatures:
     race_phase: float = 0.5   # 0.0 = first lap, 1.0 = final lap
     throttle_mean: float = 72.0
     ers_net_deploy_kw: float = 40.0
+    # EMA-weighted slopes (recent samples weighted higher than older ones).
+    # More sensitive to late-stint acceleration than the equal-weight slope().
+    # Defaulting to 0.0 keeps existing RaceFeatures constructors valid.
+    fl_wear_slope_ema: float = 0.0
+    fr_wear_slope_ema: float = 0.0
 
 
 def slope(values: list[float]) -> float:
@@ -55,6 +60,26 @@ def slope(values: list[float]) -> float:
     y_mean = statistics.fmean(values)
     denom = sum((i - x_mean) ** 2 for i in range(n)) or 1.0
     return sum((i - x_mean) * (v - y_mean) for i, v in enumerate(values)) / denom
+
+
+def slope_ema(values: list[float], alpha: float = 0.65) -> float:
+    """Weighted least-squares slope: recent samples contribute more (weight ∝ alpha^age).
+
+    alpha=0.65 means in a 5-sample window the most recent sample has ~4x the
+    influence of the oldest, giving a current reading of the acceleration rate
+    rather than the average over the full window.
+    """
+    if len(values) < 2:
+        return 0.0
+    n = len(values)
+    weights = [alpha ** (n - 1 - i) for i in range(n)]
+    w_sum = sum(weights)
+    weights = [w / w_sum for w in weights]
+    x_mean = sum(w * i for w, i in zip(weights, range(n)))
+    y_mean = sum(w * v for w, v in zip(weights, values))
+    cov = sum(w * (i - x_mean) * (v - y_mean) for w, i, v in zip(weights, range(n), values))
+    var = sum(w * (i - x_mean) ** 2 for w, i in zip(weights, range(n)))
+    return cov / var if var > 1e-10 else 0.0
 
 
 def extract_features(window: TelemetryWindow) -> RaceFeatures:
@@ -102,4 +127,6 @@ def extract_features(window: TelemetryWindow) -> RaceFeatures:
         race_phase=min(1.0, latest.lap / total_laps),
         throttle_mean=statistics.fmean(throttle),
         ers_net_deploy_kw=statistics.fmean(ers_net),
+        fl_wear_slope_ema=slope_ema(fl_wear),
+        fr_wear_slope_ema=slope_ema(fr_wear),
     )

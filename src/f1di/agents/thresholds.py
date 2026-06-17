@@ -15,6 +15,10 @@ class CircuitThresholds:
     rain_warning: float = 0.35
     battery_soc_warning: float = 0.22
     crosswind_watch: float = 12.0
+    # Pit-lane time loss (entry deceleration + pit lane traversal + box stop + exit
+    # acceleration). Measured per-circuit from FastF1 PitInTime → PitOutTime;
+    # global default 22.0s used when no circuit-specific value is calibrated.
+    pit_loss_s: float = 22.0
 
 
 _DEFAULTS = CircuitThresholds()

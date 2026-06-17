@@ -1827,6 +1827,87 @@ def session_strategy(year: int, round_num: int, driver: str, session_type: str =
     }
 
 
+@app.get("/v1/strategy/undercut/{year}/{round_num}/{driver}/{rival}/{lap_number}")
+def strategy_undercut(
+    year: int, round_num: int, driver: str, rival: str, lap_number: int,
+    session_type: str = "R",
+    gap_s: float = 0.0,
+    pit_loss_s: float | None = None,
+) -> dict:
+    """Heuristic undercut-window estimate comparing `driver` and `rival` at a
+    given lap. See f1di.strategy.undercut module docstring for the model's
+    assumptions and limitations — `model_caveat` in the response is the
+    short version.
+
+    gap_s: current on-track time gap from driver to rival in seconds (positive
+    means rival is ahead). Defaults to 0.0 (side-by-side). Passing the real
+    gap raises the success threshold, making the estimate more realistic.
+
+    pit_loss_s: override the circuit-specific pit-lane time loss in seconds.
+    When omitted the calibrated per-circuit value from thresholds.json is used.
+    """
+    from f1di.strategy.undercut import undercut_window
+    try:
+        return undercut_window(
+            year=year, round_num=round_num, driver=driver, rival=rival,
+            lap_number=lap_number, session_type=session_type,
+            gap_s=gap_s, pit_loss_s=pit_loss_s,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.get("/v1/strategy/cliff/{year}/{round_num}/{driver}/{lap_number}")
+def strategy_cliff(
+    year: int, round_num: int, driver: str, lap_number: int,
+    session_type: str = "R",
+) -> dict:
+    """Monte Carlo tire-cliff projection for a single driver at a given lap.
+
+    Returns the median first-crossing lap (eta_laps), a per-lap cumulative
+    crossing probability distribution, and the circuit wear threshold used.
+    eta_laps is None when fewer than half the simulated trajectories cross
+    within the horizon — no confident cliff call yet.
+
+    Cheaper than POST /v1/session/insight: skips RAG retrieval and the full
+    agent pipeline, returning only the projection numbers.
+    """
+    from f1di.agents.thresholds import get as get_thresholds
+    from f1di.agents.tire_projection import project_cliff_for_window
+    from f1di.features.extractor import extract_features
+    from f1di.knowledge.fastf1_session import build_window
+
+    try:
+        window = build_window(
+            year=year, round_num=round_num, driver=driver,
+            lap_number=lap_number, session_type=session_type,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    features = extract_features(window)
+    t = get_thresholds(window.track_id)
+    cliff = project_cliff_for_window(window, features, t.wear_critical)
+
+    return {
+        "year": year,
+        "round_num": round_num,
+        "session_type": session_type.upper(),
+        "driver": driver.upper(),
+        "lap": lap_number,
+        "track_id": window.track_id,
+        "compound": window.latest.compound.value,
+        "wear_critical": t.wear_critical,
+        "fl_wear": round(features.fl_wear, 4),
+        "fr_wear": round(features.fr_wear, 4),
+        "stint_fraction": round(features.stint_fraction, 3),
+        "eta_laps": cliff["eta_laps"],
+        "probability_by_lap": cliff["probability_by_lap"],
+        "horizon_laps": cliff["horizon_laps"],
+        "n_sims": cliff["n_sims"],
+    }
+
+
 # ---------------------------------------------------------------------------
 # Retrieval evaluation (RAGAS-style)
 # ---------------------------------------------------------------------------

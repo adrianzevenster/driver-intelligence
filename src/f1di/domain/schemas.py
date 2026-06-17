@@ -115,6 +115,12 @@ class AgentFinding(BaseModel):
     clf_source: str | None = None
     ood_score: float | None = None
     ood_flagged: bool = False
+    # Monte Carlo tire-cliff projection (tire_strategy agent only, for now).
+    # eta_laps is the median first-crossing lap across simulations that cross
+    # within the horizon; None when fewer than half the simulated
+    # trajectories cross at all (i.e. no confident cliff call yet).
+    cliff_eta_laps: float | None = None
+    cliff_probability_by_lap: dict[int, float] | None = None
 
 
 class PredictionPoint(BaseModel):

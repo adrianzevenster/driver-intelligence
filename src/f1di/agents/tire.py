@@ -58,6 +58,45 @@ def _clf_features(features: RaceFeatures, wear_pressure: float) -> dict[str, flo
     }
 
 
+def _cross_check(finding: AgentFinding, cliff: dict) -> AgentFinding:
+    """Adjust confidence and risk based on classifier/projection agreement.
+
+    Three adjustments:
+    - Both agree cliff imminent (WARNING/CRITICAL + eta ≤ 4): +0.05 confidence.
+    - Projection sees cliff in ≤ 3 laps that classifier missed: upgrade to WARNING.
+    - Classifier says CRITICAL but projection sees nothing: −0.05 confidence.
+
+    The clf_agrees_cliff / clf_disagrees_cliff flags land in features so the
+    flywheel can learn from signal disagreements over time.
+    """
+    eta = cliff["eta_laps"]
+    risk = finding.risk.value
+    updates: dict = {}
+    feat = dict(finding.features)
+
+    if risk in ("WARNING", "CRITICAL") and eta is not None and eta <= 4:
+        feat["clf_agrees_cliff"] = True
+        updates["confidence"] = min(0.94, finding.confidence + 0.05)
+    elif risk in ("INFO", "WATCH") and eta is not None and eta <= 3:
+        feat["clf_agrees_cliff"] = False
+        updates["risk"] = RiskLevel.WARNING
+        eta_int = max(1, int(round(eta)))
+        updates["summary"] = (
+            f"Monte Carlo projection indicates critical wear threshold within "
+            f"{eta_int} lap{'s' if eta_int != 1 else ''}: "
+            f"tire cliff window opening despite borderline classifier assessment."
+        )
+        updates["confidence"] = 0.68
+    elif risk == "CRITICAL" and eta is None:
+        feat["clf_disagrees_cliff"] = True
+        updates["confidence"] = max(0.48, finding.confidence - 0.05)
+
+    if feat != dict(finding.features):
+        updates["features"] = feat
+
+    return finding.model_copy(update=updates) if updates else finding
+
+
 def _summary_and_extras(
     risk_str: str,
     features: RaceFeatures,
@@ -122,9 +161,18 @@ class TireStrategyAgent(RaceAgent):
         clf = _get_classifier()
         if clf is not None:
             t = _thresh.get(window.track_id)
-            return self._classify(clf, t, features, wear_pressure, projected_fl, projected_fr, evidence)
+            finding = self._classify(clf, t, features, wear_pressure, projected_fl, projected_fr, evidence)
+        else:
+            finding = self._rule_based(window, features, wear_pressure, projected_fl, projected_fr, evidence)
 
-        return self._rule_based(window, features, wear_pressure, projected_fl, projected_fr, evidence)
+        t = _thresh.get(window.track_id)
+        from f1di.agents.tire_projection import project_cliff_for_window
+        cliff = project_cliff_for_window(window, features, t.wear_critical)
+        finding = _cross_check(finding, cliff)
+        return finding.model_copy(update={
+            "cliff_eta_laps": cliff["eta_laps"],
+            "cliff_probability_by_lap": cliff["probability_by_lap"],
+        })
 
     def _classify(
         self,

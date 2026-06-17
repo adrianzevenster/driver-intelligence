@@ -278,6 +278,51 @@ def test_tire_agent_falls_back_to_rules_when_no_classifier():
     assert result.summary
 
 
+def test_tire_agent_analyze_attaches_cliff_projection():
+    """analyze() (not the internal _classify/_rule_based helpers) must attach
+    the Monte Carlo cliff projection regardless of which path produced the
+    risk finding.
+    """
+    from f1di.agents.tire import TireStrategyAgent
+    from f1di.domain.schemas import Compound, TelemetrySample, TelemetryWindow
+
+    samples = [
+        TelemetrySample(
+            session_id="t", driver_id="VER", track_id="monza",
+            timestamp_ms=i * 1000, lap=10 + i, sector=1, distance_m=0.0, corner_id="T1",
+            speed_kph=300.0, acceleration_g=0.0, throttle_pct=90.0, brake_pressure_bar=0.0,
+            steering_angle_deg=1.0, yaw_rate_deg_s=0.5, slip_angle_deg=0.0,
+            wheel_speed_fl=300.0, wheel_speed_fr=300.0, wheel_speed_rl=300.0, wheel_speed_rr=300.0,
+            compound=Compound.MEDIUM, stint_lap=10 + i,
+            tire_temp_fl_c=95.0, tire_temp_fr_c=94.0, tire_temp_rl_c=90.0, tire_temp_rr_c=89.0,
+            tire_wear_fl=0.55 + i * 0.03, tire_wear_fr=0.50 + i * 0.025, tire_wear_rl=0.40, tire_wear_rr=0.38,
+            grip_estimate=0.70, battery_soc=0.55, ers_deploy_kw=80.0, ers_regen_kw=25.0,
+            pu_thermal_state=0.5, track_temp_c=30.0, ambient_temp_c=20.0, humidity_pct=40.0,
+            wind_speed_kph=5.0, wind_direction_deg=0.0, rain_intensity=0.0, evolving_grip=0.90,
+            brake_temp_fl_c=300.0, brake_temp_fr_c=295.0, brake_temp_rl_c=250.0, brake_temp_rr_c=245.0,
+            lockup_event=False,
+        )
+        for i in range(5)
+    ]
+    window = TelemetryWindow(session_id="t", driver_id="VER", track_id="monza", samples=samples)
+    retriever = MagicMock()
+    retriever.search.return_value = []
+
+    from f1di.features.extractor import extract_features
+    features = extract_features(window)
+
+    agent = TireStrategyAgent()
+    with patch("f1di.agents.tire._CLASSIFIER_PATH", Path("/nonexistent/path/tire_clf.pkl")):
+        import f1di.agents.tire as tire_mod
+        tire_mod._clf_mtime = 0.0
+        result = agent.analyze(window, features, retriever)
+
+    assert result.cliff_probability_by_lap is not None
+    assert len(result.cliff_probability_by_lap) > 0
+    # Steeply rising wear in the fixture should produce a confident, near-term call.
+    assert result.cliff_eta_laps is not None
+
+
 def test_tire_agent_full_features_stored_in_finding():
     """Every AgentFinding must include the classifier feature set for flywheel training."""
     from f1di.agents.tire import TireStrategyAgent

@@ -1,0 +1,20 @@
+{
+  "bahrain": {
+    "HARD": 0.039,
+    "SOFT": 0.0557
+  },
+  "melbourne": {
+    "HARD": 0.0306,
+    "MEDIUM": 0.0867
+  },
+  "shanghai": {
+    "HARD": 0.0557,
+    "MEDIUM": 0.065,
+    "SOFT": 0.0867
+  },
+  "suzuka": {
+    "HARD": 0.0488,
+    "MEDIUM": 0.0488,
+    "SOFT": 0.0867
+  }
+}

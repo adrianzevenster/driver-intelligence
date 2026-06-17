@@ -21,14 +21,41 @@ logger = logging.getLogger(__name__)
 _DEFAULT_CACHE = str(Path(__file__).parents[3] / "data" / "fastf1_cache")
 _CACHE = os.environ.get("F1DI_FASTF1_CACHE", _DEFAULT_CACHE)
 
+# Global baseline wear rates, calibrated so that wear reaches wear_critical (0.78)
+# at the compound's typical pit window. Previous values (SOFT:0.028, MED:0.018,
+# HARD:0.011) only reached ~0.47 at typical stops — meaning the cliff projection
+# could never fire. Formula: wear_rate = 0.78 / typical_stint_laps.
+# Per-circuit refinements are loaded from data/calibration/circuit_wear_rates.json
+# if available (see scripts/calibrate_wear_rates.py).
 _WEAR_RATE: dict[str, float] = {
-    "SOFT": 0.028, "MEDIUM": 0.018, "HARD": 0.011,
-    "INTERMEDIATE": 0.014, "WET": 0.009,
+    "SOFT": 0.042,          # 0.78 / 18 laps
+    "MEDIUM": 0.030,        # 0.78 / 26 laps
+    "HARD": 0.022,          # 0.78 / 35 laps
+    "INTERMEDIATE": 0.035,  # 0.78 / 22 laps
+    "WET": 0.052,           # 0.78 / 15 laps
 }
 _BASE_TIRE_TEMP: dict[str, float] = {
     "SOFT": 96.0, "MEDIUM": 88.0, "HARD": 80.0,
     "INTERMEDIATE": 72.0, "WET": 60.0,
 }
+
+_CIRCUIT_WEAR_RATES_PATH = Path(__file__).parents[3] / "data" / "calibration" / "circuit_wear_rates.json"
+_circuit_wear_rates: dict[str, dict[str, float]] | None = None
+
+
+def _get_wear_rate(compound: str, track_id: str) -> float:
+    """Return the wear rate for compound at track_id, using per-circuit calibration if available."""
+    global _circuit_wear_rates
+    if _circuit_wear_rates is None:
+        if _CIRCUIT_WEAR_RATES_PATH.exists():
+            try:
+                import json as _json
+                _circuit_wear_rates = _json.loads(_CIRCUIT_WEAR_RATES_PATH.read_text())
+            except Exception:
+                _circuit_wear_rates = {}
+        else:
+            _circuit_wear_rates = {}
+    return _circuit_wear_rates.get(track_id, {}).get(compound, _WEAR_RATE.get(compound, 0.030))
 
 
 def _ff1():
@@ -140,7 +167,8 @@ def _build_lap_samples(
     tl = lap_row.get("TyreLife")
     stint_lap = int(tl) if pd.notna(tl) else 0
     lap_num = int(lap_row["LapNumber"])
-    wear = min(0.98, stint_lap * _WEAR_RATE.get(compound.value, 0.018))
+    circuit_wear_rate = _get_wear_rate(compound.value, track_id)
+    wear = min(0.98, stint_lap * circuit_wear_rate)
 
     try:
         car_data = lap_row.get_car_data().add_distance()
@@ -176,7 +204,7 @@ def _build_lap_samples(
         base_tire = _BASE_TIRE_TEMP.get(compound.value, 88.0)
         tire_temp = base_tire + (track_temp - 30) * 0.5 + throttle * 0.08
         brake_temp = (350.0 + speed * 0.6) if brake else 320.0
-        sample_wear = max(0.0, min(0.98, wear + (i - len(rows)) * _WEAR_RATE.get(compound.value, 0.018) * 0.05))
+        sample_wear = max(0.0, min(0.98, wear + (i - len(rows)) * circuit_wear_rate * 0.05))
 
         samples.append(TelemetrySample(
             session_id=session_id,
