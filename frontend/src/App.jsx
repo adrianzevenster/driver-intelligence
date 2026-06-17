@@ -2913,7 +2913,7 @@ function ClassifierModelsPanel({ clfHistory }) {
           <p className="muted" style={{ fontSize: 11 }}>No snapshots found. Hit Retrain to create the first one.</p>
         )}
         {snapshots.map((snap, i) => {
-          const isLive = i === 0;
+          const isLive = snap.is_live === true;
           const isTesting   = testing === snap.filename;
           const isPromoting = promoting === snap.filename;
           const tested = testResult?.snapshot === snap.filename ? testResult : null;
@@ -3069,7 +3069,7 @@ function OutcomeLabelingCard() {
     setRunning(true); setResult(null); setError('');
     const r = await fetch(
       `/api/v1/outcomes/label?year=${year}&round_num=${roundNum}&dry_run=${dryRun}`,
-      { method: 'POST' }
+      { method: 'POST', headers: authHeaders() }
     ).catch(() => null);
     if (r?.ok) {
       const data = await r.json();

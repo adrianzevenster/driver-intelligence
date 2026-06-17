@@ -1059,14 +1059,20 @@ def model_snapshots(agent: str) -> list[dict]:
     cal_dir = Path("data/calibration")
     prefix = "meta_learner_" if agent == "meta" else f"{agent}_classifier_"
     snaps = sorted(cal_dir.glob(f"{prefix}*.pkl"), reverse=True)
+    live_path = _CLASSIFIER_AGENTS[agent]
+    live_size = live_path.stat().st_size if live_path.exists() else -1
+    live_mtime = live_path.stat().st_mtime if live_path.exists() else -1
     result = []
     for p in snaps:
         try:
             obj = pickle.loads(p.read_bytes())
+            snap_stat = p.stat()
+            is_live = (snap_stat.st_size == live_size and abs(snap_stat.st_mtime - live_mtime) < 2)
             result.append({
                 "path": str(p),
                 "filename": p.name,
                 "fitted_at": p.stem.split("_")[-1],
+                "is_live": is_live,
                 "accuracy": round(float(obj.accuracy), 4),
                 "brier_score": round(float(obj.brier_score), 4) if hasattr(obj, "brier_score") else None,
                 "cv_n_splits": getattr(obj, "cv_n_splits", 0),
