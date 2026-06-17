@@ -15,7 +15,9 @@ Architecture:
         risk_agreement  (1 - normalised std of risk weights)
         iso_confidence  (output of the isotonic calibrator)
     Target: 1 = insight was correct, 0 = incorrect (from FeedbackRecord)
-    Model: LogisticRegression binary
+    Model: HistGradientBoostingClassifier binary — captures non-linear interactions
+           between agent agreement patterns and confidence that a linear model misses.
+           StandardScaler retained for OOD detection (ood_score uses mean_/scale_).
 """
 from __future__ import annotations
 
@@ -74,12 +76,15 @@ def findings_to_array(findings: list, iso_confidence: float) -> np.ndarray:
     return np.array(risk_weights + confs + [agreement, iso_confidence], dtype=np.float64)
 
 
+MODEL_VERSION = "hgb-v1"
+MODEL_TYPE = "HistGradientBoosting"
+DEFAULT_MODEL_TYPE = "hgbc"
+
+
 class MetaLearner:
-    def __init__(self) -> None:
-        from sklearn.linear_model import LogisticRegression
-        from sklearn.preprocessing import StandardScaler
-        self._scaler = StandardScaler()
-        self._model = LogisticRegression(C=0.5, max_iter=1000, solver="lbfgs", random_state=42)
+    def __init__(self, model_type: str = DEFAULT_MODEL_TYPE) -> None:
+        from f1di.agents.classifier_utils import build_model, _MODEL_DISPLAY, _MODEL_VERSION
+        self._scaler, self._model = build_model(model_type, max_depth=3)
         self.n_train: int = 0
         self.n_real: int = 0
         self.accuracy: float = 0.0
@@ -91,6 +96,8 @@ class MetaLearner:
         self.cv_fold_briers: list[float] | None = None
         self.real_sample_weight: float | None = None
         self.prior_cv_accuracy: float | None = None
+        self.model_version: str = _MODEL_VERSION.get(model_type.lower(), model_type)
+        self.model_type: str = _MODEL_DISPLAY.get(model_type.lower(), model_type)
 
     def fit(self, X: np.ndarray, y: np.ndarray, n_real: int = 0, sample_weight: np.ndarray | None = None) -> "MetaLearner":
         from sklearn.metrics import accuracy_score
@@ -126,10 +133,9 @@ class MetaLearner:
         return self
 
     @staticmethod
-    def _build_pipeline():
-        from sklearn.linear_model import LogisticRegression
-        from sklearn.preprocessing import StandardScaler
-        return StandardScaler(), LogisticRegression(C=0.5, max_iter=1000, solver="lbfgs", random_state=42)
+    def _build_pipeline(model_type: str = DEFAULT_MODEL_TYPE):
+        from f1di.agents.classifier_utils import build_model
+        return build_model(model_type, max_depth=3)
 
     def ood_score(self, findings: list, iso_confidence: float) -> float:
         """Max absolute Z-score of meta-learner features vs training distribution."""
@@ -270,6 +276,7 @@ def train_from_labels(
     output_path: Path = _META_PATH,
     real_oversample: int = 5,
     synthetic_n: int = 800,
+    model_type: str = DEFAULT_MODEL_TYPE,
 ) -> dict:
     """Train MetaLearner combining synthetic + real flywheel labels."""
     X_s, y_s = generate_synthetic(n=synthetic_n)
@@ -278,13 +285,14 @@ def train_from_labels(
 
     from f1di.agents.classifier_utils import blend_with_transfer
     blend = blend_with_transfer(
-        MetaLearner._build_pipeline, X_s, y_s, X_r, y_r, n_real,
+        lambda: MetaLearner._build_pipeline(model_type),
+        X_s, y_s, X_r, y_r, n_real,
         _binary_brier, weight_cap=real_oversample,
     )
     X, y, sample_weight = blend["X"], blend["y"], blend["sample_weight"]
 
     unique, counts = np.unique(y, return_counts=True)
-    meta = MetaLearner().fit(X, y, n_real=n_real, sample_weight=sample_weight)
+    meta = MetaLearner(model_type=model_type).fit(X, y, n_real=n_real, sample_weight=sample_weight)
     meta.real_sample_weight = blend["real_weight"]
     meta.prior_cv_accuracy = blend["prior_cv"]["cv_accuracy"] if blend["prior_cv"] else None
 

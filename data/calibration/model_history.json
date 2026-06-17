@@ -1011,5 +1011,83 @@
     "versioned_path": "data/calibration/fuel_classifier_20260616T091721Z.pkl",
     "blocked": false,
     "block_threshold": 0.0221
+  },
+  {
+    "fitted_at": "2026-06-17T13:39:26Z",
+    "agent": "tire",
+    "model_version": "hgb-v1",
+    "model_type": "HistGradientBoosting",
+    "accuracy": 0.9695,
+    "brier_score": 0.0516,
+    "n_train": 820,
+    "n_real": 20,
+    "classes": [
+      "INFO",
+      "WATCH",
+      "WARNING",
+      "CRITICAL"
+    ],
+    "cv_n_splits": 5,
+    "cv_accuracy_std": 0.0086,
+    "cv_brier_std": 0.0129,
+    "cv_fold_accuracies": [
+      0.9817,
+      0.9573,
+      0.9756,
+      0.9695,
+      0.9634
+    ],
+    "cv_fold_briers": [
+      0.0304,
+      0.0659,
+      0.0505,
+      0.0473,
+      0.064
+    ],
+    "real_sample_weight": 2.0,
+    "prior_cv_accuracy": 0.9688,
+    "transfer_lift": 0.0008,
+    "versioned_path": "data/calibration/tire_classifier_20260617T133926Z.pkl",
+    "blocked": false,
+    "block_threshold": 0.02
+  },
+  {
+    "fitted_at": "2026-06-17T14:10:13Z",
+    "agent": "tire",
+    "model_version": "hgb-v1",
+    "model_type": "HistGradientBoosting",
+    "accuracy": 0.9695,
+    "brier_score": 0.0516,
+    "n_train": 820,
+    "n_real": 20,
+    "classes": [
+      "INFO",
+      "WATCH",
+      "WARNING",
+      "CRITICAL"
+    ],
+    "cv_n_splits": 5,
+    "cv_accuracy_std": 0.0086,
+    "cv_brier_std": 0.0129,
+    "cv_fold_accuracies": [
+      0.9817,
+      0.9573,
+      0.9756,
+      0.9695,
+      0.9634
+    ],
+    "cv_fold_briers": [
+      0.0304,
+      0.0659,
+      0.0505,
+      0.0473,
+      0.064
+    ],
+    "real_sample_weight": 2.0,
+    "prior_cv_accuracy": 0.9688,
+    "transfer_lift": 0.0008,
+    "versioned_path": "data/calibration/tire_classifier_20260617T141013Z.pkl",
+    "blocked": false,
+    "block_threshold": 0.02
   }
 ]

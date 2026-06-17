@@ -18,7 +18,7 @@ depends_on = None
 def upgrade() -> None:
     op.add_column(
         "insights",
-        sa.Column("shadow", sa.Boolean(), nullable=False, server_default="0"),
+        sa.Column("shadow", sa.Boolean(), nullable=False, server_default="false"),
     )
     op.add_column(
         "insights",

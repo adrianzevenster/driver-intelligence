@@ -36,6 +36,7 @@ _LABEL_INV: dict[str, int] = {v: k for k, v in _LABEL_MAP.items()}
 
 MODEL_VERSION = "lr-v1"
 MODEL_TYPE = "LogisticRegression"
+DEFAULT_MODEL_TYPE = "logistic"
 
 
 def _multiclass_brier(proba: np.ndarray, y: np.ndarray, classes: np.ndarray) -> float:
@@ -60,11 +61,9 @@ def features_to_array(features) -> np.ndarray:
 
 
 class FuelClassifier:
-    def __init__(self) -> None:
-        from sklearn.linear_model import LogisticRegression
-        from sklearn.preprocessing import StandardScaler
-        self._scaler = StandardScaler()
-        self._model = LogisticRegression(C=1.0, max_iter=1000, solver="lbfgs", random_state=42)
+    def __init__(self, model_type: str = DEFAULT_MODEL_TYPE) -> None:
+        from f1di.agents.classifier_utils import build_model, _MODEL_DISPLAY, _MODEL_VERSION
+        self._scaler, self._model = build_model(model_type, max_depth=4)
         self.classes_: list[str] = []
         self.n_train: int = 0
         self.n_real: int = 0
@@ -77,8 +76,8 @@ class FuelClassifier:
         self.cv_fold_briers: list[float] | None = None
         self.real_sample_weight: float | None = None
         self.prior_cv_accuracy: float | None = None
-        self.model_version: str = MODEL_VERSION
-        self.model_type: str = MODEL_TYPE
+        self.model_version: str = _MODEL_VERSION.get(model_type.lower(), model_type)
+        self.model_type: str = _MODEL_DISPLAY.get(model_type.lower(), model_type)
 
     def fit(self, X: np.ndarray, y: np.ndarray, n_real: int = 0, sample_weight: np.ndarray | None = None) -> "FuelClassifier":
         from sklearn.metrics import accuracy_score
@@ -115,10 +114,9 @@ class FuelClassifier:
         return self
 
     @staticmethod
-    def _build_pipeline():
-        from sklearn.linear_model import LogisticRegression
-        from sklearn.preprocessing import StandardScaler
-        return StandardScaler(), LogisticRegression(C=1.0, max_iter=1000, solver="lbfgs", random_state=42)
+    def _build_pipeline(model_type: str = DEFAULT_MODEL_TYPE):
+        from f1di.agents.classifier_utils import build_model
+        return build_model(model_type, max_depth=4)
 
     def ood_score(self, features) -> float:
         x = features_to_array(features)
@@ -239,6 +237,7 @@ def train_from_labels(
     output_path: Path = _CLASSIFIER_PATH,
     real_oversample: int = 5,
     synthetic_n: int = 600,
+    model_type: str = DEFAULT_MODEL_TYPE,
 ) -> dict:
     X_s, y_s = generate_synthetic(n=synthetic_n)
     X_r, y_r = _load_labeled_from_db()
@@ -246,13 +245,13 @@ def train_from_labels(
 
     from f1di.agents.classifier_utils import blend_with_transfer
     blend = blend_with_transfer(
-        FuelClassifier._build_pipeline, X_s, y_s, X_r, y_r, n_real,
+        lambda: FuelClassifier._build_pipeline(model_type), X_s, y_s, X_r, y_r, n_real,
         _multiclass_brier, weight_cap=real_oversample,
     )
     X, y, sample_weight = blend["X"], blend["y"], blend["sample_weight"]
 
     unique, counts = np.unique(y, return_counts=True)
-    clf = FuelClassifier().fit(X, y, n_real=n_real, sample_weight=sample_weight)
+    clf = FuelClassifier(model_type=model_type).fit(X, y, n_real=n_real, sample_weight=sample_weight)
     clf.real_sample_weight = blend["real_weight"]
     clf.prior_cv_accuracy = blend["prior_cv"]["cv_accuracy"] if blend["prior_cv"] else None
 

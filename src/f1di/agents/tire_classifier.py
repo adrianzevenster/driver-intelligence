@@ -1,8 +1,14 @@
-"""Logistic regression classifier for tire strategy risk level.
+"""Gradient-boosted tree classifier for tire strategy risk level.
 
 Trained on flywheel-labeled insights + synthetic rule-distilled data for cold start.
 At runtime TireStrategyAgent loads this lazily (mtime-aware) and uses it in place of
 the hand-written threshold cascade.  Falls back to rules if no pkl exists.
+
+HistGradientBoostingClassifier was chosen over LogisticRegression because real tire
+degradation patterns have non-linear feature interactions (wear × stint_fraction,
+axle_imbalance + slope together) that a linear model cannot capture.  StandardScaler
+is retained for OOD detection only (ood_score uses scaler.mean_/scale_); the HGBT
+itself is scale-invariant.
 """
 from __future__ import annotations
 
@@ -31,8 +37,9 @@ FEATURE_NAMES: list[str] = [
 _LABEL_MAP: dict[int, str] = {0: "INFO", 1: "WATCH", 2: "WARNING", 3: "CRITICAL"}
 _LABEL_INV: dict[str, int] = {v: k for k, v in _LABEL_MAP.items()}
 
-MODEL_VERSION = "lr-v1"
-MODEL_TYPE = "LogisticRegression"
+MODEL_VERSION = "hgb-v1"
+MODEL_TYPE = "HistGradientBoosting"
+DEFAULT_MODEL_TYPE = "hgbc"
 
 
 def _multiclass_brier(proba: np.ndarray, y: np.ndarray, classes: np.ndarray) -> float:
@@ -61,16 +68,11 @@ def features_to_array(features, wear_pressure: float) -> np.ndarray:
 
 
 class TireClassifier:
-    """Multinomial LR classifier for tire strategy risk level (INFO/WATCH/WARNING/CRITICAL)."""
+    """Gradient-boosted tree classifier for tire strategy risk level (INFO/WATCH/WARNING/CRITICAL)."""
 
-    def __init__(self) -> None:
-        from sklearn.linear_model import LogisticRegression
-        from sklearn.preprocessing import StandardScaler
-        self._scaler = StandardScaler()
-        self._model = LogisticRegression(
-            C=1.0, max_iter=1000,
-            solver="lbfgs", random_state=42,
-        )
+    def __init__(self, model_type: str = DEFAULT_MODEL_TYPE) -> None:
+        from f1di.agents.classifier_utils import build_model, _MODEL_DISPLAY, _MODEL_VERSION
+        self._scaler, self._model = build_model(model_type, max_depth=4)
         self.classes_: list[str] = []
         self.n_train: int = 0
         self.n_real: int = 0
@@ -83,8 +85,8 @@ class TireClassifier:
         self.cv_fold_briers: list[float] | None = None
         self.real_sample_weight: float | None = None
         self.prior_cv_accuracy: float | None = None
-        self.model_version: str = MODEL_VERSION
-        self.model_type: str = MODEL_TYPE
+        self.model_version: str = _MODEL_VERSION.get(model_type.lower(), model_type)
+        self.model_type: str = _MODEL_DISPLAY.get(model_type.lower(), model_type)
 
     def fit(self, X: np.ndarray, y: np.ndarray, n_real: int = 0, sample_weight: np.ndarray | None = None) -> "TireClassifier":
         from sklearn.metrics import accuracy_score
@@ -123,10 +125,9 @@ class TireClassifier:
         return self
 
     @staticmethod
-    def _build_pipeline():
-        from sklearn.linear_model import LogisticRegression
-        from sklearn.preprocessing import StandardScaler
-        return StandardScaler(), LogisticRegression(C=1.0, max_iter=1000, solver="lbfgs", random_state=42)
+    def _build_pipeline(model_type: str = DEFAULT_MODEL_TYPE):
+        from f1di.agents.classifier_utils import build_model
+        return build_model(model_type, max_depth=4)
 
     def ood_score(self, features, wear_pressure: float) -> float:
         """Max absolute Z-score of features vs training distribution. >4.0 = OOD."""
@@ -288,6 +289,7 @@ def train_from_labels(
     output_path: Path = _CLASSIFIER_PATH,
     real_oversample: int = 5,
     synthetic_n: int = 800,
+    model_type: str = DEFAULT_MODEL_TYPE,
 ) -> dict:
     """Train TireClassifier from synthetic cold-start + real flywheel labels.
 
@@ -303,7 +305,8 @@ def train_from_labels(
 
     from f1di.agents.classifier_utils import blend_with_transfer
     blend = blend_with_transfer(
-        TireClassifier._build_pipeline, X_synth, y_synth, X_real, y_real, n_real,
+        lambda: TireClassifier._build_pipeline(model_type),
+        X_synth, y_synth, X_real, y_real, n_real,
         _multiclass_brier, weight_cap=real_oversample,
     )
     X, y, sample_weight = blend["X"], blend["y"], blend["sample_weight"]
@@ -316,7 +319,7 @@ def train_from_labels(
     unique, counts = np.unique(y, return_counts=True)
     class_dist = {_LABEL_MAP[int(k)]: int(v) for k, v in zip(unique, counts)}
 
-    clf = TireClassifier().fit(X, y, n_real=n_real, sample_weight=sample_weight)
+    clf = TireClassifier(model_type=model_type).fit(X, y, n_real=n_real, sample_weight=sample_weight)
     clf.real_sample_weight = blend["real_weight"]
     clf.prior_cv_accuracy = blend["prior_cv"]["cv_accuracy"] if blend["prior_cv"] else None
 

@@ -1144,6 +1144,15 @@ def model_test(body: dict) -> dict:
             from f1di.agents.classifier_utils import multiclass_brier as _mb
             brier = float(_mb(proba, y_test, obj._model.classes_))
 
+        from sklearn.metrics import confusion_matrix as _cm
+        import numpy as _np2
+        cm = _cm(y_test, preds).tolist()
+        classes_list = [str(c) for c in obj._model.classes_]
+        if hasattr(obj, "classes_") and obj.classes_:
+            class_labels = obj.classes_  # human-readable e.g. ["INFO","WATCH",...]
+        else:
+            class_labels = classes_list
+
         return {
             "agent": agent,
             "snapshot": p.name,
@@ -1160,6 +1169,8 @@ def model_test(body: dict) -> dict:
             "cv_brier": round(float(obj.brier_score), 4) if hasattr(obj, "brier_score") else None,
             "cv_n_splits": getattr(obj, "cv_n_splits", 0),
             "n_real": int(obj.n_real),
+            "confusion_matrix": cm,
+            "confusion_labels": class_labels,
         }
     except HTTPException:
         raise
@@ -1205,6 +1216,110 @@ def model_promote(body: dict) -> dict:
         raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Promote failed: {exc}")
+
+
+@app.get("/v1/model/types")
+def model_types() -> dict:
+    """Return available model types and their display labels."""
+    from f1di.agents.classifier_utils import MODEL_TYPES, _MODEL_DISPLAY
+    return {
+        "types": MODEL_TYPES,
+        "labels": _MODEL_DISPLAY,
+        "defaults": {
+            "tire": "hgbc", "meta": "hgbc",
+            "battery": "logistic", "weather": "logistic",
+            "telemetry": "logistic", "safety_car": "logistic", "fuel": "logistic",
+        },
+    }
+
+
+@app.post("/v1/model/retrain")
+def model_retrain(body: dict) -> dict:
+    """Trigger a full fit for one classifier agent and return training metrics."""
+    agent = body.get("agent", "")
+    model_type: str | None = body.get("model_type") or None
+    if agent not in _CLASSIFIER_AGENTS:
+        raise HTTPException(status_code=400, detail=f"Unknown agent: {agent}")
+    try:
+        kwargs = {}
+        if agent == "tire":
+            from f1di.agents.tire_classifier import train_from_labels, DEFAULT_MODEL_TYPE
+        elif agent == "battery":
+            from f1di.agents.battery_classifier import train_from_labels, DEFAULT_MODEL_TYPE
+        elif agent == "weather":
+            from f1di.agents.weather_classifier import train_from_labels, DEFAULT_MODEL_TYPE
+        elif agent == "telemetry":
+            from f1di.agents.telemetry_classifier import train_from_labels, DEFAULT_MODEL_TYPE
+        elif agent == "safety_car":
+            from f1di.agents.safety_car_classifier import train_from_labels, DEFAULT_MODEL_TYPE
+        elif agent == "fuel":
+            from f1di.agents.fuel_classifier import train_from_labels, DEFAULT_MODEL_TYPE
+        elif agent == "meta":
+            from f1di.inference.meta_learner import train_from_labels, DEFAULT_MODEL_TYPE
+        else:
+            raise HTTPException(status_code=400, detail=f"No trainer for agent: {agent}")
+        kwargs["model_type"] = model_type or DEFAULT_MODEL_TYPE
+        result = train_from_labels(**kwargs)
+        result["agent"] = agent
+        result["model_type_used"] = kwargs["model_type"]
+        return result
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("model_retrain failed for agent=%s", agent)
+        raise HTTPException(status_code=500, detail=f"Retrain failed: {exc}")
+
+
+@app.get("/v1/model/feature-importance/{agent}")
+def model_feature_importance(agent: str) -> dict:
+    """Return permutation-importance scores for the live classifier of an agent."""
+    if agent not in _CLASSIFIER_AGENTS:
+        raise HTTPException(status_code=404, detail=f"Unknown agent: {agent}")
+    path = _CLASSIFIER_AGENTS[agent]
+    if not path.exists():
+        raise HTTPException(status_code=404, detail=f"No trained model for agent: {agent}")
+    try:
+        obj = pickle.loads(path.read_bytes())
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Could not load model: {exc}")
+
+    try:
+        from sklearn.inspection import permutation_importance as _pi
+
+        if agent == "tire":
+            from f1di.agents.tire_classifier import generate_synthetic, FEATURE_NAMES
+        elif agent == "battery":
+            from f1di.agents.battery_classifier import generate_synthetic, FEATURE_NAMES
+        elif agent == "weather":
+            from f1di.agents.weather_classifier import generate_synthetic, FEATURE_NAMES
+        elif agent == "telemetry":
+            from f1di.agents.telemetry_classifier import generate_synthetic, FEATURE_NAMES
+        elif agent == "safety_car":
+            from f1di.agents.safety_car_classifier import generate_synthetic, FEATURE_NAMES
+        elif agent == "fuel":
+            from f1di.agents.fuel_classifier import generate_synthetic, FEATURE_NAMES
+        elif agent == "meta":
+            from f1di.inference.meta_learner import generate_synthetic, FEATURE_NAMES
+        else:
+            raise HTTPException(status_code=400, detail="No generator for this agent")
+
+        X, y = generate_synthetic(n=400, seed=77)
+        X_s = obj._scaler.transform(X)
+        result = _pi(obj._model, X_s, y, n_repeats=8, random_state=42, scoring="accuracy")
+        importances = result.importances_mean.tolist()
+        std = result.importances_std.tolist()
+        order = sorted(range(len(importances)), key=lambda i: importances[i], reverse=True)
+        return {
+            "agent": agent,
+            "model_version": getattr(obj, "model_version", None),
+            "features": [FEATURE_NAMES[i] for i in order],
+            "importances": [round(importances[i], 4) for i in order],
+            "importances_std": [round(std[i], 4) for i in order],
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Feature importance failed: {exc}")
 
 
 # ---------------------------------------------------------------------------

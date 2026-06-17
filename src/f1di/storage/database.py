@@ -31,6 +31,7 @@ def _build_engine(url: str) -> Engine:
         kwargs["pool_size"] = 5
         kwargs["max_overflow"] = 10
         kwargs["pool_pre_ping"] = True
+        kwargs["pool_recycle"] = 1800  # recycle connections every 30 min to avoid server-side timeout drops
 
     return create_engine(url, **kwargs)
 

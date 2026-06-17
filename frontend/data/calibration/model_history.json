@@ -1,0 +1,40 @@
+[
+  {
+    "fitted_at": "2026-06-17T15:23:19Z",
+    "agent": "battery",
+    "model_version": "hgb-v1",
+    "model_type": "HistGradientBoosting",
+    "accuracy": 0.9267,
+    "brier_score": 0.1122,
+    "n_train": 600,
+    "n_real": 0,
+    "classes": [
+      "INFO",
+      "WATCH",
+      "WARNING"
+    ],
+    "cv_n_splits": 5,
+    "cv_accuracy_std": 0.0207,
+    "cv_brier_std": 0.0202,
+    "cv_fold_accuracies": [
+      0.9333,
+      0.9083,
+      0.9333,
+      0.9,
+      0.9583
+    ],
+    "cv_fold_briers": [
+      0.0998,
+      0.1371,
+      0.1021,
+      0.1352,
+      0.0869
+    ],
+    "real_sample_weight": 0.0,
+    "prior_cv_accuracy": 0.9933,
+    "transfer_lift": -0.0667,
+    "versioned_path": "data/calibration/battery_classifier_20260617T152319Z.pkl",
+    "blocked": false,
+    "block_threshold": 0.02
+  }
+]

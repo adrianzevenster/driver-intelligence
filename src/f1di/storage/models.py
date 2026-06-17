@@ -31,7 +31,7 @@ class InsightRecord(Base):
     findings_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     evidence_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     latency_ms: Mapped[float] = mapped_column(Float, nullable=False)
-    shadow: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
+    shadow: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false", index=True)
     challenger_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now()

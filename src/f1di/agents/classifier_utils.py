@@ -40,6 +40,32 @@ logger = logging.getLogger("f1di.agents.classifier_utils")
 
 _HISTORY_PATH = Path("data/calibration/model_history.json")
 
+MODEL_TYPES = ["logistic", "hgbc"]
+_MODEL_DISPLAY = {"logistic": "LogisticRegression", "hgbc": "HistGradientBoosting"}
+_MODEL_VERSION = {"logistic": "lr-v1", "hgbc": "hgb-v1"}
+
+
+def build_model(model_type: str = "logistic", max_depth: int = 4):
+    """Return (StandardScaler, fitted-ready sklearn model) for `model_type`.
+
+    StandardScaler is always returned even for HGBC — callers that use
+    ood_score() rely on scaler.mean_/scale_ to detect out-of-distribution
+    inputs, independent of whether the model itself needs scaling.
+    """
+    from sklearn.preprocessing import StandardScaler
+    mt = model_type.lower()
+    if mt in ("logistic", "lr"):
+        from sklearn.linear_model import LogisticRegression
+        return StandardScaler(), LogisticRegression(C=1.0, max_iter=1000, solver="lbfgs", random_state=42)
+    elif mt in ("hgbc", "hgb", "histgradientboosting"):
+        from sklearn.ensemble import HistGradientBoostingClassifier
+        return StandardScaler(), HistGradientBoostingClassifier(
+            max_iter=300, max_depth=max_depth, learning_rate=0.05,
+            min_samples_leaf=15, l2_regularization=0.1, random_state=42,
+        )
+    else:
+        raise ValueError(f"Unknown model_type: {model_type!r}. Choose from {MODEL_TYPES}")
+
 
 def multiclass_brier(proba: np.ndarray, y: np.ndarray, classes: np.ndarray) -> float:
     """Mean squared error between predicted probability vectors and one-hot targets."""

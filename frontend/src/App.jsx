@@ -2524,6 +2524,71 @@ function RiskDistBar({ distribution, total }) {
   );
 }
 
+function ExperimentTable({ history, agent, liveVersionedPath }) {
+  const runs = (history ?? []).filter(e => e.agent === agent).slice().reverse();
+  if (runs.length === 0) return null;
+  const bestAcc = Math.max(...runs.map(r => r.accuracy ?? 0));
+  const thS = { padding: '3px 6px', color: '#475569', fontWeight: 600, textAlign: 'center', borderBottom: '1px solid #1e293b', whiteSpace: 'nowrap' };
+  const tdS = { padding: '3px 6px', textAlign: 'center', borderBottom: '1px solid #060c18' };
+  return (
+    <div style={{ marginTop: 10, marginBottom: 2 }}>
+      <p style={{ fontSize: 9, color: 'var(--muted)', margin: '0 0 5px', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
+        Experiment history — {runs.length} runs
+      </p>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 9, fontFamily: 'monospace' }}>
+          <thead>
+            <tr>
+              <th style={{ ...thS, textAlign: 'left' }}>Date</th>
+              <th style={thS}>Model</th>
+              <th style={thS}>cv acc</th>
+              <th style={thS}>cv brier</th>
+              <th style={thS}>real</th>
+              <th style={thS}>lift</th>
+              <th style={thS}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {runs.map((r, i) => {
+              const isLive = r.versioned_path && liveVersionedPath && r.versioned_path === liveVersionedPath;
+              const isBest = r.accuracy != null && r.accuracy === bestAcc;
+              const isHGBC = r.model_type === 'HistGradientBoosting';
+              return (
+                <tr key={i} style={{ background: isLive ? '#071a0e' : i % 2 === 0 ? '#060c18' : 'transparent' }}>
+                  <td style={{ ...tdS, textAlign: 'left', color: '#475569' }}>{r.fitted_at?.slice(0, 10)}</td>
+                  <td style={tdS}>
+                    <span style={{ fontSize: 8, padding: '1px 5px', borderRadius: 3,
+                      background: isHGBC ? '#0d1b2e' : '#1c1407',
+                      color:      isHGBC ? '#93c5fd' : '#fbbf24',
+                      border:     `1px solid ${isHGBC ? '#1e3a5f' : '#78350f'}`,
+                    }}>{r.model_version ?? (isHGBC ? 'hgbc' : 'lr')}</span>
+                  </td>
+                  <td style={{ ...tdS, color: isBest ? '#4ade80' : '#94a3b8', fontWeight: isBest ? 700 : 400 }}>
+                    {r.accuracy?.toFixed(3)}
+                    {r.cv_accuracy_std != null && <span style={{ color: '#334155' }}>±{r.cv_accuracy_std.toFixed(3)}</span>}
+                  </td>
+                  <td style={{ ...tdS, color: '#64748b' }}>
+                    {r.brier_score?.toFixed(3)}
+                    {r.cv_brier_std != null && <span style={{ color: '#2e3a4e' }}>±{r.cv_brier_std.toFixed(3)}</span>}
+                  </td>
+                  <td style={{ ...tdS, color: (r.n_real ?? 0) > 0 ? '#a78bfa' : '#334155' }}>{r.n_real ?? 0}</td>
+                  <td style={{ ...tdS, color: r.transfer_lift > 0 ? '#4ade80' : r.transfer_lift < 0 ? '#f59e0b' : '#334155' }}>
+                    {r.transfer_lift != null ? `${r.transfer_lift >= 0 ? '+' : ''}${(r.transfer_lift * 100).toFixed(1)}pp` : '—'}
+                  </td>
+                  <td style={tdS}>
+                    {isLive && <span style={{ fontSize: 7, color: '#4ade80', border: '1px solid #166534', borderRadius: 3, padding: '1px 4px' }}>LIVE</span>}
+                    {r.blocked && <span style={{ fontSize: 7, color: '#f59e0b', border: '1px solid #78350f', borderRadius: 3, padding: '1px 4px', marginLeft: 2 }}>BLOCKED</span>}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function ClassifierHistoryChart({ history, agent }) {
   const agentHistory = (history ?? []).filter(e => e.agent === agent);
   if (agentHistory.length < 2) return (
@@ -2605,6 +2670,83 @@ function FoldSpread({ accuracies, mean }) {
   );
 }
 
+function ConfusionMatrixGrid({ matrix, labels }) {
+  if (!matrix || !labels) return null;
+  const max = Math.max(...matrix.flat(), 1);
+  return (
+    <div style={{ marginTop: 6 }}>
+      <p style={{ fontSize: 9, color: 'var(--muted)', margin: '0 0 4px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+        Confusion matrix — actual (rows) vs predicted (cols)
+      </p>
+      <table style={{ borderCollapse: 'collapse', fontSize: 9, fontFamily: 'monospace' }}>
+        <thead>
+          <tr>
+            <td style={{ padding: '2px 4px', width: 56 }} />
+            {labels.map(l => (
+              <th key={l} style={{ padding: '2px 6px', color: '#64748b', fontWeight: 500, textAlign: 'center' }}>{l}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {matrix.map((row, ri) => (
+            <tr key={ri}>
+              <td style={{ padding: '2px 4px', color: '#64748b', whiteSpace: 'nowrap', textAlign: 'right' }}>{labels[ri]}</td>
+              {row.map((v, ci) => {
+                const frac = v / max;
+                const diag = ri === ci;
+                const bg = diag
+                  ? `rgba(74,222,128,${0.06 + frac * 0.32})`
+                  : frac > 0.08 ? `rgba(239,68,68,${frac * 0.45})` : 'transparent';
+                return (
+                  <td key={ci} style={{
+                    padding: '3px 8px', textAlign: 'center', borderRadius: 2, background: bg,
+                    color: diag ? '#4ade80' : frac > 0.06 ? '#f87171' : '#334155',
+                    fontWeight: diag ? 700 : 400,
+                  }}>{v}</td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function FeatureImportanceChart({ data, loading }) {
+  if (loading) return <p className="muted" style={{ fontSize: 10, marginTop: 8 }}>Loading feature importance…</p>;
+  if (!data) return null;
+  const { features, importances, importances_std } = data;
+  const max = Math.max(...importances.map(Math.abs), 0.001);
+  return (
+    <div style={{ marginTop: 10, padding: '8px 10px', borderRadius: 6, background: '#060c18', border: '1px solid #1e293b' }}>
+      <p style={{ fontSize: 9, color: 'var(--muted)', margin: '0 0 7px', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
+        Feature importance — permutation (accuracy drop on held-out synthetic set)
+      </p>
+      {features.map((name, i) => {
+        const v = importances[i];
+        const std = importances_std[i];
+        const pct = Math.abs(v) / max;
+        const isNeg = v < 0;
+        const barColor = isNeg ? '#f59e0b' : pct > 0.5 ? '#3b82f6' : '#1d4ed8';
+        return (
+          <div key={name} style={{ marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: 9, color: '#64748b', width: 148, textAlign: 'right', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontFamily: 'monospace' }}>{name}</span>
+            <div style={{ flex: 1, position: 'relative', height: 8, background: '#0d1b2e', borderRadius: 2 }}>
+              <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', borderRadius: 2, width: `${pct * 100}%`, background: barColor }} />
+            </div>
+            <span style={{ fontSize: 9, fontFamily: 'monospace', width: 58, color: isNeg ? '#f59e0b' : '#94a3b8' }}>
+              {v >= 0 ? '+' : ''}{(v * 100).toFixed(1)}%
+              {std > 0 && <span style={{ color: '#334155' }}>±{(std * 100).toFixed(1)}</span>}
+            </span>
+          </div>
+        );
+      })}
+      <p style={{ fontSize: 9, color: '#334155', margin: '5px 0 0' }}>Negative = shuffling improves score (noisy/spurious feature).</p>
+    </div>
+  );
+}
+
 function ClassifierModelsPanel({ clfHistory }) {
   const AGENTS = ['tire', 'battery', 'weather', 'telemetry', 'safety_car', 'fuel', 'meta'];
   const [selectedAgent, setSelectedAgent] = useState('tire');
@@ -2614,6 +2756,12 @@ function ClassifierModelsPanel({ clfHistory }) {
   const [promoteResult, setPromoteResult] = useState(null);
   const [testing, setTesting]             = useState(null);
   const [error, setError]                 = useState('');
+  const [retraining, setRetraining]       = useState(false);
+  const [retrainResult, setRetrainResult] = useState(null);
+  const [featImportance, setFeatImportance] = useState(null);
+  const [loadingFeat, setLoadingFeat]     = useState(false);
+  const [modelTypes, setModelTypes]       = useState({ types: ['logistic', 'hgbc'], labels: { logistic: 'LogisticRegression', hgbc: 'HistGradientBoosting' }, defaults: {} });
+  const [selectedModelType, setSelectedModelType] = useState(null); // null = use agent default
 
   async function loadSnapshots(agent) {
     const r = await fetch(`/api/v1/model/snapshots/${agent}`).catch(() => null);
@@ -2624,7 +2772,44 @@ function ClassifierModelsPanel({ clfHistory }) {
     setError('');
   }
 
-  useEffect(() => { loadSnapshots(selectedAgent); }, [selectedAgent]);
+  async function loadFeatImportance(agent) {
+    setFeatImportance(null); setLoadingFeat(true);
+    const r = await fetch(`/api/v1/model/feature-importance/${agent}`).catch(() => null);
+    if (r?.ok) setFeatImportance(await r.json());
+    setLoadingFeat(false);
+  }
+
+  useEffect(() => {
+    fetch('/api/v1/model/types').then(r => r.ok ? r.json() : null).then(d => { if (d) setModelTypes(d); });
+  }, []);
+
+  useEffect(() => {
+    setSelectedModelType(null); // reset to agent default when switching agent
+  }, [selectedAgent]);
+
+  async function runRetrain() {
+    const mt = selectedModelType || modelTypes.defaults[selectedAgent] || 'logistic';
+    setRetraining(true); setRetrainResult(null); setError('');
+    const r = await fetch('/api/v1/model/retrain', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ agent: selectedAgent, model_type: mt }),
+    }).catch(() => null);
+    if (r?.ok) {
+      const data = await r.json();
+      setRetrainResult(data);
+      loadSnapshots(selectedAgent);
+      loadFeatImportance(selectedAgent);
+    } else {
+      setError(`Retrain failed: ${r?.status}`);
+    }
+    setRetraining(false);
+  }
+
+  useEffect(() => {
+    loadSnapshots(selectedAgent);
+    loadFeatImportance(selectedAgent);
+  }, [selectedAgent]);
 
   async function runTest(snapshot) {
     setTesting(snapshot.filename); setTestResult(null); setError('');
@@ -2671,16 +2856,61 @@ function ClassifierModelsPanel({ clfHistory }) {
         ))}
       </div>
 
+      {/* Model type selector */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 9, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>Model</span>
+        {modelTypes.types.map(mt => {
+          const isDefault = (modelTypes.defaults[selectedAgent] || 'logistic') === mt;
+          const isSelected = (selectedModelType || modelTypes.defaults[selectedAgent] || 'logistic') === mt;
+          return (
+            <button key={mt} onClick={() => setSelectedModelType(mt)} style={{
+              fontSize: 9, padding: '2px 9px', borderRadius: 8, cursor: 'pointer',
+              background: isSelected ? '#1e3a5f' : '#0d1b2e',
+              color: isSelected ? '#93c5fd' : '#475569',
+              border: `1px solid ${isSelected ? '#3b82f6' : '#1e293b'}`,
+            }}>
+              {modelTypes.labels[mt] ?? mt}
+              {isDefault && <span style={{ color: '#334155', marginLeft: 4, fontSize: 8 }}>default</span>}
+            </button>
+          );
+        })}
+      </div>
+
       {/* Trend sparkline for selected agent */}
       <ClassifierHistoryChart history={clfHistory} agent={selectedAgent} />
 
+      {/* Feature importance */}
+      <FeatureImportanceChart data={featImportance} loading={loadingFeat} />
+
+      {/* Experiment history table */}
+      <ExperimentTable history={clfHistory} agent={selectedAgent} liveVersionedPath={snapshots[0]?.path} />
+
       {/* Snapshots */}
       <div style={{ marginTop: 12 }}>
-        <p style={{ fontSize: 10, color: 'var(--muted)', margin: '0 0 6px', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
-          Snapshots — {selectedAgent}
-        </p>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+          <p style={{ fontSize: 10, color: 'var(--muted)', margin: 0, textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
+            Snapshots — {selectedAgent}
+          </p>
+          <button className="kb-btn" onClick={runRetrain} disabled={retraining}
+            style={{ fontSize: 10, padding: '2px 10px', color: retraining ? '#64748b' : '#93c5fd', borderColor: retraining ? '#334155' : '#3b82f6' }}>
+            {retraining ? <><Activity size={10} className="spin" style={{ marginRight: 3 }} />Retraining…</> : 'Retrain'}
+          </button>
+        </div>
+        {retrainResult && (
+          <div style={{ marginBottom: 8, padding: '5px 9px', borderRadius: 5, background: '#0a1e0f', border: '1px solid #166534', fontSize: 10, fontFamily: 'monospace', color: '#4ade80' }}>
+            ✓ Retrain complete
+            {retrainResult.model_type_used && <span style={{ color: '#93c5fd', marginLeft: 5 }}>[{retrainResult.model_type_used}]</span>}
+            {' — '} cv acc {retrainResult.accuracy?.toFixed(3)}
+            {retrainResult.n_real > 0 && <span style={{ color: '#94a3b8' }}> · {retrainResult.n_real} real samples</span>}
+            {retrainResult.transfer_lift != null && (
+              <span style={{ color: retrainResult.transfer_lift >= 0 ? '#4ade80' : '#f59e0b', marginLeft: 6 }}>
+                transfer {retrainResult.transfer_lift >= 0 ? '+' : ''}{(retrainResult.transfer_lift * 100).toFixed(1)}pp
+              </span>
+            )}
+          </div>
+        )}
         {snapshots.length === 0 && (
-          <p className="muted" style={{ fontSize: 11 }}>No snapshots found. Run <code style={{ fontSize: 10 }}>make fit-{selectedAgent}</code>.</p>
+          <p className="muted" style={{ fontSize: 11 }}>No snapshots found. Hit Retrain to create the first one.</p>
         )}
         {snapshots.map((snap, i) => {
           const isLive = i === 0;
@@ -2733,11 +2963,14 @@ function ClassifierModelsPanel({ clfHistory }) {
               )}
               {snap.cv_fold_accuracies && <FoldSpread accuracies={snap.cv_fold_accuracies} mean={snap.accuracy} />}
               {tested && (
-                <div style={{ marginTop: 5, padding: '4px 8px', borderRadius: 4, background: '#0d1b2e', border: '1px solid #1e3a5f', fontSize: 10, fontFamily: 'monospace', color: '#93c5fd' }}>
-                  fresh-synthetic test (n={tested.test_n}): acc {tested.test_accuracy.toFixed(3)}  brier {tested.test_brier.toFixed(3)}
-                  {Math.abs(tested.test_accuracy - tested.cv_accuracy) > 0.05 && (
-                    <span style={{ color: '#f59e0b', marginLeft: 8 }}>⚠ cv/test gap {((tested.cv_accuracy - tested.test_accuracy) * 100).toFixed(1)}pp</span>
-                  )}
+                <div style={{ marginTop: 5, padding: '6px 9px', borderRadius: 4, background: '#0d1b2e', border: '1px solid #1e3a5f' }}>
+                  <div style={{ fontSize: 10, fontFamily: 'monospace', color: '#93c5fd' }}>
+                    fresh-synthetic test (n={tested.test_n}): acc {tested.test_accuracy.toFixed(3)}  brier {tested.test_brier.toFixed(3)}
+                    {Math.abs(tested.test_accuracy - tested.cv_accuracy) > 0.05 && (
+                      <span style={{ color: '#f59e0b', marginLeft: 8 }}>⚠ cv/test gap {((tested.cv_accuracy - tested.test_accuracy) * 100).toFixed(1)}pp</span>
+                    )}
+                  </div>
+                  <ConfusionMatrixGrid matrix={tested.confusion_matrix} labels={tested.confusion_labels} />
                 </div>
               )}
               {promoted && (
@@ -2813,6 +3046,119 @@ function QualityTrendChart({ history }) {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+function OutcomeLabelingCard() {
+  const [year, setYear]         = useState(2026);
+  const [roundNum, setRoundNum] = useState(1);
+  const [dryRun, setDryRun]     = useState(true);
+  const [running, setRunning]   = useState(false);
+  const [result, setResult]     = useState(null);
+  const [summary, setSummary]   = useState(null);
+  const [error, setError]       = useState('');
+
+  async function loadSummary() {
+    const r = await fetch('/api/v1/outcomes/summary').catch(() => null);
+    if (r?.ok) setSummary(await r.json());
+  }
+  useEffect(() => { loadSummary(); }, []);
+
+  async function runLabeler() {
+    setRunning(true); setResult(null); setError('');
+    const r = await fetch(
+      `/api/v1/outcomes/label?year=${year}&round_num=${roundNum}&dry_run=${dryRun}`,
+      { method: 'POST' }
+    ).catch(() => null);
+    if (r?.ok) {
+      const data = await r.json();
+      setResult(data);
+      if (!dryRun) loadSummary();
+    } else {
+      const msg = await r?.text().catch(() => '');
+      setError(`Failed ${r?.status}: ${msg}`);
+    }
+    setRunning(false);
+  }
+
+  const incidentCounts = result?.incidents_found
+    ? Object.entries(result.incidents_found.reduce((acc, inc) => {
+        acc[inc.type] = (acc[inc.type] ?? 0) + 1; return acc;
+      }, {}))
+    : [];
+
+  return (
+    <div>
+      <p style={{ fontSize: 10, color: 'var(--muted)', margin: '0 0 6px', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
+        Post-Race Outcome Labeler
+      </p>
+      <p style={{ fontSize: 11, color: '#64748b', margin: '0 0 10px', lineHeight: 1.5 }}>
+        Downloads FastF1 race data, extracts incidents (retirements, safety cars, forced pits), then
+        marks each WARNING/CRITICAL insight as correct/incorrect based on whether a matching incident
+        occurred within 5 laps. Labels are written as FeedbackRecord rows that feed the retrain loop.
+      </p>
+
+      {summary?.total > 0 && (
+        <div style={{ marginBottom: 10, padding: '5px 10px', borderRadius: 5, background: '#060c18', border: '1px solid #1e293b', fontSize: 10, fontFamily: 'monospace' }}>
+          <span style={{ color: '#475569' }}>Cumulative outcome labels: </span>
+          <span style={{ color: '#4ade80' }}>{summary.correct} correct</span>
+          <span style={{ color: '#334155' }}> / </span>
+          <span style={{ color: '#f87171' }}>{summary.incorrect} incorrect</span>
+          {summary.accuracy != null && (
+            <span style={{ color: '#93c5fd', marginLeft: 8 }}>model precision {(summary.accuracy * 100).toFixed(1)}%</span>
+          )}
+        </div>
+      )}
+
+      <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 8 }}>
+        <div>
+          <p style={{ fontSize: 9, color: 'var(--muted)', margin: '0 0 3px' }}>Year</p>
+          <input type="number" value={year} onChange={e => setYear(+e.target.value)} min={2018} max={2030}
+            style={{ width: 72, fontSize: 11, padding: '4px 7px', background: '#0d1b2e', border: '1px solid #334155', borderRadius: 4, color: 'var(--fg)', fontFamily: 'monospace' }} />
+        </div>
+        <div>
+          <p style={{ fontSize: 9, color: 'var(--muted)', margin: '0 0 3px' }}>Round</p>
+          <input type="number" value={roundNum} onChange={e => setRoundNum(+e.target.value)} min={1} max={24}
+            style={{ width: 58, fontSize: 11, padding: '4px 7px', background: '#0d1b2e', border: '1px solid #334155', borderRadius: 4, color: 'var(--fg)', fontFamily: 'monospace' }} />
+        </div>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: '#64748b', cursor: 'pointer', paddingBottom: 2 }}>
+          <input type="checkbox" checked={dryRun} onChange={e => setDryRun(e.target.checked)} />
+          Dry run (preview only)
+        </label>
+        <button className="kb-btn" onClick={runLabeler} disabled={running}
+          style={{ fontSize: 11, padding: '4px 14px', color: running ? '#64748b' : dryRun ? '#93c5fd' : '#4ade80', borderColor: running ? '#334155' : dryRun ? '#3b82f6' : '#166534' }}>
+          {running ? <><Activity size={11} className="spin" style={{ marginRight: 4 }} />Running…</> : dryRun ? 'Preview' : 'Label race'}
+        </button>
+      </div>
+      {error && <p style={{ fontSize: 10, color: '#ef4444', marginTop: 4 }}>{error}</p>}
+
+      {result && (
+        <div style={{ marginTop: 6, padding: '8px 10px', borderRadius: 6, background: '#060c18', border: '1px solid #1e293b' }}>
+          <div style={{ display: 'flex', gap: 14, marginBottom: 6, fontSize: 10, fontFamily: 'monospace', flexWrap: 'wrap' }}>
+            <span style={{ color: '#64748b', fontWeight: 600 }}>{result.track_id} {result.year} R{result.round_num}</span>
+            <span style={{ color: '#94a3b8' }}>{result.n_insights_examined} examined</span>
+            <span style={{ color: '#4ade80' }}>{result.n_labeled_correct} correct</span>
+            <span style={{ color: '#f87171' }}>{result.n_labeled_incorrect} incorrect</span>
+            <span style={{ color: '#475569' }}>{result.n_no_match} no match</span>
+            {dryRun && <span style={{ color: '#f59e0b', fontWeight: 600 }}>DRY RUN — nothing written</span>}
+          </div>
+          {incidentCounts.length > 0 ? (
+            <div>
+              <p style={{ fontSize: 9, color: 'var(--muted)', margin: '0 0 4px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Incidents found</p>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {incidentCounts.map(([type, count]) => (
+                  <span key={type} style={{ fontSize: 9, padding: '2px 8px', borderRadius: 8, background: '#0d1b2e', color: '#93c5fd', border: '1px solid #1e3a5f', fontFamily: 'monospace' }}>
+                    {type} ×{count}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <p style={{ fontSize: 10, color: '#475569', margin: 0 }}>No incidents found — no insights labeled.</p>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -3178,6 +3524,16 @@ function ModelLabPanel({ version }) {
             </button>
           </div>
           <ClassifierModelsPanel clfHistory={clfHistory} />
+        </div>
+
+        <div style={{ borderTop: '1px solid var(--card-border)' }} />
+
+        {/* Outcome labeling */}
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+            <h2 style={{ margin: 0, fontSize: 14 }}><Database size={13} /> Outcome Labeling</h2>
+          </div>
+          <OutcomeLabelingCard />
         </div>
 
       </div>

@@ -81,6 +81,8 @@ class Settings(BaseSettings):
         if self.env == "production":
             if not self.storage_url:
                 errors.append("F1DI_STORAGE_URL is required in production")
+            elif self.storage_url.startswith("sqlite"):
+                errors.append("F1DI_STORAGE_URL must not be SQLite in production — use postgresql+psycopg2://")
             if self.vector_backend == "memory":
                 errors.append("F1DI_VECTOR_BACKEND=memory is not allowed in production")
             if self.llm_backend == "anthropic" and not self.anthropic_api_key:
