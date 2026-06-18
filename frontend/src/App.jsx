@@ -3059,7 +3059,7 @@ function ClassifierModelsPanel({ clfHistory }) {
     if (r?.ok) setPromoteResult(await r.json());
     else setError(`Promote failed: ${r?.status}`);
     setPromoting(null);
-    loadSnapshots(selectedAgent);
+    await loadSnapshots(selectedAgent);
   }
 
   const liveName = snapshots.length > 0
@@ -3108,7 +3108,7 @@ function ClassifierModelsPanel({ clfHistory }) {
       <FeatureImportanceChart data={featImportance} loading={loadingFeat} />
 
       {/* Experiment history table */}
-      <ExperimentTable history={clfHistory} agent={selectedAgent} liveVersionedPath={snapshots[0]?.path} />
+      <ExperimentTable history={clfHistory} agent={selectedAgent} liveVersionedPath={snapshots.find(s => s.is_live)?.path} />
 
       {/* Snapshots */}
       <div style={{ marginTop: 12 }}>

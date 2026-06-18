@@ -1056,18 +1056,18 @@ def model_snapshots(agent: str) -> list[dict]:
     """List versioned snapshot pkls for a given agent with their stored metrics."""
     if agent not in _CLASSIFIER_AGENTS:
         raise HTTPException(status_code=404, detail=f"Unknown agent: {agent}")
+    import hashlib
     cal_dir = Path("data/calibration")
     prefix = "meta_learner_" if agent == "meta" else f"{agent}_classifier_"
     snaps = sorted(cal_dir.glob(f"{prefix}*.pkl"), reverse=True)
     live_path = _CLASSIFIER_AGENTS[agent]
-    live_size = live_path.stat().st_size if live_path.exists() else -1
-    live_mtime = live_path.stat().st_mtime if live_path.exists() else -1
+    live_hash = hashlib.md5(live_path.read_bytes()).hexdigest() if live_path.exists() else ""
     result = []
     for p in snaps:
         try:
-            obj = pickle.loads(p.read_bytes())
-            snap_stat = p.stat()
-            is_live = (snap_stat.st_size == live_size and abs(snap_stat.st_mtime - live_mtime) < 2)
+            raw = p.read_bytes()
+            obj = pickle.loads(raw)
+            is_live = (hashlib.md5(raw).hexdigest() == live_hash)
             result.append({
                 "path": str(p),
                 "filename": p.name,
