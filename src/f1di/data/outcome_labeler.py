@@ -119,7 +119,7 @@ def _extract_sc_laps_from_race_control(session, valid_laps) -> list[int]:
     return sorted(set(sc_laps))
 
 
-def _extract_sc_laps_from_spike(valid: "pd.DataFrame") -> list[int]:
+def _extract_sc_laps_from_spike(valid) -> list[int]:
     """Fallback: infer SC laps from a field-wide lap-time spike (>22% above baseline)."""
     lap_medians: dict[int, float] = {}
     for lap_n in valid["LapNumber"].unique():

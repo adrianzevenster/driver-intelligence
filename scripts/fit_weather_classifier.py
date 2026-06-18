@@ -10,7 +10,7 @@ from f1di.agents.weather_classifier import train_from_labels
 report = train_from_labels()
 blocked = "  [BLOCKED]" if report.get("snapshot_blocked") else ""
 print(f"\nWeatherClassifier — n_real={report['n_real']}  n_total={report['n_total']}  acc={report['accuracy']:.4f}{blocked}")
-print(f"\nClass distribution:")
+print("\nClass distribution:")
 for cls in ("INFO", "WATCH", "WARNING"):
     n = report["class_distribution"].get(cls, 0)
     print(f"  {cls:<10} {n:>5}  {'█' * (n // 15)}")

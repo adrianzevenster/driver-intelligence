@@ -10,7 +10,7 @@ if __name__ == "__main__":
     r = train_from_labels()
     blocked = "  [BLOCKED]" if r.get("snapshot_blocked") else ""
     print(f"\nTelemetryClassifier — n_real={r['n_real']}  n_total={r['n_total']}  acc={r['accuracy']:.4f}{blocked}")
-    print(f"\nClass distribution:")
+    print("\nClass distribution:")
     for cls in ("INFO", "WATCH", "WARNING", "CRITICAL"):
         n = r["class_distribution"].get(cls, 0)
         print(f"  {cls:<10} {n:>5}  {'█' * (n // 20)}")

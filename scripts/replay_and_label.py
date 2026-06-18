@@ -91,7 +91,7 @@ def replay_race(
 
     Returns a summary dict with counts.
     """
-    from f1di.knowledge.fastf1_session import build_all_lap_windows, get_races
+    from f1di.knowledge.fastf1_session import build_all_lap_windows
     from f1di.inference.fusion import InferenceOrchestrator
     from f1di.storage.database import db_session
     from f1di.storage.repository import save_insight, already_ingested, mark_ingested
@@ -163,7 +163,6 @@ def replay_race(
         except Exception as exc:
             _log(f"    {_RED}{drv}: DB write failed — {exc}{_RESET}")
 
-    all_drivers_attempted = len(drivers)
     all_drivers_failed = (total_windows == 0 and total_saved == 0)
 
     if not dry_run and total_saved > 0 and not all_drivers_failed:
@@ -255,7 +254,7 @@ def main() -> None:
                     )
 
             # ── Step 2: outcome labeling ───────────────────────────────────
-            _log(f"  labeling outcomes …")
+            _log("  labeling outcomes …")
             t0 = time.perf_counter()
             label_result = label_race_outcomes(year, round_num, dry_run=args.dry_run)
             elapsed = time.perf_counter() - t0
@@ -293,7 +292,7 @@ def main() -> None:
         _log(f"  {_DIM}--no-retrain set — skipping retrain.{_RESET}")
         return
 
-    _log(f"\n  Triggering retrain …")
+    _log("\n  Triggering retrain …")
     try:
         from f1di.agents.auto_retrain import maybe_retrain_all
         maybe_retrain_all()
