@@ -67,6 +67,24 @@ def build_model(model_type: str = "logistic", max_depth: int = 4):
         raise ValueError(f"Unknown model_type: {model_type!r}. Choose from {MODEL_TYPES}")
 
 
+def class_balance_weights(y: np.ndarray, sample_weight: np.ndarray | None) -> np.ndarray:
+    """Multiply existing sample_weight by class inverse frequency.
+
+    Corrects for label imbalance (e.g. 75% INFO) so minority classes like
+    WARNING/CRITICAL get equal gradient influence. Applied on top of the
+    blend_with_transfer weights so real-vs-synthetic and class-balance
+    corrections are both active simultaneously.
+    """
+    unique, counts = np.unique(y, return_counts=True)
+    n_classes = len(unique)
+    inv_freq = np.ones(len(y), dtype=np.float64)
+    for cls, cnt in zip(unique, counts):
+        inv_freq[y == cls] = len(y) / (n_classes * cnt)
+    if sample_weight is None:
+        return inv_freq
+    return sample_weight * inv_freq
+
+
 def multiclass_brier(proba: np.ndarray, y: np.ndarray, classes: np.ndarray) -> float:
     """Mean squared error between predicted probability vectors and one-hot targets."""
     n, n_c = len(y), len(classes)
@@ -85,6 +103,8 @@ def cross_val_eval(
     n_splits: int = 5,
     random_state: int = 42,
     sample_weight: np.ndarray | None = None,
+    scoring_fn=None,
+    collect_predictions: bool = False,
 ) -> dict | None:
     """Honest accuracy/Brier via stratified k-fold CV.
 
@@ -115,6 +135,8 @@ def cross_val_eval(
     from sklearn.metrics import accuracy_score
     from sklearn.model_selection import StratifiedKFold
 
+    _score_fn = scoring_fn if scoring_fn is not None else accuracy_score
+
     classes_present, counts = np.unique(y, return_counts=True)
     if len(classes_present) < 2 or counts.min() < 2:
         return None
@@ -122,6 +144,8 @@ def cross_val_eval(
 
     skf = StratifiedKFold(n_splits=n_splits_eff, shuffle=True, random_state=random_state)
     accs, briers = [], []
+    all_y_true: list = []
+    all_y_pred: list = []
     for train_idx, test_idx in skf.split(X, y):
         scaler, model = build_pipeline()
         X_tr = scaler.fit_transform(X[train_idx])
@@ -129,10 +153,14 @@ def cross_val_eval(
         model.fit(X_tr, y[train_idx], sample_weight=sw_tr)
         X_te = scaler.transform(X[test_idx])
         proba = model.predict_proba(X_te)
-        accs.append(float(accuracy_score(y[test_idx], model.predict(X_te))))
+        y_pred = model.predict(X_te)
+        accs.append(float(_score_fn(y[test_idx], y_pred)))
         briers.append(float(brier_fn(proba, y[test_idx], model.classes_)))
+        if collect_predictions:
+            all_y_true.extend(y[test_idx].tolist())
+            all_y_pred.extend(y_pred.tolist())
 
-    return {
+    result = {
         "cv_accuracy": float(np.mean(accs)),
         "cv_brier": float(np.mean(briers)),
         "cv_accuracy_std": float(np.std(accs)),
@@ -141,6 +169,35 @@ def cross_val_eval(
         "fold_briers": briers,
         "n_splits": n_splits_eff,
     }
+    if collect_predictions:
+        result["cv_y_true"] = all_y_true
+        result["cv_y_pred"] = all_y_pred
+    return result
+
+
+def per_class_report(cv: dict | None, label_map: dict[int, str]) -> dict:
+    """Compute per-class precision/recall/f1 from CV fold predictions.
+
+    Returns a dict keyed by class name, each value {"precision", "recall", "f1", "support"}.
+    Empty dict if cv is None or predictions weren't collected.
+    """
+    if cv is None or "cv_y_true" not in cv:
+        return {}
+    from sklearn.metrics import classification_report
+    y_true = np.array(cv["cv_y_true"])
+    y_pred = np.array(cv["cv_y_pred"])
+    labels = sorted(label_map.keys())
+    names = [label_map[k] for k in labels]
+    try:
+        rep = classification_report(y_true, y_pred, labels=labels, target_names=names,
+                                    output_dict=True, zero_division=0)
+        return {cls: {"precision": round(rep[cls]["precision"], 3),
+                      "recall": round(rep[cls]["recall"], 3),
+                      "f1": round(rep[cls]["f1-score"], 3),
+                      "support": rep[cls]["support"]}
+                for cls in names if cls in rep}
+    except Exception:
+        return {}
 
 
 # Below REAL_WEIGHT_FLOOR real examples, real data isn't used at all — too

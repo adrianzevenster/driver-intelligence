@@ -953,7 +953,7 @@ def flywheel_status() -> dict:
 
     def _clf_info(pkl_path: Path) -> dict:
         if not pkl_path.exists():
-            return {"exists": False, "accuracy": None, "brier_score": None, "n_real": None, "n_train": None, "model_version": None, "model_type": None}
+            return {"exists": False, "accuracy": None, "brier_score": None, "n_real": None, "n_train": None, "model_version": None, "model_type": None, "per_class": {}}
         try:
             obj = pickle.loads(pkl_path.read_bytes())
             return {
@@ -969,9 +969,10 @@ def flywheel_status() -> dict:
                 "n_train": int(obj.n_train),
                 "model_version": getattr(obj, "model_version", None),
                 "model_type": getattr(obj, "model_type", None),
+                "per_class": getattr(obj, "cv_per_class", None) or {},
             }
         except Exception:
-            return {"exists": True, "accuracy": None, "brier_score": None, "cv_n_splits": None, "cv_accuracy_std": None, "real_sample_weight": None, "prior_cv_accuracy": None, "transfer_lift": None, "n_real": None, "n_train": None, "model_version": None, "model_type": None}
+            return {"exists": True, "accuracy": None, "brier_score": None, "cv_n_splits": None, "cv_accuracy_std": None, "real_sample_weight": None, "prior_cv_accuracy": None, "transfer_lift": None, "n_real": None, "n_train": None, "model_version": None, "model_type": None, "per_class": {}}
 
     classifiers = {
         "tire":        _clf_info(Path("data/calibration/tire_classifier.pkl")),
@@ -2199,7 +2200,10 @@ def label_race_outcomes(
     """
     from f1di.data.outcome_labeler import label_race
     from dataclasses import asdict
-    result = label_race(year=year, round_num=round_num, dry_run=dry_run)
+    try:
+        result = label_race(year=year, round_num=round_num, dry_run=dry_run)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"outcome_labeler error: {exc}") from exc
     if not dry_run and background_tasks is not None:
         from f1di.agents.auto_retrain import maybe_retrain_all
         background_tasks.add_task(maybe_retrain_all)

@@ -58,6 +58,81 @@ class OutcomeReport:
     incidents_found: list[dict]
 
 
+def _session_time_to_lap(laps_df, t) -> int:
+    """Map a session timedelta to the race lap number it falls within."""
+    by_driver = laps_df.groupby("Driver")["LapNumber"].count()
+    if by_driver.empty:
+        return -1
+    best = by_driver.idxmax()
+    drv = laps_df[laps_df["Driver"] == best].sort_values("LapNumber")
+    drv = drv[drv["LapTime"].notna()]
+    for _, row in drv.iterrows():
+        if t <= row["Time"]:
+            return int(row["LapNumber"])
+    nums = drv["LapNumber"].tolist()
+    return int(nums[-1]) if nums else -1
+
+
+def _normalize_rcm_time(t, session):
+    """Convert RCM Time to a Timedelta (session-elapsed). Some seasons return Timestamps."""
+    import pandas as pd
+    if t is None:
+        return None
+    if isinstance(t, pd.Timedelta):
+        return t
+    if isinstance(t, pd.Timestamp):
+        try:
+            t0 = session.t0_date
+            if not isinstance(t0, pd.Timestamp):
+                t0 = pd.Timestamp(t0)
+            delta = t - t0
+            return delta if delta.total_seconds() >= 0 else None
+        except Exception:
+            return None
+    return None
+
+
+def _extract_sc_laps_from_race_control(session, valid_laps) -> list[int]:
+    """Return lap numbers of confirmed SC/VSC deployments from race control messages."""
+    rcm = getattr(session, "race_control_messages", None)
+    if rcm is None or not hasattr(rcm, "empty") or rcm.empty:
+        return []
+    sc_laps: list[int] = []
+    for _, msg in rcm.iterrows():
+        text = str(msg.get("Message", "")).upper()
+        status = str(msg.get("Status", "")).upper()
+        category = str(msg.get("Category", "")).upper()
+        deployed = "DEPLOYED" in text or "DEPLOYED" in status
+        is_sc = deployed and (
+            "SAFETY CAR" in text
+            or "SAFETYCAR" in category
+            or "VIRTUAL SAFETY CAR" in text
+        )
+        if not is_sc:
+            continue
+        t = _normalize_rcm_time(msg.get("Time"), session)
+        if t is None:
+            continue
+        lap = _session_time_to_lap(valid_laps, t)
+        if lap > 0:
+            sc_laps.append(lap)
+    return sorted(set(sc_laps))
+
+
+def _extract_sc_laps_from_spike(valid: "pd.DataFrame") -> list[int]:
+    """Fallback: infer SC laps from a field-wide lap-time spike (>22% above baseline)."""
+    lap_medians: dict[int, float] = {}
+    for lap_n in valid["LapNumber"].unique():
+        grp = valid[valid["LapNumber"] == int(lap_n)]["LapTime"]
+        if len(grp) >= 5:
+            lap_medians[int(lap_n)] = grp.dt.total_seconds().median()
+    sorted_med = sorted(lap_medians.items())
+    if len(sorted_med) <= 5:
+        return []
+    baseline_s = sorted([m for _, m in sorted_med[:10]])[len(sorted_med[:10]) // 2]
+    return [lap_n for lap_n, med in sorted_med if med > baseline_s * 1.22 and lap_n > 3]
+
+
 def _extract_incidents(session) -> list[Incident]:
     """Extract incident list from a loaded FastF1 race session."""
     import pandas as pd
@@ -81,28 +156,18 @@ def _extract_incidents(session) -> list[Incident]:
                 severity=0.95,
             ))
 
-    # ── Safety car: field-wide lap time spike ────────────────────────────
-    lap_medians: dict[int, float] = {}
-    for lap_n in valid["LapNumber"].unique():
-        grp = valid[valid["LapNumber"] == int(lap_n)]["LapTime"]
-        if len(grp) >= 5:
-            lap_medians[int(lap_n)] = grp.dt.total_seconds().median()
-
-    sorted_med = sorted(lap_medians.items())
-    if len(sorted_med) > 5:
-        baseline_s = sorted([m for _, m in sorted_med[:10]])[len(sorted_med[:10]) // 2]
-        sc_laps: list[int] = []
-        for lap_n, med in sorted_med:
-            if med > baseline_s * 1.22 and lap_n > 3:
-                sc_laps.append(lap_n)
-        for sc_lap in sc_laps:
-            for drv in valid["Driver"].unique():
-                incidents.append(Incident(
-                    driver=str(drv),
-                    lap=sc_lap,
-                    incident_type="safety_car",
-                    severity=0.70,
-                ))
+    # ── Safety car: race control messages (authoritative) with lap-spike fallback ──
+    sc_laps: list[int] = _extract_sc_laps_from_race_control(session, valid)
+    if not sc_laps:
+        sc_laps = _extract_sc_laps_from_spike(valid)
+    for sc_lap in sc_laps:
+        for drv in valid["Driver"].unique():
+            incidents.append(Incident(
+                driver=str(drv),
+                lap=sc_lap,
+                incident_type="safety_car",
+                severity=0.70,
+            ))
 
     # ── Forced pits: stint ended before 30% of expected compound life ────
     _EXPECTED = {"SOFT": 18, "MEDIUM": 26, "HARD": 35, "INTERMEDIATE": 22, "WET": 18}
@@ -181,7 +246,7 @@ def label_race(
         fastf1.Cache.enable_cache(_CACHE_DIR)
         try:
             session = fastf1.get_session(year, round_num, "R")
-            session.load(telemetry=False, weather=True, messages=False, laps=True)
+            session.load(telemetry=False, weather=True, messages=True, laps=True)
         except Exception as exc:
             logger.error("fastf1_load_failed year=%s round=%s: %s", year, round_num, exc)
             return OutcomeReport(
@@ -227,71 +292,74 @@ def label_race(
     n_no_match = 0
     n_examined = 0
 
-    with db_session() as db:
-        for prefix in candidate_prefixes:
-            stmt = select(InsightRecord).where(
-                InsightRecord.session_id.like(f"{prefix}%"),
-                InsightRecord.risk.in_(["WARNING", "CRITICAL"]),
-            )
-            insights = db.execute(stmt).scalars().all()
-
-            for ins in insights:
-                n_examined += 1
-                drv = ins.driver_id
-                lap = ins.lap or 0
-
-                driver_incidents = incident_index.get(drv, []) + incident_index.get("*", [])
-                matching = [
-                    (inc_lap, inc_type, sev)
-                    for inc_lap, inc_type, sev in driver_incidents
-                    if 0 <= inc_lap - lap <= _CORRECT_WINDOW_LAPS
-                ]
-
-                if matching:
-                    label = True
-                    severity = max(m[2] for m in matching)
-                    rating = 5 if severity >= 0.85 else 4
-                    n_correct += 1
-                elif all(
-                    inc_lap > lap + _FALSE_ALARM_WINDOW_LAPS
-                    for inc_lap, _, _ in driver_incidents
-                    if inc_lap >= lap
-                ):
-                    label = False
-                    rating = 2
-                    n_incorrect += 1
-                else:
-                    n_no_match += 1
-                    continue
-
-                if dry_run:
-                    continue
-
-                # Check we haven't already labeled this insight from outcome data
-                existing = db.execute(
-                    select(FeedbackRecord).where(
-                        FeedbackRecord.insight_id == ins.insight_id,
-                        FeedbackRecord.submitted_by == "outcome_labeler",
-                    )
-                ).scalar_one_or_none()
-                if existing:
-                    continue
-
-                fb = FeedbackRecord(
-                    insight_id=ins.insight_id,
-                    rating=rating,
-                    correct=label,
-                    comment=f"outcome_label year={year} round={round_num} track={track_id}",
-                    submitted_by="outcome_labeler",
+    try:
+        with db_session() as db:
+            for prefix in candidate_prefixes:
+                stmt = select(InsightRecord).where(
+                    InsightRecord.session_id.like(f"{prefix}%"),
+                    InsightRecord.risk.in_(["WARNING", "CRITICAL"]),
                 )
-                db.add(fb)
+                insights = db.execute(stmt).scalars().all()
 
-        if not dry_run:
-            try:
-                db.commit()
-            except Exception as exc:
-                logger.warning("outcome_label_commit_failed: %s", exc)
-                db.rollback()
+                for ins in insights:
+                    n_examined += 1
+                    drv = ins.driver_id
+                    lap = ins.lap or 0
+
+                    driver_incidents = incident_index.get(drv, []) + incident_index.get("*", [])
+                    matching = [
+                        (inc_lap, inc_type, sev)
+                        for inc_lap, inc_type, sev in driver_incidents
+                        if 0 <= inc_lap - lap <= _CORRECT_WINDOW_LAPS
+                    ]
+
+                    if matching:
+                        label = True
+                        severity = max(m[2] for m in matching)
+                        rating = 5 if severity >= 0.85 else 4
+                        n_correct += 1
+                    elif all(
+                        inc_lap > lap + _FALSE_ALARM_WINDOW_LAPS
+                        for inc_lap, _, _ in driver_incidents
+                        if inc_lap >= lap
+                    ):
+                        label = False
+                        rating = 2
+                        n_incorrect += 1
+                    else:
+                        n_no_match += 1
+                        continue
+
+                    if dry_run:
+                        continue
+
+                    # Check we haven't already labeled this insight from outcome data
+                    existing = db.execute(
+                        select(FeedbackRecord).where(
+                            FeedbackRecord.insight_id == ins.insight_id,
+                            FeedbackRecord.submitted_by == "outcome_labeler",
+                        )
+                    ).scalar_one_or_none()
+                    if existing:
+                        continue
+
+                    fb = FeedbackRecord(
+                        insight_id=ins.insight_id,
+                        rating=rating,
+                        correct=label,
+                        comment=f"outcome_label year={year} round={round_num} track={track_id}",
+                        submitted_by="outcome_labeler",
+                    )
+                    db.add(fb)
+
+            if not dry_run:
+                try:
+                    db.commit()
+                except Exception as exc:
+                    logger.warning("outcome_label_commit_failed: %s", exc)
+                    db.rollback()
+    except Exception as exc:
+        logger.error("outcome_labeler_db_error year=%s round=%s: %s", year, round_num, exc)
 
     logger.info(
         "outcome_labeler complete  examined=%d correct=%d incorrect=%d no_match=%d",

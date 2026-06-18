@@ -4131,27 +4131,63 @@ function FlywheelStatusCard() {
               const retraining = rt?.retrain_in_progress ?? false;
               const delta = rt != null ? (real - (rt.pkl_n_real ?? real)) : 0;
               const threshold = status.auto_retrain?.threshold ?? 5;
+              const perClass = c?.per_class ?? {};
+              const classOrder = ['INFO', 'WATCH', 'WARNING', 'CRITICAL'];
+              const hasPerClass = Object.keys(perClass).length > 0;
+              const warningF1 = perClass['WARNING']?.f1;
+              const criticalF1 = perClass['CRITICAL']?.f1;
+              const f1Color = f1 => f1 == null ? '#475569' : f1 >= 0.70 ? '#4ade80' : f1 >= 0.50 ? '#f59e0b' : '#f87171';
               return (
                 <div key={agent} style={{
-                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                  padding: '4px 8px', borderRadius: 6, marginBottom: 4,
+                  borderRadius: 6, marginBottom: 4,
                   background: retraining ? '#0f1e10' : exists ? '#0a1628' : '#1e293b',
                   border: `1px solid ${retraining ? '#166534' : exists ? (brierOk ? '#1e3a5f' : '#7c3a1e') : '#334155'}`,
                 }}>
-                  <span style={{ fontSize: 11, color: retraining ? '#4ade80' : exists ? '#93c5fd' : '#475569', fontWeight: 600, textTransform: 'capitalize', display: 'flex', alignItems: 'center', gap: 5 }}>
-                    {retraining ? '⟳' : exists ? '●' : '○'} {agent}
-                    {ver && <span style={{ fontSize: 8, padding: '1px 4px', borderRadius: 3, background: '#0f2418', color: '#4ade80', border: '1px solid #166534', fontFamily: 'monospace' }}>{ver}</span>}
-                  </span>
-                  <span style={{ fontSize: 10, color: '#64748b', fontFamily: 'monospace' }}>
-                    {retraining
-                      ? 'retraining…'
-                      : exists
-                        ? `cv acc ${acc}  cv brier ${brier}  real ${real}${delta > 0 ? `  +${delta} new` : ''}`
-                        : 'run make fit-' + agent}
-                    {!retraining && delta > 0 && delta < threshold && (
-                      <span style={{ color: '#f59e0b', marginLeft: 4 }}>({threshold - delta} until auto-retrain)</span>
-                    )}
-                  </span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 8px' }}>
+                    <span style={{ fontSize: 11, color: retraining ? '#4ade80' : exists ? '#93c5fd' : '#475569', fontWeight: 600, textTransform: 'capitalize', display: 'flex', alignItems: 'center', gap: 5 }}>
+                      {retraining ? '⟳' : exists ? '●' : '○'} {agent}
+                      {ver && <span style={{ fontSize: 8, padding: '1px 4px', borderRadius: 3, background: '#0f2418', color: '#4ade80', border: '1px solid #166534', fontFamily: 'monospace' }}>{ver}</span>}
+                    </span>
+                    <span style={{ fontSize: 10, color: '#64748b', fontFamily: 'monospace' }}>
+                      {retraining
+                        ? 'retraining…'
+                        : exists
+                          ? `cv acc ${acc}  brier ${brier}  real ${real}${delta > 0 ? `  +${delta} new` : ''}`
+                          : 'run make fit-' + agent}
+                      {!retraining && delta > 0 && delta < threshold && (
+                        <span style={{ color: '#f59e0b', marginLeft: 4 }}>({threshold - delta} until auto-retrain)</span>
+                      )}
+                    </span>
+                  </div>
+                  {hasPerClass && exists && !retraining && (
+                    <div style={{ padding: '0 8px 6px', borderTop: '1px solid #1e293b' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 9, fontFamily: 'monospace' }}>
+                        <thead>
+                          <tr style={{ color: '#475569' }}>
+                            <td style={{ padding: '2px 4px' }}>class</td>
+                            <td style={{ padding: '2px 4px', textAlign: 'right' }}>prec</td>
+                            <td style={{ padding: '2px 4px', textAlign: 'right' }}>rec</td>
+                            <td style={{ padding: '2px 4px', textAlign: 'right' }}>F1</td>
+                            <td style={{ padding: '2px 4px', textAlign: 'right' }}>n</td>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {classOrder.filter(cls => perClass[cls]).map(cls => {
+                            const m = perClass[cls];
+                            return (
+                              <tr key={cls}>
+                                <td style={{ padding: '1px 4px', color: cls === 'WARNING' ? '#f59e0b' : cls === 'CRITICAL' ? '#f87171' : cls === 'WATCH' ? '#93c5fd' : '#64748b' }}>{cls}</td>
+                                <td style={{ padding: '1px 4px', textAlign: 'right', color: '#94a3b8' }}>{m.precision.toFixed(2)}</td>
+                                <td style={{ padding: '1px 4px', textAlign: 'right', color: '#94a3b8' }}>{m.recall.toFixed(2)}</td>
+                                <td style={{ padding: '1px 4px', textAlign: 'right', color: f1Color(m.f1), fontWeight: cls === 'WARNING' || cls === 'CRITICAL' ? 700 : 400 }}>{m.f1.toFixed(2)}</td>
+                                <td style={{ padding: '1px 4px', textAlign: 'right', color: '#475569' }}>{m.support}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
               );
             })}

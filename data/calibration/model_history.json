@@ -1089,5 +1089,1468 @@
     "versioned_path": "data/calibration/tire_classifier_20260617T141013Z.pkl",
     "blocked": false,
     "block_threshold": 0.02
+  },
+  {
+    "fitted_at": "2026-06-18T14:10:57Z",
+    "agent": "tire",
+    "model_version": "hgb-v1",
+    "model_type": "HistGradientBoosting",
+    "accuracy": 0.9007,
+    "brier_score": 0.1431,
+    "n_train": 19684,
+    "n_real": 18884,
+    "classes": [
+      "INFO",
+      "WATCH",
+      "WARNING",
+      "CRITICAL"
+    ],
+    "cv_n_splits": 5,
+    "cv_accuracy_std": 0.0061,
+    "cv_brier_std": 0.0054,
+    "cv_fold_accuracies": [
+      0.9017,
+      0.891,
+      0.8984,
+      0.9098,
+      0.9027
+    ],
+    "cv_fold_briers": [
+      0.1436,
+      0.1518,
+      0.1452,
+      0.1367,
+      0.1383
+    ],
+    "real_sample_weight": 5.0,
+    "prior_cv_accuracy": 0.9688,
+    "transfer_lift": -0.068,
+    "versioned_path": "data/calibration/tire_classifier_20260618T141057Z.pkl",
+    "blocked": true,
+    "block_threshold": 0.02
+  },
+  {
+    "fitted_at": "2026-06-18T14:10:59Z",
+    "agent": "battery",
+    "model_version": "lr-v1",
+    "model_type": "LogisticRegression",
+    "accuracy": 0.9443,
+    "brier_score": 0.0719,
+    "n_train": 19484,
+    "n_real": 18884,
+    "classes": [
+      "INFO",
+      "WATCH",
+      "WARNING"
+    ],
+    "cv_n_splits": 5,
+    "cv_accuracy_std": 0.0015,
+    "cv_brier_std": 0.0017,
+    "cv_fold_accuracies": [
+      0.9443,
+      0.9469,
+      0.9428,
+      0.943,
+      0.9443
+    ],
+    "cv_fold_briers": [
+      0.0687,
+      0.0722,
+      0.0736,
+      0.0722,
+      0.0728
+    ],
+    "real_sample_weight": 5.0,
+    "prior_cv_accuracy": 0.9267,
+    "transfer_lift": 0.0176,
+    "versioned_path": "data/calibration/battery_classifier_20260618T141059Z.pkl",
+    "blocked": false,
+    "block_threshold": 0.02
+  },
+  {
+    "fitted_at": "2026-06-18T14:11:01Z",
+    "agent": "weather",
+    "model_version": "lr-v1",
+    "model_type": "LogisticRegression",
+    "accuracy": 0.9258,
+    "brier_score": 0.1093,
+    "n_train": 19484,
+    "n_real": 18884,
+    "classes": [
+      "INFO",
+      "WATCH",
+      "WARNING"
+    ],
+    "cv_n_splits": 5,
+    "cv_accuracy_std": 0.0021,
+    "cv_brier_std": 0.0028,
+    "cv_fold_accuracies": [
+      0.9248,
+      0.9299,
+      0.9243,
+      0.9253,
+      0.9245
+    ],
+    "cv_fold_briers": [
+      0.11,
+      0.1043,
+      0.1104,
+      0.1091,
+      0.1127
+    ],
+    "real_sample_weight": 5.0,
+    "prior_cv_accuracy": 0.955,
+    "transfer_lift": -0.0292,
+    "versioned_path": "data/calibration/weather_classifier_20260618T141101Z.pkl",
+    "blocked": false,
+    "block_threshold": 0.02
+  },
+  {
+    "fitted_at": "2026-06-18T14:11:04Z",
+    "agent": "safety_car",
+    "model_version": "lr-v1",
+    "model_type": "LogisticRegression",
+    "accuracy": 0.79,
+    "brier_score": 0.3038,
+    "n_train": 19664,
+    "n_real": 18864,
+    "classes": [
+      "INFO",
+      "WATCH",
+      "WARNING",
+      "CRITICAL"
+    ],
+    "cv_n_splits": 5,
+    "cv_accuracy_std": 0.0029,
+    "cv_brier_std": 0.0043,
+    "cv_fold_accuracies": [
+      0.7872,
+      0.7902,
+      0.7938,
+      0.7923,
+      0.7864
+    ],
+    "cv_fold_briers": [
+      0.3074,
+      0.3058,
+      0.2992,
+      0.298,
+      0.3085
+    ],
+    "real_sample_weight": 5.0,
+    "prior_cv_accuracy": 0.69,
+    "transfer_lift": 0.1,
+    "versioned_path": "data/calibration/safety_car_classifier_20260618T141104Z.pkl",
+    "blocked": false,
+    "block_threshold": 0.02
+  },
+  {
+    "fitted_at": "2026-06-18T14:11:06Z",
+    "agent": "fuel",
+    "model_version": "lr-v1",
+    "model_type": "LogisticRegression",
+    "accuracy": 0.7705,
+    "brier_score": 0.3209,
+    "n_train": 19464,
+    "n_real": 18864,
+    "classes": [
+      "INFO",
+      "WATCH",
+      "WARNING"
+    ],
+    "cv_n_splits": 5,
+    "cv_accuracy_std": 0.0104,
+    "cv_brier_std": 0.0071,
+    "cv_fold_accuracies": [
+      0.7621,
+      0.7889,
+      0.7747,
+      0.7611,
+      0.7657
+    ],
+    "cv_fold_briers": [
+      0.3254,
+      0.3074,
+      0.3218,
+      0.3222,
+      0.3277
+    ],
+    "real_sample_weight": 5.0,
+    "prior_cv_accuracy": 0.7183,
+    "transfer_lift": 0.0522,
+    "versioned_path": "data/calibration/fuel_classifier_20260618T141106Z.pkl",
+    "blocked": false,
+    "block_threshold": 0.02
+  },
+  {
+    "fitted_at": "2026-06-18T14:11:08Z",
+    "agent": "telemetry",
+    "model_version": "lr-v1",
+    "model_type": "LogisticRegression",
+    "accuracy": 0.9946,
+    "brier_score": 0.0079,
+    "n_train": 19684,
+    "n_real": 18884,
+    "classes": [
+      "INFO",
+      "WATCH",
+      "WARNING",
+      "CRITICAL"
+    ],
+    "cv_n_splits": 5,
+    "cv_accuracy_std": 0.0008,
+    "cv_brier_std": 0.0009,
+    "cv_fold_accuracies": [
+      0.9934,
+      0.9949,
+      0.9957,
+      0.9942,
+      0.9947
+    ],
+    "cv_fold_briers": [
+      0.0087,
+      0.0076,
+      0.0065,
+      0.009,
+      0.0074
+    ],
+    "real_sample_weight": 5.0,
+    "prior_cv_accuracy": 0.875,
+    "transfer_lift": 0.1196,
+    "versioned_path": "data/calibration/telemetry_classifier_20260618T141108Z.pkl",
+    "blocked": false,
+    "block_threshold": 0.02
+  },
+  {
+    "fitted_at": "2026-06-18T14:16:40Z",
+    "agent": "tire",
+    "model_version": "hgb-v1",
+    "model_type": "HistGradientBoosting",
+    "accuracy": 0.9007,
+    "brier_score": 0.1431,
+    "n_train": 19684,
+    "n_real": 18884,
+    "classes": [
+      "INFO",
+      "WATCH",
+      "WARNING",
+      "CRITICAL"
+    ],
+    "cv_n_splits": 5,
+    "cv_accuracy_std": 0.0061,
+    "cv_brier_std": 0.0054,
+    "cv_fold_accuracies": [
+      0.9017,
+      0.891,
+      0.8984,
+      0.9098,
+      0.9027
+    ],
+    "cv_fold_briers": [
+      0.1436,
+      0.1518,
+      0.1452,
+      0.1367,
+      0.1383
+    ],
+    "real_sample_weight": 5.0,
+    "prior_cv_accuracy": 0.9688,
+    "transfer_lift": -0.068,
+    "versioned_path": "data/calibration/tire_classifier_20260618T141640Z.pkl",
+    "blocked": false,
+    "block_threshold": 0.02
+  },
+  {
+    "fitted_at": "2026-06-18T14:43:22Z",
+    "agent": "tire",
+    "model_version": "hgb-v1",
+    "model_type": "HistGradientBoosting",
+    "accuracy": 0.8855,
+    "brier_score": 0.1684,
+    "n_train": 19684,
+    "n_real": 18884,
+    "classes": [
+      "INFO",
+      "WATCH",
+      "WARNING",
+      "CRITICAL"
+    ],
+    "cv_n_splits": 5,
+    "cv_accuracy_std": 0.0055,
+    "cv_brier_std": 0.0058,
+    "cv_fold_accuracies": [
+      0.8849,
+      0.8847,
+      0.8763,
+      0.8882,
+      0.8933
+    ],
+    "cv_fold_briers": [
+      0.1716,
+      0.1691,
+      0.1748,
+      0.1687,
+      0.1576
+    ],
+    "real_sample_weight": 5.0,
+    "prior_cv_accuracy": 0.9688,
+    "transfer_lift": -0.0833,
+    "versioned_path": "data/calibration/tire_classifier_20260618T144321Z.pkl",
+    "blocked": false,
+    "block_threshold": 0.02
+  },
+  {
+    "fitted_at": "2026-06-18T14:43:27Z",
+    "agent": "battery",
+    "model_version": "lr-v1",
+    "model_type": "LogisticRegression",
+    "accuracy": 0.8884,
+    "brier_score": 0.1657,
+    "n_train": 19484,
+    "n_real": 18884,
+    "classes": [
+      "INFO",
+      "WATCH",
+      "WARNING"
+    ],
+    "cv_n_splits": 5,
+    "cv_accuracy_std": 0.0036,
+    "cv_brier_std": 0.0034,
+    "cv_fold_accuracies": [
+      0.8879,
+      0.8871,
+      0.8953,
+      0.8848,
+      0.8868
+    ],
+    "cv_fold_briers": [
+      0.1656,
+      0.1671,
+      0.1595,
+      0.167,
+      0.1696
+    ],
+    "real_sample_weight": 5.0,
+    "prior_cv_accuracy": 0.9267,
+    "transfer_lift": -0.0383,
+    "versioned_path": "data/calibration/battery_classifier_20260618T144327Z.pkl",
+    "blocked": true,
+    "block_threshold": 0.02
+  },
+  {
+    "fitted_at": "2026-06-18T14:43:30Z",
+    "agent": "weather",
+    "model_version": "lr-v1",
+    "model_type": "LogisticRegression",
+    "accuracy": 0.9148,
+    "brier_score": 0.1363,
+    "n_train": 19484,
+    "n_real": 18884,
+    "classes": [
+      "INFO",
+      "WATCH",
+      "WARNING"
+    ],
+    "cv_n_splits": 5,
+    "cv_accuracy_std": 0.0039,
+    "cv_brier_std": 0.0011,
+    "cv_fold_accuracies": [
+      0.9174,
+      0.9102,
+      0.9151,
+      0.9205,
+      0.9107
+    ],
+    "cv_fold_briers": [
+      0.1371,
+      0.1352,
+      0.1356,
+      0.1356,
+      0.1381
+    ],
+    "real_sample_weight": 5.0,
+    "prior_cv_accuracy": 0.955,
+    "transfer_lift": -0.0402,
+    "versioned_path": "data/calibration/weather_classifier_20260618T144330Z.pkl",
+    "blocked": false,
+    "block_threshold": 0.02
+  },
+  {
+    "fitted_at": "2026-06-18T14:43:32Z",
+    "agent": "safety_car",
+    "model_version": "lr-v1",
+    "model_type": "LogisticRegression",
+    "accuracy": 0.7244,
+    "brier_score": 0.368,
+    "n_train": 19664,
+    "n_real": 18864,
+    "classes": [
+      "INFO",
+      "WATCH",
+      "WARNING",
+      "CRITICAL"
+    ],
+    "cv_n_splits": 5,
+    "cv_accuracy_std": 0.0067,
+    "cv_brier_std": 0.0066,
+    "cv_fold_accuracies": [
+      0.7198,
+      0.7137,
+      0.729,
+      0.7272,
+      0.7322
+    ],
+    "cv_fold_briers": [
+      0.3773,
+      0.3725,
+      0.3593,
+      0.3686,
+      0.3623
+    ],
+    "real_sample_weight": 5.0,
+    "prior_cv_accuracy": 0.69,
+    "transfer_lift": 0.0344,
+    "versioned_path": "data/calibration/safety_car_classifier_20260618T144332Z.pkl",
+    "blocked": true,
+    "block_threshold": 0.02
+  },
+  {
+    "fitted_at": "2026-06-18T14:43:35Z",
+    "agent": "fuel",
+    "model_version": "lr-v1",
+    "model_type": "LogisticRegression",
+    "accuracy": 0.6365,
+    "brier_score": 0.4081,
+    "n_train": 19464,
+    "n_real": 18864,
+    "classes": [
+      "INFO",
+      "WATCH",
+      "WARNING"
+    ],
+    "cv_n_splits": 5,
+    "cv_accuracy_std": 0.0099,
+    "cv_brier_std": 0.0068,
+    "cv_fold_accuracies": [
+      0.625,
+      0.6394,
+      0.6293,
+      0.6537,
+      0.6349
+    ],
+    "cv_fold_briers": [
+      0.4158,
+      0.3986,
+      0.413,
+      0.4015,
+      0.4117
+    ],
+    "real_sample_weight": 5.0,
+    "prior_cv_accuracy": 0.7183,
+    "transfer_lift": -0.0819,
+    "versioned_path": "data/calibration/fuel_classifier_20260618T144335Z.pkl",
+    "blocked": true,
+    "block_threshold": 0.02
+  },
+  {
+    "fitted_at": "2026-06-18T14:43:38Z",
+    "agent": "telemetry",
+    "model_version": "lr-v1",
+    "model_type": "LogisticRegression",
+    "accuracy": 0.9949,
+    "brier_score": 0.0083,
+    "n_train": 19684,
+    "n_real": 18884,
+    "classes": [
+      "INFO",
+      "WATCH",
+      "WARNING",
+      "CRITICAL"
+    ],
+    "cv_n_splits": 5,
+    "cv_accuracy_std": 0.0012,
+    "cv_brier_std": 0.0012,
+    "cv_fold_accuracies": [
+      0.9929,
+      0.9944,
+      0.9957,
+      0.9952,
+      0.9962
+    ],
+    "cv_fold_briers": [
+      0.0105,
+      0.0084,
+      0.0069,
+      0.0083,
+      0.0073
+    ],
+    "real_sample_weight": 5.0,
+    "prior_cv_accuracy": 0.875,
+    "transfer_lift": 0.1199,
+    "versioned_path": "data/calibration/telemetry_classifier_20260618T144338Z.pkl",
+    "blocked": false,
+    "block_threshold": 0.02
+  },
+  {
+    "fitted_at": "2026-06-18T16:30:05Z",
+    "agent": "weather",
+    "model_version": "lr-v1",
+    "model_type": "LogisticRegression",
+    "accuracy": 0.9148,
+    "brier_score": 0.1363,
+    "n_train": 19484,
+    "n_real": 18884,
+    "classes": [
+      "INFO",
+      "WATCH",
+      "WARNING"
+    ],
+    "cv_n_splits": 5,
+    "cv_accuracy_std": 0.0039,
+    "cv_brier_std": 0.0011,
+    "cv_fold_accuracies": [
+      0.9174,
+      0.9102,
+      0.9151,
+      0.9205,
+      0.9107
+    ],
+    "cv_fold_briers": [
+      0.1371,
+      0.1352,
+      0.1356,
+      0.1356,
+      0.1381
+    ],
+    "real_sample_weight": 5.0,
+    "prior_cv_accuracy": 0.955,
+    "transfer_lift": -0.0402,
+    "versioned_path": "data/calibration/weather_classifier_20260618T163005Z.pkl",
+    "blocked": false,
+    "block_threshold": 0.02
+  },
+  {
+    "fitted_at": "2026-06-18T16:30:05Z",
+    "agent": "battery",
+    "model_version": "lr-v1",
+    "model_type": "LogisticRegression",
+    "accuracy": 0.8884,
+    "brier_score": 0.1657,
+    "n_train": 19484,
+    "n_real": 18884,
+    "classes": [
+      "INFO",
+      "WATCH",
+      "WARNING"
+    ],
+    "cv_n_splits": 5,
+    "cv_accuracy_std": 0.0036,
+    "cv_brier_std": 0.0034,
+    "cv_fold_accuracies": [
+      0.8879,
+      0.8871,
+      0.8953,
+      0.8848,
+      0.8868
+    ],
+    "cv_fold_briers": [
+      0.1656,
+      0.1671,
+      0.1595,
+      0.167,
+      0.1696
+    ],
+    "real_sample_weight": 5.0,
+    "prior_cv_accuracy": 0.9267,
+    "transfer_lift": -0.0383,
+    "versioned_path": "data/calibration/battery_classifier_20260618T163005Z.pkl",
+    "blocked": false,
+    "block_threshold": 0.02
+  },
+  {
+    "fitted_at": "2026-06-18T16:30:12Z",
+    "agent": "tire",
+    "model_version": "hgb-v1",
+    "model_type": "HistGradientBoosting",
+    "accuracy": 0.8855,
+    "brier_score": 0.1684,
+    "n_train": 19684,
+    "n_real": 18884,
+    "classes": [
+      "INFO",
+      "WATCH",
+      "WARNING",
+      "CRITICAL"
+    ],
+    "cv_n_splits": 5,
+    "cv_accuracy_std": 0.0055,
+    "cv_brier_std": 0.0058,
+    "cv_fold_accuracies": [
+      0.8849,
+      0.8847,
+      0.8763,
+      0.8882,
+      0.8933
+    ],
+    "cv_fold_briers": [
+      0.1716,
+      0.1691,
+      0.1748,
+      0.1687,
+      0.1576
+    ],
+    "real_sample_weight": 5.0,
+    "prior_cv_accuracy": 0.9688,
+    "transfer_lift": -0.0833,
+    "versioned_path": "data/calibration/tire_classifier_20260618T163012Z.pkl",
+    "blocked": false,
+    "block_threshold": 0.02
+  },
+  {
+    "fitted_at": "2026-06-18T16:30:17Z",
+    "agent": "fuel",
+    "model_version": "lr-v1",
+    "model_type": "LogisticRegression",
+    "accuracy": 0.6365,
+    "brier_score": 0.4081,
+    "n_train": 19464,
+    "n_real": 18864,
+    "classes": [
+      "INFO",
+      "WATCH",
+      "WARNING"
+    ],
+    "cv_n_splits": 5,
+    "cv_accuracy_std": 0.0099,
+    "cv_brier_std": 0.0068,
+    "cv_fold_accuracies": [
+      0.625,
+      0.6394,
+      0.6293,
+      0.6537,
+      0.6349
+    ],
+    "cv_fold_briers": [
+      0.4158,
+      0.3986,
+      0.413,
+      0.4015,
+      0.4117
+    ],
+    "real_sample_weight": 5.0,
+    "prior_cv_accuracy": 0.7183,
+    "transfer_lift": -0.0819,
+    "versioned_path": "data/calibration/fuel_classifier_20260618T163017Z.pkl",
+    "blocked": false,
+    "block_threshold": 0.02
+  },
+  {
+    "fitted_at": "2026-06-18T16:30:17Z",
+    "agent": "safety_car",
+    "model_version": "lr-v1",
+    "model_type": "LogisticRegression",
+    "accuracy": 0.7244,
+    "brier_score": 0.368,
+    "n_train": 19664,
+    "n_real": 18864,
+    "classes": [
+      "INFO",
+      "WATCH",
+      "WARNING",
+      "CRITICAL"
+    ],
+    "cv_n_splits": 5,
+    "cv_accuracy_std": 0.0067,
+    "cv_brier_std": 0.0066,
+    "cv_fold_accuracies": [
+      0.7198,
+      0.7137,
+      0.729,
+      0.7272,
+      0.7322
+    ],
+    "cv_fold_briers": [
+      0.3773,
+      0.3725,
+      0.3593,
+      0.3686,
+      0.3623
+    ],
+    "real_sample_weight": 5.0,
+    "prior_cv_accuracy": 0.69,
+    "transfer_lift": 0.0344,
+    "versioned_path": "data/calibration/safety_car_classifier_20260618T163017Z.pkl",
+    "blocked": false,
+    "block_threshold": 0.02
+  },
+  {
+    "fitted_at": "2026-06-18T16:30:19Z",
+    "agent": "telemetry",
+    "model_version": "lr-v1",
+    "model_type": "LogisticRegression",
+    "accuracy": 0.9949,
+    "brier_score": 0.0083,
+    "n_train": 19684,
+    "n_real": 18884,
+    "classes": [
+      "INFO",
+      "WATCH",
+      "WARNING",
+      "CRITICAL"
+    ],
+    "cv_n_splits": 5,
+    "cv_accuracy_std": 0.0012,
+    "cv_brier_std": 0.0012,
+    "cv_fold_accuracies": [
+      0.9929,
+      0.9944,
+      0.9957,
+      0.9952,
+      0.9962
+    ],
+    "cv_fold_briers": [
+      0.0105,
+      0.0084,
+      0.0069,
+      0.0083,
+      0.0073
+    ],
+    "real_sample_weight": 5.0,
+    "prior_cv_accuracy": 0.875,
+    "transfer_lift": 0.1199,
+    "versioned_path": "data/calibration/telemetry_classifier_20260618T163019Z.pkl",
+    "blocked": false,
+    "block_threshold": 0.02
+  },
+  {
+    "fitted_at": "2026-06-18T16:31:35Z",
+    "agent": "weather",
+    "model_version": "lr-v1",
+    "model_type": "LogisticRegression",
+    "accuracy": 0.9148,
+    "brier_score": 0.1363,
+    "n_train": 19484,
+    "n_real": 18884,
+    "classes": [
+      "INFO",
+      "WATCH",
+      "WARNING"
+    ],
+    "cv_n_splits": 5,
+    "cv_accuracy_std": 0.0039,
+    "cv_brier_std": 0.0011,
+    "cv_fold_accuracies": [
+      0.9174,
+      0.9102,
+      0.9151,
+      0.9205,
+      0.9107
+    ],
+    "cv_fold_briers": [
+      0.1371,
+      0.1352,
+      0.1356,
+      0.1356,
+      0.1381
+    ],
+    "real_sample_weight": 5.0,
+    "prior_cv_accuracy": 0.955,
+    "transfer_lift": -0.0402,
+    "versioned_path": "data/calibration/weather_classifier_20260618T163135Z.pkl",
+    "blocked": false,
+    "block_threshold": 0.02
+  },
+  {
+    "fitted_at": "2026-06-18T16:36:21Z",
+    "agent": "tire",
+    "model_version": "hgb-v1",
+    "model_type": "HistGradientBoosting",
+    "accuracy": 0.877,
+    "brier_score": 0.1763,
+    "n_train": 21726,
+    "n_real": 20926,
+    "classes": [
+      "INFO",
+      "WATCH",
+      "WARNING",
+      "CRITICAL"
+    ],
+    "cv_n_splits": 5,
+    "cv_accuracy_std": 0.0063,
+    "cv_brier_std": 0.0083,
+    "cv_fold_accuracies": [
+      0.8728,
+      0.8831,
+      0.8677,
+      0.8771,
+      0.8845
+    ],
+    "cv_fold_briers": [
+      0.1823,
+      0.1662,
+      0.1881,
+      0.1766,
+      0.1683
+    ],
+    "real_sample_weight": 5.0,
+    "prior_cv_accuracy": 0.9688,
+    "transfer_lift": -0.0917,
+    "versioned_path": "data/calibration/tire_classifier_20260618T163621Z.pkl",
+    "blocked": false,
+    "block_threshold": 0.02
+  },
+  {
+    "fitted_at": "2026-06-18T16:36:26Z",
+    "agent": "battery",
+    "model_version": "lr-v1",
+    "model_type": "LogisticRegression",
+    "accuracy": 0.8736,
+    "brier_score": 0.1777,
+    "n_train": 21526,
+    "n_real": 20926,
+    "classes": [
+      "INFO",
+      "WATCH",
+      "WARNING"
+    ],
+    "cv_n_splits": 5,
+    "cv_accuracy_std": 0.0069,
+    "cv_brier_std": 0.0094,
+    "cv_fold_accuracies": [
+      0.882,
+      0.8655,
+      0.8776,
+      0.8776,
+      0.8653
+    ],
+    "cv_fold_briers": [
+      0.164,
+      0.185,
+      0.1719,
+      0.177,
+      0.1905
+    ],
+    "real_sample_weight": 5.0,
+    "prior_cv_accuracy": 0.9267,
+    "transfer_lift": -0.0531,
+    "versioned_path": "data/calibration/battery_classifier_20260618T163626Z.pkl",
+    "blocked": false,
+    "block_threshold": 0.02
+  },
+  {
+    "fitted_at": "2026-06-18T16:36:29Z",
+    "agent": "weather",
+    "model_version": "lr-v1",
+    "model_type": "LogisticRegression",
+    "accuracy": 0.8554,
+    "brier_score": 0.1651,
+    "n_train": 21526,
+    "n_real": 20926,
+    "classes": [
+      "INFO",
+      "WATCH",
+      "WARNING"
+    ],
+    "cv_n_splits": 5,
+    "cv_accuracy_std": 0.0033,
+    "cv_brier_std": 0.0012,
+    "cv_fold_accuracies": [
+      0.8551,
+      0.8578,
+      0.8497,
+      0.8553,
+      0.8592
+    ],
+    "cv_fold_briers": [
+      0.1641,
+      0.1647,
+      0.1669,
+      0.1638,
+      0.166
+    ],
+    "real_sample_weight": 5.0,
+    "prior_cv_accuracy": 0.955,
+    "transfer_lift": -0.0996,
+    "versioned_path": "data/calibration/weather_classifier_20260618T163629Z.pkl",
+    "blocked": true,
+    "block_threshold": 0.02
+  },
+  {
+    "fitted_at": "2026-06-18T16:36:33Z",
+    "agent": "telemetry",
+    "model_version": "lr-v1",
+    "model_type": "LogisticRegression",
+    "accuracy": 0.9953,
+    "brier_score": 0.0076,
+    "n_train": 21726,
+    "n_real": 20926,
+    "classes": [
+      "INFO",
+      "WATCH",
+      "WARNING",
+      "CRITICAL"
+    ],
+    "cv_n_splits": 5,
+    "cv_accuracy_std": 0.0013,
+    "cv_brier_std": 0.0017,
+    "cv_fold_accuracies": [
+      0.9933,
+      0.9954,
+      0.9963,
+      0.9945,
+      0.997
+    ],
+    "cv_fold_briers": [
+      0.01,
+      0.0068,
+      0.0058,
+      0.0094,
+      0.0061
+    ],
+    "real_sample_weight": 5.0,
+    "prior_cv_accuracy": 0.875,
+    "transfer_lift": 0.1203,
+    "versioned_path": "data/calibration/telemetry_classifier_20260618T163633Z.pkl",
+    "blocked": false,
+    "block_threshold": 0.02
+  },
+  {
+    "fitted_at": "2026-06-18T16:36:36Z",
+    "agent": "safety_car",
+    "model_version": "lr-v1",
+    "model_type": "LogisticRegression",
+    "accuracy": 0.6979,
+    "brier_score": 0.3884,
+    "n_train": 21706,
+    "n_real": 20906,
+    "classes": [
+      "INFO",
+      "WATCH",
+      "WARNING",
+      "CRITICAL"
+    ],
+    "cv_n_splits": 5,
+    "cv_accuracy_std": 0.0089,
+    "cv_brier_std": 0.0088,
+    "cv_fold_accuracies": [
+      0.7066,
+      0.701,
+      0.707,
+      0.6853,
+      0.6897
+    ],
+    "cv_fold_briers": [
+      0.3756,
+      0.3849,
+      0.3859,
+      0.4019,
+      0.3936
+    ],
+    "real_sample_weight": 5.0,
+    "prior_cv_accuracy": 0.69,
+    "transfer_lift": 0.0079,
+    "versioned_path": "data/calibration/safety_car_classifier_20260618T163636Z.pkl",
+    "blocked": true,
+    "block_threshold": 0.02
+  },
+  {
+    "fitted_at": "2026-06-18T16:36:39Z",
+    "agent": "fuel",
+    "model_version": "lr-v1",
+    "model_type": "LogisticRegression",
+    "accuracy": 0.6555,
+    "brier_score": 0.3942,
+    "n_train": 21506,
+    "n_real": 20906,
+    "classes": [
+      "INFO",
+      "WATCH",
+      "WARNING"
+    ],
+    "cv_n_splits": 5,
+    "cv_accuracy_std": 0.0063,
+    "cv_brier_std": 0.0048,
+    "cv_fold_accuracies": [
+      0.656,
+      0.6564,
+      0.6598,
+      0.6436,
+      0.6617
+    ],
+    "cv_fold_briers": [
+      0.3941,
+      0.3916,
+      0.3924,
+      0.4035,
+      0.3897
+    ],
+    "real_sample_weight": 5.0,
+    "prior_cv_accuracy": 0.7183,
+    "transfer_lift": -0.0628,
+    "versioned_path": "data/calibration/fuel_classifier_20260618T163639Z.pkl",
+    "blocked": false,
+    "block_threshold": 0.02
+  },
+  {
+    "fitted_at": "2026-06-18T16:50:16Z",
+    "agent": "tire",
+    "model_version": "hgb-v1",
+    "model_type": "HistGradientBoosting",
+    "accuracy": 0.8773,
+    "brier_score": 0.1732,
+    "n_train": 21954,
+    "n_real": 21154,
+    "classes": [
+      "INFO",
+      "WATCH",
+      "WARNING",
+      "CRITICAL"
+    ],
+    "cv_n_splits": 5,
+    "cv_accuracy_std": 0.007,
+    "cv_brier_std": 0.0089,
+    "cv_fold_accuracies": [
+      0.8718,
+      0.867,
+      0.8854,
+      0.8791,
+      0.8834
+    ],
+    "cv_fold_briers": [
+      0.1787,
+      0.1872,
+      0.1654,
+      0.1714,
+      0.163
+    ],
+    "real_sample_weight": 5.0,
+    "prior_cv_accuracy": 0.9688,
+    "transfer_lift": -0.0914,
+    "versioned_path": "data/calibration/tire_classifier_20260618T165016Z.pkl",
+    "blocked": false,
+    "block_threshold": 0.02
+  },
+  {
+    "fitted_at": "2026-06-18T16:50:22Z",
+    "agent": "battery",
+    "model_version": "lr-v1",
+    "model_type": "LogisticRegression",
+    "accuracy": 0.8741,
+    "brier_score": 0.1781,
+    "n_train": 21754,
+    "n_real": 21154,
+    "classes": [
+      "INFO",
+      "WATCH",
+      "WARNING"
+    ],
+    "cv_n_splits": 5,
+    "cv_accuracy_std": 0.0031,
+    "cv_brier_std": 0.0027,
+    "cv_fold_accuracies": [
+      0.877,
+      0.8699,
+      0.8731,
+      0.8722,
+      0.8782
+    ],
+    "cv_fold_briers": [
+      0.1771,
+      0.1794,
+      0.1823,
+      0.1742,
+      0.1773
+    ],
+    "real_sample_weight": 5.0,
+    "prior_cv_accuracy": 0.9267,
+    "transfer_lift": -0.0526,
+    "versioned_path": "data/calibration/battery_classifier_20260618T165022Z.pkl",
+    "blocked": false,
+    "block_threshold": 0.02
+  },
+  {
+    "fitted_at": "2026-06-18T16:50:25Z",
+    "agent": "weather",
+    "model_version": "lr-v1",
+    "model_type": "LogisticRegression",
+    "accuracy": 0.8562,
+    "brier_score": 0.1649,
+    "n_train": 21754,
+    "n_real": 21154,
+    "classes": [
+      "INFO",
+      "WATCH",
+      "WARNING"
+    ],
+    "cv_n_splits": 5,
+    "cv_accuracy_std": 0.0045,
+    "cv_brier_std": 0.0014,
+    "cv_fold_accuracies": [
+      0.858,
+      0.8506,
+      0.8637,
+      0.8557,
+      0.8531
+    ],
+    "cv_fold_briers": [
+      0.1642,
+      0.1663,
+      0.1629,
+      0.1667,
+      0.1644
+    ],
+    "real_sample_weight": 5.0,
+    "prior_cv_accuracy": 0.955,
+    "transfer_lift": -0.0988,
+    "versioned_path": "data/calibration/weather_classifier_20260618T165025Z.pkl",
+    "blocked": true,
+    "block_threshold": 0.02
+  },
+  {
+    "fitted_at": "2026-06-18T16:50:29Z",
+    "agent": "telemetry",
+    "model_version": "lr-v1",
+    "model_type": "LogisticRegression",
+    "accuracy": 0.9952,
+    "brier_score": 0.0076,
+    "n_train": 21954,
+    "n_real": 21154,
+    "classes": [
+      "INFO",
+      "WATCH",
+      "WARNING",
+      "CRITICAL"
+    ],
+    "cv_n_splits": 5,
+    "cv_accuracy_std": 0.0015,
+    "cv_brier_std": 0.0019,
+    "cv_fold_accuracies": [
+      0.9925,
+      0.995,
+      0.9964,
+      0.9954,
+      0.9968
+    ],
+    "cv_fold_briers": [
+      0.0111,
+      0.0074,
+      0.0056,
+      0.0077,
+      0.0064
+    ],
+    "real_sample_weight": 5.0,
+    "prior_cv_accuracy": 0.875,
+    "transfer_lift": 0.1202,
+    "versioned_path": "data/calibration/telemetry_classifier_20260618T165029Z.pkl",
+    "blocked": false,
+    "block_threshold": 0.02
+  },
+  {
+    "fitted_at": "2026-06-18T16:50:32Z",
+    "agent": "safety_car",
+    "model_version": "lr-v1",
+    "model_type": "LogisticRegression",
+    "accuracy": 0.696,
+    "brier_score": 0.3879,
+    "n_train": 21934,
+    "n_real": 21134,
+    "classes": [
+      "INFO",
+      "WATCH",
+      "WARNING",
+      "CRITICAL"
+    ],
+    "cv_n_splits": 5,
+    "cv_accuracy_std": 0.0063,
+    "cv_brier_std": 0.005,
+    "cv_fold_accuracies": [
+      0.7053,
+      0.6984,
+      0.6863,
+      0.6975,
+      0.6927
+    ],
+    "cv_fold_briers": [
+      0.383,
+      0.3838,
+      0.3956,
+      0.3852,
+      0.3917
+    ],
+    "real_sample_weight": 5.0,
+    "prior_cv_accuracy": 0.69,
+    "transfer_lift": 0.006,
+    "versioned_path": "data/calibration/safety_car_classifier_20260618T165032Z.pkl",
+    "blocked": true,
+    "block_threshold": 0.02
+  },
+  {
+    "fitted_at": "2026-06-18T16:50:35Z",
+    "agent": "fuel",
+    "model_version": "lr-v1",
+    "model_type": "LogisticRegression",
+    "accuracy": 0.6541,
+    "brier_score": 0.3945,
+    "n_train": 21734,
+    "n_real": 21134,
+    "classes": [
+      "INFO",
+      "WATCH",
+      "WARNING"
+    ],
+    "cv_n_splits": 5,
+    "cv_accuracy_std": 0.005,
+    "cv_brier_std": 0.0038,
+    "cv_fold_accuracies": [
+      0.6531,
+      0.6602,
+      0.6556,
+      0.6565,
+      0.6452
+    ],
+    "cv_fold_briers": [
+      0.3945,
+      0.3901,
+      0.3911,
+      0.3957,
+      0.4008
+    ],
+    "real_sample_weight": 5.0,
+    "prior_cv_accuracy": 0.7183,
+    "transfer_lift": -0.0642,
+    "versioned_path": "data/calibration/fuel_classifier_20260618T165035Z.pkl",
+    "blocked": false,
+    "block_threshold": 0.02
+  },
+  {
+    "fitted_at": "2026-06-18T16:51:21Z",
+    "agent": "tire",
+    "model_version": "hgb-v1",
+    "model_type": "HistGradientBoosting",
+    "accuracy": 0.8773,
+    "brier_score": 0.1732,
+    "n_train": 21954,
+    "n_real": 21154,
+    "classes": [
+      "INFO",
+      "WATCH",
+      "WARNING",
+      "CRITICAL"
+    ],
+    "cv_n_splits": 5,
+    "cv_accuracy_std": 0.007,
+    "cv_brier_std": 0.0089,
+    "cv_fold_accuracies": [
+      0.8718,
+      0.867,
+      0.8854,
+      0.8791,
+      0.8834
+    ],
+    "cv_fold_briers": [
+      0.1787,
+      0.1872,
+      0.1654,
+      0.1714,
+      0.163
+    ],
+    "real_sample_weight": 5.0,
+    "prior_cv_accuracy": 0.9688,
+    "transfer_lift": -0.0914,
+    "versioned_path": "data/calibration/tire_classifier_20260618T165121Z.pkl",
+    "blocked": false,
+    "block_threshold": 0.02
+  },
+  {
+    "fitted_at": "2026-06-18T16:51:28Z",
+    "agent": "battery",
+    "model_version": "lr-v1",
+    "model_type": "LogisticRegression",
+    "accuracy": 0.8741,
+    "brier_score": 0.1781,
+    "n_train": 21754,
+    "n_real": 21154,
+    "classes": [
+      "INFO",
+      "WATCH",
+      "WARNING"
+    ],
+    "cv_n_splits": 5,
+    "cv_accuracy_std": 0.0031,
+    "cv_brier_std": 0.0027,
+    "cv_fold_accuracies": [
+      0.877,
+      0.8699,
+      0.8731,
+      0.8722,
+      0.8782
+    ],
+    "cv_fold_briers": [
+      0.1771,
+      0.1794,
+      0.1823,
+      0.1742,
+      0.1773
+    ],
+    "real_sample_weight": 5.0,
+    "prior_cv_accuracy": 0.9267,
+    "transfer_lift": -0.0526,
+    "versioned_path": "data/calibration/battery_classifier_20260618T165128Z.pkl",
+    "blocked": false,
+    "block_threshold": 0.02
+  },
+  {
+    "fitted_at": "2026-06-18T16:51:31Z",
+    "agent": "weather",
+    "model_version": "lr-v1",
+    "model_type": "LogisticRegression",
+    "accuracy": 0.8562,
+    "brier_score": 0.1649,
+    "n_train": 21754,
+    "n_real": 21154,
+    "classes": [
+      "INFO",
+      "WATCH",
+      "WARNING"
+    ],
+    "cv_n_splits": 5,
+    "cv_accuracy_std": 0.0045,
+    "cv_brier_std": 0.0014,
+    "cv_fold_accuracies": [
+      0.858,
+      0.8506,
+      0.8637,
+      0.8557,
+      0.8531
+    ],
+    "cv_fold_briers": [
+      0.1642,
+      0.1663,
+      0.1629,
+      0.1667,
+      0.1644
+    ],
+    "real_sample_weight": 5.0,
+    "prior_cv_accuracy": 0.955,
+    "transfer_lift": -0.0988,
+    "versioned_path": "data/calibration/weather_classifier_20260618T165131Z.pkl",
+    "blocked": true,
+    "block_threshold": 0.02
+  },
+  {
+    "fitted_at": "2026-06-18T16:51:35Z",
+    "agent": "telemetry",
+    "model_version": "lr-v1",
+    "model_type": "LogisticRegression",
+    "accuracy": 0.9952,
+    "brier_score": 0.0076,
+    "n_train": 21954,
+    "n_real": 21154,
+    "classes": [
+      "INFO",
+      "WATCH",
+      "WARNING",
+      "CRITICAL"
+    ],
+    "cv_n_splits": 5,
+    "cv_accuracy_std": 0.0015,
+    "cv_brier_std": 0.0019,
+    "cv_fold_accuracies": [
+      0.9925,
+      0.995,
+      0.9964,
+      0.9954,
+      0.9968
+    ],
+    "cv_fold_briers": [
+      0.0111,
+      0.0074,
+      0.0056,
+      0.0077,
+      0.0064
+    ],
+    "real_sample_weight": 5.0,
+    "prior_cv_accuracy": 0.875,
+    "transfer_lift": 0.1202,
+    "versioned_path": "data/calibration/telemetry_classifier_20260618T165135Z.pkl",
+    "blocked": false,
+    "block_threshold": 0.02
+  },
+  {
+    "fitted_at": "2026-06-18T16:51:38Z",
+    "agent": "safety_car",
+    "model_version": "lr-v1",
+    "model_type": "LogisticRegression",
+    "accuracy": 0.696,
+    "brier_score": 0.3879,
+    "n_train": 21934,
+    "n_real": 21134,
+    "classes": [
+      "INFO",
+      "WATCH",
+      "WARNING",
+      "CRITICAL"
+    ],
+    "cv_n_splits": 5,
+    "cv_accuracy_std": 0.0063,
+    "cv_brier_std": 0.005,
+    "cv_fold_accuracies": [
+      0.7053,
+      0.6984,
+      0.6863,
+      0.6975,
+      0.6927
+    ],
+    "cv_fold_briers": [
+      0.383,
+      0.3838,
+      0.3956,
+      0.3852,
+      0.3917
+    ],
+    "real_sample_weight": 5.0,
+    "prior_cv_accuracy": 0.69,
+    "transfer_lift": 0.006,
+    "versioned_path": "data/calibration/safety_car_classifier_20260618T165138Z.pkl",
+    "blocked": true,
+    "block_threshold": 0.02
+  },
+  {
+    "fitted_at": "2026-06-18T16:51:41Z",
+    "agent": "fuel",
+    "model_version": "lr-v1",
+    "model_type": "LogisticRegression",
+    "accuracy": 0.6541,
+    "brier_score": 0.3945,
+    "n_train": 21734,
+    "n_real": 21134,
+    "classes": [
+      "INFO",
+      "WATCH",
+      "WARNING"
+    ],
+    "cv_n_splits": 5,
+    "cv_accuracy_std": 0.005,
+    "cv_brier_std": 0.0038,
+    "cv_fold_accuracies": [
+      0.6531,
+      0.6602,
+      0.6556,
+      0.6565,
+      0.6452
+    ],
+    "cv_fold_briers": [
+      0.3945,
+      0.3901,
+      0.3911,
+      0.3957,
+      0.4008
+    ],
+    "real_sample_weight": 5.0,
+    "prior_cv_accuracy": 0.7183,
+    "transfer_lift": -0.0642,
+    "versioned_path": "data/calibration/fuel_classifier_20260618T165141Z.pkl",
+    "blocked": false,
+    "block_threshold": 0.02
   }
 ]

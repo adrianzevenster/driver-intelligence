@@ -58,7 +58,17 @@ def main(synthetic_n: int, oversample: int, output: str | None) -> None:
         bar = "█" * (n // 20)
         print(f"  {cls:<10} {n:>5}  {bar}")
 
-    print()
+    per = report.get("per_class", {})
+    if per:
+        print("Per-class (CV held-out):")
+        print(f"  {'Class':<10} {'Prec':>6} {'Rec':>6} {'F1':>6} {'N':>6}")
+        print(f"  {'─'*42}")
+        for cls in ("INFO", "WATCH", "WARNING", "CRITICAL"):
+            m = per.get(cls)
+            if m:
+                print(f"  {cls:<10} {m['precision']:>6.3f} {m['recall']:>6.3f} {m['f1']:>6.3f} {m['support']:>6}")
+        print()
+
     color = _GREEN if acc >= 0.85 else _YELLOW
     print(f"{color}Classifier saved to {out_path}{_RESET}")
     if n_real == 0:

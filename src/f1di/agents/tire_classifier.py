@@ -97,7 +97,7 @@ class TireClassifier:
         self.n_real = n_real
 
         from f1di.agents.classifier_utils import cross_val_eval
-        cv = cross_val_eval(self._build_pipeline, X, y, _multiclass_brier, sample_weight=sample_weight)
+        cv = cross_val_eval(self._build_pipeline, X, y, _multiclass_brier, sample_weight=sample_weight, collect_predictions=True)
         if cv is not None:
             self.accuracy = cv["cv_accuracy"]
             self.brier_score = cv["cv_brier"]
@@ -106,6 +106,8 @@ class TireClassifier:
             self.cv_brier_std = cv["cv_brier_std"]
             self.cv_fold_accuracies = cv["fold_accuracies"]
             self.cv_fold_briers = cv["fold_briers"]
+            from f1di.agents.classifier_utils import per_class_report
+            self.cv_per_class = per_class_report(cv, _LABEL_MAP)
         else:
             # Too little data/too few classes to cross-validate honestly — fall
             # back to the train-set score (optimistic, but the only signal we have).
@@ -117,6 +119,7 @@ class TireClassifier:
             self.cv_brier_std = None
             self.cv_fold_accuracies = None
             self.cv_fold_briers = None
+            self.cv_per_class = {}
 
         logger.info(
             "TireClassifier fitted: n_total=%d n_real=%d cv_acc=%.3f cv_brier=%.4f n_splits=%d classes=%s",
@@ -316,6 +319,9 @@ def train_from_labels(
             "training on synthetic only this cycle", n_real,
         )
 
+    from f1di.agents.classifier_utils import class_balance_weights
+    sample_weight = class_balance_weights(y, sample_weight)
+
     unique, counts = np.unique(y, return_counts=True)
     class_dist = {_LABEL_MAP[int(k)]: int(v) for k, v in zip(unique, counts)}
 
@@ -323,13 +329,14 @@ def train_from_labels(
     clf.real_sample_weight = blend["real_weight"]
     clf.prior_cv_accuracy = blend["prior_cv"]["cv_accuracy"] if blend["prior_cv"] else None
 
-    from f1di.agents.classifier_utils import save_with_snapshot, record_history
+    from f1di.agents.classifier_utils import save_with_snapshot, record_history, per_class_report, cross_val_eval
     snap = save_with_snapshot(clf, output_path)
     record_history(clf, agent="tire", versioned_path=snap["versioned_path"], blocked=snap["blocked"], history_path=output_path.parent / "model_history.json", threshold=snap.get("threshold"))
 
     transfer_lift = (
         round(clf.accuracy - clf.prior_cv_accuracy, 4) if clf.prior_cv_accuracy is not None else None
     )
+    _cv = cross_val_eval(clf._build_pipeline, X, y, _multiclass_brier, sample_weight=sample_weight, collect_predictions=True)
     return {
         "n_synthetic": len(y_synth),
         "n_real": n_real,
@@ -337,6 +344,7 @@ def train_from_labels(
         "accuracy": round(clf.accuracy, 4),
         "classes": clf.classes_,
         "class_distribution": class_dist,
+        "per_class": per_class_report(_cv, _LABEL_MAP),
         "output_path": str(output_path),
         "snapshot_blocked": snap["blocked"],
         "versioned_path": snap["versioned_path"],

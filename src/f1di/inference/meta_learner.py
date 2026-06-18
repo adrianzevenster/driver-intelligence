@@ -107,7 +107,11 @@ class MetaLearner:
         self.n_real = n_real
 
         from f1di.agents.classifier_utils import cross_val_eval
-        cv = cross_val_eval(self._build_pipeline, X, y, _binary_brier, sample_weight=sample_weight)
+        from sklearn.metrics import balanced_accuracy_score
+        cv = cross_val_eval(
+            self._build_pipeline, X, y, _binary_brier,
+            sample_weight=sample_weight, scoring_fn=balanced_accuracy_score,
+        )
         if cv is not None:
             self.accuracy = cv["cv_accuracy"]
             self.brier_score = cv["cv_brier"]
@@ -290,6 +294,14 @@ def train_from_labels(
         _binary_brier, weight_cap=real_oversample,
     )
     X, y, sample_weight = blend["X"], blend["y"], blend["sample_weight"]
+
+    # Upweight the minority (correct=1) class to counter the ~4:1 imbalance
+    # produced by safety-car incidents being attributed to all 20 drivers.
+    unique_full, counts_full = np.unique(y, return_counts=True)
+    if len(counts_full) == 2 and counts_full[0] > 0 and counts_full[1] > 0:
+        ratio = counts_full[0] / counts_full[1]  # incorrect / correct
+        class_sw = np.where(y == 1, ratio, 1.0)
+        sample_weight = sample_weight * class_sw
 
     unique, counts = np.unique(y, return_counts=True)
     meta = MetaLearner(model_type=model_type).fit(X, y, n_real=n_real, sample_weight=sample_weight)
