@@ -301,7 +301,8 @@ def train_from_labels(
     if len(counts_full) == 2 and counts_full[0] > 0 and counts_full[1] > 0:
         ratio = counts_full[0] / counts_full[1]  # incorrect / correct
         class_sw = np.where(y == 1, ratio, 1.0)
-        sample_weight = sample_weight * class_sw
+        sw_base = sample_weight if sample_weight is not None else np.ones(len(y))
+        sample_weight = sw_base * class_sw
 
     unique, counts = np.unique(y, return_counts=True)
     meta = MetaLearner(model_type=model_type).fit(X, y, n_real=n_real, sample_weight=sample_weight)
