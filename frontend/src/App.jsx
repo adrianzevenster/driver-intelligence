@@ -4021,6 +4021,7 @@ function ModelLabPanel({ version }) {
   const [qualityHistory, setQualityHistory] = useState([]);
   const [clfHistory, setClfHistory]         = useState([]);
   const [livePerf, setLivePerf]             = useState(null);
+  const [loadingPerf, setLoadingPerf]       = useState(false);
   const [loading, setLoading]               = useState(false);
   const [promoting, setPromoting]           = useState(false);
   const [runningRetrieval, setRunningRetrieval] = useState(false);
@@ -4051,8 +4052,10 @@ function ModelLabPanel({ version }) {
   }
 
   async function loadLivePerf() {
+    setLoadingPerf(true);
     const r = await fetch('/api/v1/live/performance').catch(() => null);
     if (r?.ok) setLivePerf(await r.json());
+    setLoadingPerf(false);
   }
 
   async function recordSnapshot() {
@@ -4387,8 +4390,8 @@ function ModelLabPanel({ version }) {
         <div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
             <h2 style={{ margin: 0, fontSize: 14 }}><TrendingUp size={13} /> Live Performance</h2>
-            <button className="kb-btn" onClick={loadLivePerf}>
-              <RefreshCw size={11} /> Refresh
+            <button className="kb-btn" onClick={loadLivePerf} disabled={loadingPerf}>
+              <RefreshCw size={11} className={loadingPerf ? 'spin' : ''} /> Refresh
             </button>
           </div>
           <LivePerformanceCard data={livePerf} />

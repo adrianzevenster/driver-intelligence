@@ -1,5 +1,5 @@
 {
-  "agent": "tire",
+  "agent": "weather",
   "params": {
     "max_iter": 250,
     "max_depth": 8,
@@ -7,9 +7,9 @@
     "min_samples_leaf": 50,
     "l2_regularization": 0.00042079886696066364
   },
-  "cv_accuracy": 0.9767,
-  "baseline_cv_accuracy": 0.975,
-  "improvement_pp": 0.17,
+  "cv_accuracy": 0.9933,
+  "baseline_cv_accuracy": 0.9944,
+  "improvement_pp": -0.11,
   "n_trials": 1,
-  "tuned_at": "2026-06-19T15:49:54Z"
+  "tuned_at": "2026-06-19T15:50:01Z"
 }

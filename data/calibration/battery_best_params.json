@@ -1,5 +1,5 @@
 {
-  "agent": "tire",
+  "agent": "battery",
   "params": {
     "max_iter": 250,
     "max_depth": 8,
@@ -7,9 +7,9 @@
     "min_samples_leaf": 50,
     "l2_regularization": 0.00042079886696066364
   },
-  "cv_accuracy": 0.9767,
-  "baseline_cv_accuracy": 0.975,
-  "improvement_pp": 0.17,
-  "n_trials": 1,
-  "tuned_at": "2026-06-19T15:49:54Z"
+  "cv_accuracy": 0.9978,
+  "baseline_cv_accuracy": 0.9978,
+  "improvement_pp": 0.0,
+  "n_trials": 2,
+  "tuned_at": "2026-06-19T15:58:51Z"
 }

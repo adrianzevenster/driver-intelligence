@@ -1278,10 +1278,7 @@ def model_retrain(body: dict) -> dict:
 
 
 @app.post("/v1/model/tune")
-def model_tune(
-    body: dict,
-    _auth: None = Depends(_require_api_key),
-) -> dict:
+def model_tune(body: dict) -> dict:
     """Run Optuna hyperparameter search for one HGBC classifier agent.
 
     Saves best params to data/calibration/{agent}_best_params.json.

@@ -358,6 +358,18 @@ wheels = [
 ]
 
 [[package]]
+name = "colorlog"
+version = "6.10.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "colorama", marker = "sys_platform == 'win32'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a2/61/f083b5ac52e505dfc1c624eafbf8c7589a0d7f32daa398d2e7590efa5fda/colorlog-6.10.1.tar.gz", hash = "sha256:eb4ae5cb65fe7fec7773c2306061a8e63e02efc2c72eba9d27b0fa23c94f1321", size = 17162 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6d/c1/e419ef3723a074172b68aaa89c9f3de486ed4c2399e2dbd8113a4fdcaf9e/colorlog-6.10.1-py3-none-any.whl", hash = "sha256:2d7e8348291948af66122cff006c9f8da6255d224e7cf8e37d8de2df3bad8c9c", size = 11743 },
+]
+
+[[package]]
 name = "confluent-kafka"
 version = "2.14.0"
 source = { registry = "https://pypi.org/simple" }
@@ -837,6 +849,9 @@ sources = [
 streaming = [
     { name = "confluent-kafka" },
 ]
+tuner = [
+    { name = "optuna" },
+]
 
 [package.metadata]
 requires-dist = [
@@ -860,6 +875,7 @@ requires-dist = [
     { name = "opentelemetry-api", specifier = ">=1.25.0" },
     { name = "opentelemetry-instrumentation-fastapi", specifier = ">=0.46b0" },
     { name = "opentelemetry-sdk", specifier = ">=1.25.0" },
+    { name = "optuna", marker = "extra == 'tuner'", specifier = ">=3.6.0" },
     { name = "orjson", specifier = ">=3.10.0" },
     { name = "pandas", specifier = ">=2.2.0" },
     { name = "pdfplumber", marker = "extra == 'all'", specifier = ">=0.11.0" },
@@ -889,7 +905,7 @@ requires-dist = [
     { name = "sqlalchemy", marker = "extra == 'persistence'", specifier = ">=2.0.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30.0" },
 ]
-provides-extras = ["rag", "llm", "sources", "streaming", "regression", "dev", "frontend", "persistence", "analytics", "ocr", "all"]
+provides-extras = ["rag", "llm", "sources", "streaming", "regression", "dev", "tuner", "frontend", "persistence", "analytics", "ocr", "all"]
 
 [[package]]
 name = "fastapi"
@@ -2090,6 +2106,24 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/6c/d8/7bf5e4cec0578ac3c28c18eb7b88f34279139cbc8c568d6aa02b9c5ae53e/opentelemetry_util_http-0.63b1.tar.gz", hash = "sha256:ba1268f00922ee522dba2ae38458060f99486e7385a8056985901ca9685adfff", size = 11102 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e5/f1/34e047e8f6a3c67e5220acf1af7b9f62868c25d77791bca74457bd2180a6/opentelemetry_util_http-0.63b1-py3-none-any.whl", hash = "sha256:6284194028c59cd439f8acfe388145069a6127f11dc077e1344a2094adacc3f8", size = 8205 },
+]
+
+[[package]]
+name = "optuna"
+version = "4.9.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "alembic" },
+    { name = "colorlog" },
+    { name = "numpy" },
+    { name = "packaging" },
+    { name = "pyyaml" },
+    { name = "sqlalchemy" },
+    { name = "tqdm" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f4/aa/05f5e3f662cc96a4c478fc3446b8ed6359825a2b504ecb614a9ac84e4a4d/optuna-4.9.0.tar.gz", hash = "sha256:b322e5cbdf1655fb84c37646c4a7a1f391de1b47806bbe222e015825d0a82b87", size = 485834 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ab/f3/e5fcd5d9b15771ed6dc10e3a7eeddc672e418f4f4c4653d216cc1d857e2d/optuna-4.9.0-py3-none-any.whl", hash = "sha256:f52f3be6148654850c92a5860d398fd88ec6b2c84ab68d9c3d07dcff02e7afee", size = 425553 },
 ]
 
 [[package]]
