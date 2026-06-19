@@ -2,7 +2,7 @@ name: Post-Race Data Flywheel
 
 on:
   schedule:
-    # Runs Monday 06:00 UTC — covers Sunday race results for all time zones
+    # Weekly: every Monday 06:00 UTC — covers Sunday race results for all time zones
     - cron: "0 6 * * 1"
   workflow_dispatch:
     inputs:
@@ -14,6 +14,16 @@ on:
         description: "Round number (default: latest)"
         required: false
         default: ""
+      run_tune:
+        description: "Run Optuna hyperparameter tune for all agents (slow, ~15 min)"
+        type: boolean
+        required: false
+        default: false
+
+# Prevent two flywheel runs colliding on the same server
+concurrency:
+  group: flywheel-production
+  cancel-in-progress: false
 
 jobs:
   flywheel:
@@ -27,6 +37,7 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
 
+      # ── 1. Detect race ──────────────────────────────────────────────────────
       - name: Detect latest race round
         id: race
         run: |
@@ -36,7 +47,6 @@ jobs:
             YEAR=$(date +%Y)
           fi
           if [ -z "$ROUND" ]; then
-            # Ask the API for the latest completed race
             ROUND=$(ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
               ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
               "curl -sf 'http://localhost:8080/v1/session/races?year=$YEAR' | \
@@ -44,64 +54,208 @@ jobs:
                completed=[r for r in races if r.get('round_num')]; \
                print(completed[-1]['round_num'] if completed else '')\"" 2>/dev/null || echo "")
           fi
-          echo "year=$YEAR" >> $GITHUB_OUTPUT
-          echo "round=$ROUND" >> $GITHUB_OUTPUT
+          # Decide whether to run Optuna this cycle:
+          #   - dispatch input run_tune=true, OR
+          #   - first Monday of the month (day of month <= 7)
+          RUN_TUNE="${{ github.event.inputs.run_tune }}"
+          if [ -z "$RUN_TUNE" ] || [ "$RUN_TUNE" = "false" ]; then
+            if [ "$(date +%d)" -le 7 ]; then
+              RUN_TUNE=true
+            else
+              RUN_TUNE=false
+            fi
+          fi
+          echo "year=$YEAR"       >> $GITHUB_OUTPUT
+          echo "round=$ROUND"     >> $GITHUB_OUTPUT
+          echo "run_tune=$RUN_TUNE" >> $GITHUB_OUTPUT
+          echo "Race: $YEAR / round $ROUND  |  tune: $RUN_TUNE"
 
+      # ── 2. Label outcomes ───────────────────────────────────────────────────
       - name: Label race outcomes
+        id: label
         if: steps.race.outputs.round != ''
         run: |
           YEAR=${{ steps.race.outputs.year }}
           ROUND=${{ steps.race.outputs.round }}
           echo "Labeling outcomes for $YEAR round $ROUND"
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+          RESULT=$(ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
             ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
             "curl -sf -X POST \
               -H 'X-API-Key: ${{ secrets.F1DI_API_KEY }}' \
-              'http://localhost:8080/v1/outcomes/label?year=$YEAR&round_num=$ROUND' \
-              | python3 -c \"import sys,json; r=json.load(sys.stdin); \
-                print('Labeled:', r.get('labeled',0), 'correct:', r.get('correct',0), 'incorrect:', r.get('incorrect',0))\""
+              'http://localhost:8080/v1/outcomes/label?year=$YEAR&round_num=$ROUND'")
+          echo "$RESULT" | python3 -c "
+          import sys, json
+          r = json.load(sys.stdin)
+          labeled   = r.get('labeled', 0)
+          correct   = r.get('correct', 0)
+          incorrect = r.get('incorrect', 0)
+          print(f'Labeled {labeled} insights  |  correct={correct}  incorrect={incorrect}')
+          print(f'labeled_count={labeled}', file=open('/tmp/label_stats', 'w'))
+          "
+          cat /tmp/label_stats >> $GITHUB_OUTPUT
 
+      # ── 3. Retrain all classifier agents ───────────────────────────────────
+      # Always runs (even if no new labels — prior weights may have improved).
+      # Each agent is a sequential curl; failures are non-fatal (|| true) so one
+      # bad agent doesn't block the others.  Results are collected for the summary.
+      - name: Retrain all classifier agents
+        id: classifiers
+        run: |
+          AGENTS="tire battery weather telemetry safety_car fuel meta"
+          SUMMARY_ROWS=""
+          for AGENT in $AGENTS; do
+            echo "==> Retraining $AGENT …"
+            RESULT=$(ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+              ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
+              "curl -sf -X POST \
+                -H 'Content-Type: application/json' \
+                'http://localhost:8080/v1/model/retrain' \
+                -d '{\"agent\": \"$AGENT\"}'") || RESULT='{}'
+            ROW=$(echo "$RESULT" | python3 -c "
+          import sys, json
+          r = json.load(sys.stdin)
+          acc    = r.get('accuracy', 0)
+          n_real = r.get('n_real', 0)
+          lift   = r.get('transfer_lift')
+          lift_s = f'{lift*100:+.1f}pp' if lift is not None else 'n/a'
+          blocked = r.get('snapshot_blocked', False)
+          status  = 'blocked' if blocked else 'ok'
+          print(f'| {\"$AGENT\":<12} | {acc:.3f} | {n_real:>6} | {lift_s:>8} | {status} |')
+          " 2>/dev/null || echo "| $AGENT | ERR | - | - | - |")
+            echo "  $ROW"
+            SUMMARY_ROWS="$SUMMARY_ROWS$ROW
+          "
+          done
+          {
+            echo "retrain_table<<EOF"
+            echo "| agent        | cv_acc | n_real | lift     | status |"
+            echo "|:-------------|-------:|-------:|---------:|:-------|"
+            echo "$SUMMARY_ROWS"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+
+      # ── 4. Optuna hyperparameter tune (first Monday of month / manual) ──────
+      - name: Tune classifier hyperparameters (Optuna)
+        id: tune
+        if: steps.race.outputs.run_tune == 'true'
+        run: |
+          AGENTS="tire battery weather telemetry safety_car fuel meta"
+          TUNE_ROWS=""
+          for AGENT in $AGENTS; do
+            echo "==> Tuning $AGENT (30 trials) …"
+            RESULT=$(ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+              ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
+              "curl -sf -X POST \
+                -H 'Content-Type: application/json' \
+                -H 'X-API-Key: ${{ secrets.F1DI_API_KEY }}' \
+                'http://localhost:8080/v1/model/tune' \
+                -d '{\"agent\": \"$AGENT\", \"n_trials\": 30}'") || RESULT='{}'
+            ROW=$(echo "$RESULT" | python3 -c "
+          import sys, json
+          r = json.load(sys.stdin)
+          best   = r.get('best_cv_accuracy', 0)
+          base   = r.get('baseline_cv_accuracy', 0)
+          imp    = r.get('improvement_pp', 0)
+          trials = r.get('n_complete', 0)
+          print(f'| {\"$AGENT\":<12} | {base:.3f} | {best:.3f} | {imp:+.2f}pp | {trials} |')
+          " 2>/dev/null || echo "| $AGENT | ERR | - | - | - |")
+            echo "  $ROW"
+            TUNE_ROWS="$TUNE_ROWS$ROW
+          "
+          done
+          {
+            echo "tune_table<<EOF"
+            echo "| agent        | baseline | best   | improvement | trials |"
+            echo "|:-------------|--------:|-------:|------------:|-------:|"
+            echo "$TUNE_ROWS"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+
+      # ── 5. Re-retrain with tuned params (only when tune ran) ────────────────
+      # After Optuna writes best params, trigger a second retrain pass so the
+      # live models immediately benefit — no manual "Retrain" click required.
+      - name: Apply tuned params (re-retrain after tune)
+        if: steps.race.outputs.run_tune == 'true'
+        run: |
+          AGENTS="tire battery weather telemetry safety_car fuel meta"
+          for AGENT in $AGENTS; do
+            echo "==> Re-retraining $AGENT with tuned params …"
+            ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+              ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
+              "curl -sf -X POST \
+                -H 'Content-Type: application/json' \
+                'http://localhost:8080/v1/model/retrain' \
+                -d '{\"agent\": \"$AGENT\"}' | \
+               python3 -c \"import sys,json; r=json.load(sys.stdin); \
+                 print('  $AGENT: cv_acc=', r.get('accuracy'), 'n_real=', r.get('n_real'))\"" || true
+          done
+
+      # ── 6. Calibrator retrain ───────────────────────────────────────────────
       - name: Check feedback readiness and retrain calibrator
+        id: calibrator
         run: |
           STATS=$(ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
             ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
             "curl -sf 'http://localhost:8080/v1/feedback/stats'")
-          echo "$STATS" | python3 -c "import sys,json; r=json.load(sys.stdin); print('Feedback pairs:', r['total'], '/ min:', r['min_for_retrain'])"
+          TOTAL=$(echo "$STATS" | python3 -c "import sys,json; r=json.load(sys.stdin); print(r.get('total',0))")
+          MIN=$(echo "$STATS"   | python3 -c "import sys,json; r=json.load(sys.stdin); print(r.get('min_for_retrain',20))")
           READY=$(echo "$STATS" | python3 -c "import sys,json; r=json.load(sys.stdin); print('yes' if r.get('ready_to_retrain') else 'no')")
+          echo "Feedback pairs: $TOTAL / min: $MIN  |  ready: $READY"
+          echo "calibrator_status=skipped" >> $GITHUB_OUTPUT
           if [ "$READY" != "yes" ]; then
-            echo "Not enough feedback yet — skipping retrain"
+            echo "Not enough feedback yet — skipping calibrator retrain"
             exit 0
           fi
           RESULT=$(ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
             ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
-            "curl -sf -X POST -H 'X-API-Key: ${{ secrets.F1DI_API_KEY }}' 'http://localhost:8080/v1/calibrator/retrain'")
-          echo "$RESULT" | python3 -c "import sys,json; r=json.load(sys.stdin); print('Retrain result — ECE:', r.get('ece'), '| regression blocked:', r.get('regression_detected'))"
+            "curl -sf -X POST \
+              -H 'X-API-Key: ${{ secrets.F1DI_API_KEY }}' \
+              'http://localhost:8080/v1/calibrator/retrain'")
+          ECE=$(echo "$RESULT"  | python3 -c "import sys,json; r=json.load(sys.stdin); print(r.get('ece','?'))")
+          BRIER=$(echo "$RESULT" | python3 -c "import sys,json; r=json.load(sys.stdin); print(r.get('brier_score','?'))")
           REGRESSED=$(echo "$RESULT" | python3 -c "import sys,json; r=json.load(sys.stdin); print('yes' if r.get('regression_detected') else 'no')")
+          echo "Calibrator — ECE: $ECE  Brier: $BRIER  regression: $REGRESSED"
+          echo "calibrator_ece=$ECE"       >> $GITHUB_OUTPUT
+          echo "calibrator_brier=$BRIER"   >> $GITHUB_OUTPUT
           if [ "$REGRESSED" = "yes" ]; then
+            echo "calibrator_status=regression_blocked" >> $GITHUB_OUTPUT
             echo "WARNING: Calibrator regression detected — live model unchanged"
             exit 1
           fi
+          echo "calibrator_status=ok" >> $GITHUB_OUTPUT
           echo "Calibrator retrained successfully"
 
+      # ── 7. Shadow challenger eval ───────────────────────────────────────────
       - name: Evaluate shadow challenger (if any)
         run: |
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
             ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
             "curl -sf 'http://localhost:8080/v1/shadow/evaluate?challenger_version=challenger' \
               | python3 -c \"import sys,json; r=json.load(sys.stdin); \
-                print('Shadow evaluation:', json.dumps(r, indent=2)); \
                 promote=r.get('promote'); \
-                print('PROMOTE RECOMMENDATION:', promote)\"" || true
+                print('Shadow promote recommendation:', promote)\"" || true
 
+      # ── 8. Retrieval quality eval ───────────────────────────────────────────
       - name: Run retrieval quality eval
+        id: retrieval
         run: |
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+          RESULT=$(ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
             ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
-            "curl -sf 'http://localhost:8080/v1/eval/retrieval?save=true' \
-              | python3 -c \"import sys,json; r=json.load(sys.stdin); \
-                p1=r.get('precision_at_1',0); mrr=r.get('mrr',0); ndcg=r.get('ndcg_at_5',0); \
-                print(f'Retrieval — P@1={p1:.3f}  MRR={mrr:.3f}  NDCG@5={ndcg:.3f}  n={r.get(\\\"n_queries\\\",0)}')\"" || true
+            "curl -sf 'http://localhost:8080/v1/eval/retrieval?save=true'") || RESULT='{}'
+          echo "$RESULT" | python3 -c "
+          import sys, json
+          r = json.load(sys.stdin)
+          p1   = r.get('precision_at_1', 0)
+          mrr  = r.get('mrr', 0)
+          ndcg = r.get('ndcg_at_5', 0)
+          n    = r.get('n_queries', 0)
+          print(f'Retrieval — P@1={p1:.3f}  MRR={mrr:.3f}  NDCG@5={ndcg:.3f}  n={n}')
+          print(f'retrieval_p1={p1:.3f}', file=open('/tmp/ret', 'w'))
+          print(f'retrieval_mrr={mrr:.3f}', file=open('/tmp/ret', 'a'))
+          " || true
+          cat /tmp/ret >> $GITHUB_OUTPUT 2>/dev/null || true
 
+      # ── 9. Per-circuit threshold refit ─────────────────────────────────────
       - name: Refit per-circuit thresholds from telemetry
         run: |
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
@@ -113,20 +267,94 @@ jobs:
                 print('Threshold refit — circuits updated:', r.get('n_fitted',0), \
                       '| skipped:', len(r.get('skipped',[])))\"" || true
 
+      # ── 10. Synthetic label quality audit ───────────────────────────────────
       - name: Audit synthetic label quality
         run: |
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
             ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
             "docker exec f1di-api-1 python scripts/audit_synthetic_quality.py --min-real 5 2>&1 | tail -30" || true
 
+      # ── 11. Record quality snapshot ─────────────────────────────────────────
       - name: Record quality snapshot
+        id: snapshot
         run: |
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+          RESULT=$(ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
             ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
             "curl -sf -X POST \
-              'http://localhost:8080/v1/quality/record?trigger=flywheel' \
-              | python3 -c \"import sys,json; r=json.load(sys.stdin); \
-                cal=r.get('calibration',{}); ret=r.get('retrieval',{}); \
-                print('Quality snapshot recorded:', r.get('recorded_at','?')[:19]); \
-                print('  ECE:', cal.get('ece'), '| Brier:', cal.get('brier_score')); \
-                print('  MRR:', ret.get('mrr'), '| P@1:', ret.get('precision_at_1'))\"" || true
+              'http://localhost:8080/v1/quality/record?trigger=flywheel'") || RESULT='{}'
+          echo "$RESULT" | python3 -c "
+          import sys, json
+          r = json.load(sys.stdin)
+          cal = r.get('calibration', {})
+          ret = r.get('retrieval', {})
+          print('Quality snapshot recorded:', r.get('recorded_at','?')[:19])
+          print('  ECE:', cal.get('ece'), '| Brier:', cal.get('brier_score'))
+          print('  MRR:', ret.get('mrr'), '| P@1:', ret.get('precision_at_1'))
+          " || true
+
+      # ── 12. Job summary ─────────────────────────────────────────────────────
+      - name: Write job summary
+        if: always()
+        run: |
+          YEAR=${{ steps.race.outputs.year || 'unknown' }}
+          ROUND=${{ steps.race.outputs.round || '—' }}
+          TUNE=${{ steps.race.outputs.run_tune || 'false' }}
+          python3 - <<'PYEOF'
+          import os, datetime
+
+          year    = os.environ.get('RACE_YEAR', '?')
+          round_n = os.environ.get('RACE_ROUND', '—')
+          tune    = os.environ.get('RUN_TUNE', 'false')
+          retrain_table = os.environ.get('RETRAIN_TABLE', '_no data_')
+          tune_table    = os.environ.get('TUNE_TABLE', '_not run this cycle_')
+          cal_status    = os.environ.get('CAL_STATUS', 'skipped')
+          cal_ece       = os.environ.get('CAL_ECE', '—')
+          cal_brier     = os.environ.get('CAL_BRIER', '—')
+          ret_p1        = os.environ.get('RET_P1', '—')
+          ret_mrr       = os.environ.get('RET_MRR', '—')
+          labeled       = os.environ.get('LABELED_COUNT', '—')
+
+          now = datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')
+          lines = [
+              f'# Post-Race Flywheel — {year} round {round_n}',
+              f'',
+              f'Run at {now}',
+              f'',
+              f'## Outcome Labeling',
+              f'- Insights labeled this cycle: **{labeled}**',
+              f'',
+              f'## Classifier Retrains',
+              retrain_table,
+              f'',
+          ]
+          if tune == 'true':
+              lines += [
+                  f'## Optuna Hyperparameter Tune',
+                  tune_table,
+                  f'',
+              ]
+          lines += [
+              f'## Calibrator',
+              f'- Status: **{cal_status}**',
+              f'- ECE: {cal_ece}  |  Brier: {cal_brier}',
+              f'',
+              f'## Retrieval',
+              f'- P@1: {ret_p1}  |  MRR: {ret_mrr}',
+          ]
+          summary = open(os.environ['GITHUB_STEP_SUMMARY'], 'a')
+          summary.write('\n'.join(lines) + '\n')
+          summary.close()
+          print('Summary written.')
+          PYEOF
+        env:
+          RACE_YEAR:      ${{ steps.race.outputs.year }}
+          RACE_ROUND:     ${{ steps.race.outputs.round }}
+          RUN_TUNE:       ${{ steps.race.outputs.run_tune }}
+          RETRAIN_TABLE:  ${{ steps.classifiers.outputs.retrain_table }}
+          TUNE_TABLE:     ${{ steps.tune.outputs.tune_table }}
+          CAL_STATUS:     ${{ steps.calibrator.outputs.calibrator_status }}
+          CAL_ECE:        ${{ steps.calibrator.outputs.calibrator_ece }}
+          CAL_BRIER:      ${{ steps.calibrator.outputs.calibrator_brier }}
+          LABELED_COUNT:  ${{ steps.label.outputs.labeled_count }}
+          RET_P1:         ${{ steps.retrieval.outputs.retrieval_p1 }}
+          RET_MRR:        ${{ steps.retrieval.outputs.retrieval_mrr }}

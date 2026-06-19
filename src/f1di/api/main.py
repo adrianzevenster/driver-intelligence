@@ -1089,6 +1089,7 @@ def model_snapshots(agent: str) -> list[dict]:
                 "model_version": getattr(obj, "model_version", None),
                 "model_type": getattr(obj, "model_type", None),
                 "classes": getattr(obj, "classes_", []),
+                "cv_per_class": getattr(obj, "cv_per_class", None) or {},
             })
         except Exception:
             result.append({"path": str(p), "filename": p.name, "error": "unreadable"})
@@ -1274,6 +1275,46 @@ def model_retrain(body: dict) -> dict:
     except Exception as exc:
         logger.exception("model_retrain failed for agent=%s", agent)
         raise HTTPException(status_code=500, detail=f"Retrain failed: {exc}")
+
+
+@app.post("/v1/model/tune")
+def model_tune(
+    body: dict,
+    _auth: None = Depends(_require_api_key),
+) -> dict:
+    """Run Optuna hyperparameter search for one HGBC classifier agent.
+
+    Saves best params to data/calibration/{agent}_best_params.json.
+    Subsequent retrains pick them up automatically.
+    """
+    agent    = body.get("agent", "")
+    n_trials = min(int(body.get("n_trials", 30)), 150)
+    if agent not in _CLASSIFIER_AGENTS:
+        raise HTTPException(status_code=400, detail=f"Unknown agent: {agent}")
+    try:
+        from f1di.agents.tuner import tune_agent
+        return tune_agent(agent, n_trials=n_trials)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except Exception as exc:
+        logger.exception("model_tune failed for agent=%s", agent)
+        raise HTTPException(status_code=500, detail=f"Tune failed: {exc}")
+
+
+@app.get("/v1/model/best-params/{agent}")
+def model_best_params(agent: str) -> dict:
+    """Return saved Optuna best-params for one agent, or {} if not yet tuned."""
+    if agent not in _CLASSIFIER_AGENTS:
+        raise HTTPException(status_code=404, detail=f"Unknown agent: {agent}")
+    path = Path("data/calibration") / f"{agent}_best_params.json"
+    if not path.exists():
+        return {"agent": agent, "tuned": False}
+    try:
+        import json as _json
+        data = _json.loads(path.read_text())
+        return {"agent": agent, "tuned": True, **data}
+    except Exception:
+        return {"agent": agent, "tuned": False}
 
 
 @app.get("/v1/model/feature-importance/{agent}")
@@ -1533,6 +1574,37 @@ def drift_status() -> dict:
     """Return current feature drift Z-scores and alert state."""
     from f1di.observability.drift import get_tracker
     return get_tracker().status()
+
+
+@app.get("/v1/live/performance")
+def live_performance() -> dict:
+    """Bundle per-agent accuracy, calibration ECE history, and feature drift for the live-performance card."""
+    import json as _json
+    from f1di.confidence.online import per_agent_accuracy
+    from f1di.observability.drift import get_tracker
+
+    ece_history: list[dict] = []
+    if _QUALITY_HISTORY_PATH.exists():
+        try:
+            history = _json.loads(_QUALITY_HISTORY_PATH.read_text())
+            ece_history = [
+                {
+                    "recorded_at": h.get("recorded_at"),
+                    "ece": h.get("calibration", {}).get("ece"),
+                    "brier_score": h.get("calibration", {}).get("brier_score"),
+                    "n_feedback": h.get("calibration", {}).get("n_feedback"),
+                }
+                for h in history[-20:]
+                if h.get("calibration", {}).get("ece") is not None
+            ]
+        except Exception:
+            pass
+
+    return {
+        "agent_accuracy": per_agent_accuracy(),
+        "ece_history": ece_history,
+        "drift": get_tracker().status(),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -2187,7 +2259,7 @@ def label_race_outcomes(
     round_num: int,
     dry_run: bool = False,
     background_tasks: BackgroundTasks = None,
-    _auth: None = Depends(_require_api_key),
+    key: str | None = Security(_api_key_header),
 ) -> dict:
     """Label stored insights for one race by comparing against actual outcomes.
 
@@ -2197,7 +2269,10 @@ def label_race_outcomes(
     the look-ahead window. Labels are written as FeedbackRecord rows.
 
     Pass ?dry_run=true to compute labels without writing to the database.
+    dry_run is unauthenticated (read-only preview); actual writes require auth.
     """
+    if not dry_run:
+        _require_api_key(key)
     from f1di.data.outcome_labeler import label_race
     from dataclasses import asdict
     try:
@@ -2239,6 +2314,85 @@ def outcome_summary() -> dict:
         }
     except Exception as exc:
         return {"error": str(exc)}
+
+
+@app.get("/v1/outcomes/predictions")
+def outcome_predictions(
+    outcome: str | None = None,   # "correct" | "incorrect" | "unlabeled"
+    agent: str | None = None,
+    limit: int = 100,
+) -> list[dict]:
+    """Recent WARNING/CRITICAL insights joined with their outcome labels."""
+    import json as _json
+    try:
+        from sqlalchemy import select
+        from f1di.storage.database import db_session
+        from f1di.storage.models import FeedbackRecord, InsightRecord
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+
+    with db_session() as session:
+        rows = session.execute(
+            select(InsightRecord, FeedbackRecord)
+            .outerjoin(FeedbackRecord, FeedbackRecord.insight_id == InsightRecord.insight_id)
+            .where(InsightRecord.risk.in_(["WARNING", "CRITICAL"]))
+            .where(InsightRecord.shadow == False)  # noqa: E712
+            .order_by(InsightRecord.created_at.desc())
+            .limit(limit * 4)
+        ).all()
+
+    result = []
+    for ins, fb in rows:
+        correct: bool | None = None
+        if fb is not None:
+            if fb.correct is not None:
+                correct = fb.correct
+            elif fb.rating is not None:
+                correct = fb.rating >= 4
+
+        label = "unlabeled" if correct is None else ("correct" if correct else "incorrect")
+
+        if outcome and label != outcome:
+            continue
+
+        try:
+            findings = _json.loads(ins.findings_json or "[]")
+        except Exception:
+            findings = []
+
+        agents_present = sorted({f.get("agent") for f in findings if f.get("agent")})
+
+        if agent and agent not in agents_present:
+            continue
+
+        result.append({
+            "insight_id": ins.insight_id,
+            "driver_id": ins.driver_id,
+            "track_id": ins.track_id,
+            "lap": ins.lap,
+            "compound": ins.compound,
+            "risk": ins.risk,
+            "confidence": round(ins.confidence, 3),
+            "created_at": ins.created_at.isoformat(),
+            "outcome": label,
+            "correct": correct,
+            "agents": agents_present,
+            "recommendation": (ins.recommendation or "")[:140],
+            "findings": [
+                {
+                    "agent": f.get("agent"),
+                    "risk": f.get("risk"),
+                    "message": (f.get("message") or "")[:120],
+                }
+                for f in findings
+                if f.get("risk") in ("WARNING", "CRITICAL")
+            ],
+        })
+
+        if len(result) >= limit:
+            break
+
+    return result
 
 
 # ---------------------------------------------------------------------------

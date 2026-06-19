@@ -39,18 +39,67 @@ import numpy as np
 logger = logging.getLogger("f1di.agents.classifier_utils")
 
 _HISTORY_PATH = Path("data/calibration/model_history.json")
+_BEST_PARAMS_DIR = Path("data/calibration")
 
 MODEL_TYPES = ["logistic", "hgbc"]
 _MODEL_DISPLAY = {"logistic": "LogisticRegression", "hgbc": "HistGradientBoosting"}
 _MODEL_VERSION = {"logistic": "lr-v1", "hgbc": "hgb-v1"}
 
+_HGBC_DEFAULTS: dict = {
+    "max_iter": 300,
+    "learning_rate": 0.05,
+    "min_samples_leaf": 15,
+    "l2_regularization": 0.1,
+    "random_state": 42,
+}
 
-def build_model(model_type: str = "logistic", max_depth: int = 4):
+
+def load_best_params(agent: str) -> dict:
+    """Return saved Optuna best-params for *agent*, or {} if none found."""
+    path = _BEST_PARAMS_DIR / f"{agent}_best_params.json"
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text()).get("params", {})
+    except Exception:
+        return {}
+
+
+def save_best_params(
+    agent: str,
+    params: dict,
+    best_score: float,
+    baseline_score: float,
+    n_trials: int,
+) -> None:
+    """Persist Optuna results to data/calibration/{agent}_best_params.json."""
+    _BEST_PARAMS_DIR.mkdir(parents=True, exist_ok=True)
+    (_BEST_PARAMS_DIR / f"{agent}_best_params.json").write_text(
+        json.dumps(
+            {
+                "agent": agent,
+                "params": params,
+                "cv_accuracy": round(best_score, 4),
+                "baseline_cv_accuracy": round(baseline_score, 4),
+                "improvement_pp": round((best_score - baseline_score) * 100, 2),
+                "n_trials": n_trials,
+                "tuned_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            },
+            indent=2,
+        )
+    )
+
+
+def build_model(model_type: str = "logistic", max_depth: int = 4, agent: str | None = None):
     """Return (StandardScaler, fitted-ready sklearn model) for `model_type`.
 
     StandardScaler is always returned even for HGBC — callers that use
     ood_score() rely on scaler.mean_/scale_ to detect out-of-distribution
     inputs, independent of whether the model itself needs scaling.
+
+    If *agent* is given, any saved Optuna best-params for that agent are
+    merged on top of the HGBC defaults so a post-tune retrain automatically
+    picks up the improved hyperparameters without any manual wiring.
     """
     from sklearn.preprocessing import StandardScaler
     mt = model_type.lower()
@@ -59,10 +108,10 @@ def build_model(model_type: str = "logistic", max_depth: int = 4):
         return StandardScaler(), LogisticRegression(C=1.0, max_iter=1000, solver="lbfgs", random_state=42)
     elif mt in ("hgbc", "hgb", "histgradientboosting"):
         from sklearn.ensemble import HistGradientBoostingClassifier
-        return StandardScaler(), HistGradientBoostingClassifier(
-            max_iter=300, max_depth=max_depth, learning_rate=0.05,
-            min_samples_leaf=15, l2_regularization=0.1, random_state=42,
-        )
+        params = {**_HGBC_DEFAULTS, "max_depth": max_depth}
+        if agent:
+            params.update(load_best_params(agent))
+        return StandardScaler(), HistGradientBoostingClassifier(**params)
     else:
         raise ValueError(f"Unknown model_type: {model_type!r}. Choose from {MODEL_TYPES}")
 

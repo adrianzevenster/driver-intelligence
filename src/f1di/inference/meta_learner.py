@@ -84,7 +84,7 @@ DEFAULT_MODEL_TYPE = "hgbc"
 class MetaLearner:
     def __init__(self, model_type: str = DEFAULT_MODEL_TYPE) -> None:
         from f1di.agents.classifier_utils import build_model, _MODEL_DISPLAY, _MODEL_VERSION
-        self._scaler, self._model = build_model(model_type, max_depth=3)
+        self._scaler, self._model = build_model(model_type, max_depth=3, agent="meta")
         self.n_train: int = 0
         self.n_real: int = 0
         self.accuracy: float = 0.0
@@ -139,7 +139,7 @@ class MetaLearner:
     @staticmethod
     def _build_pipeline(model_type: str = DEFAULT_MODEL_TYPE):
         from f1di.agents.classifier_utils import build_model
-        return build_model(model_type, max_depth=3)
+        return build_model(model_type, max_depth=3, agent="meta")
 
     def ood_score(self, findings: list, iso_confidence: float) -> float:
         """Max absolute Z-score of meta-learner features vs training distribution."""

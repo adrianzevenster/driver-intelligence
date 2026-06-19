@@ -62,7 +62,7 @@ def features_to_array(features) -> np.ndarray:
 class SafetyCarClassifier:
     def __init__(self, model_type: str = DEFAULT_MODEL_TYPE) -> None:
         from f1di.agents.classifier_utils import build_model, _MODEL_DISPLAY, _MODEL_VERSION
-        self._scaler, self._model = build_model(model_type, max_depth=4)
+        self._scaler, self._model = build_model(model_type, max_depth=4, agent="safety_car")
         self.classes_: list[str] = []
         self.n_train: int = 0
         self.n_real: int = 0
@@ -118,7 +118,7 @@ class SafetyCarClassifier:
     @staticmethod
     def _build_pipeline(model_type: str = DEFAULT_MODEL_TYPE):
         from f1di.agents.classifier_utils import build_model
-        return build_model(model_type, max_depth=4)
+        return build_model(model_type, max_depth=4, agent="safety_car")
 
     def ood_score(self, features) -> float:
         x = features_to_array(features)

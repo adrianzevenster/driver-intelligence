@@ -175,6 +175,17 @@ class FeatureDriftTracker:
             for track_id in list(self._track_buffers):
                 if len(self._track_buffers[track_id]) >= self._min_baseline:
                     self._recompute_track_baseline(track_id)
+            # Populate _last_zscores from the most recent row so status() shows
+            # real values immediately instead of empty {} until the first update().
+            if self._buffer and self._baseline:
+                last = self._buffer[-1]
+                for feat, val in last.items():
+                    if feat in self._baseline:
+                        mean, std = self._baseline[feat]
+                        z = (val - mean) / std if std > 1e-9 else 0.0
+                        self._last_zscores[feat] = round(z, 3)
+                import datetime
+                self._last_updated = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
             logger.info("Drift tracker seeded with %d telemetry rows from DB", len(rows))
             return len(rows)
         except Exception as exc:

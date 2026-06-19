@@ -7,7 +7,7 @@ import {
   ThumbsUp, ThumbsDown, TrendingUp, Upload, Table, Search,
   Mic, LineChart, FileText,
   Bell, Mail, Plus, X, Settings, Clock, Play, Workflow,
-  Flag, Fuel, Zap, Cloud,
+  Flag, Fuel, Zap, Cloud, CheckSquare,
 } from 'lucide-react';
 import './style.css';
 
@@ -525,6 +525,42 @@ function InsightPanel({ insight, modelBackend }) {
       <JudgeScoreWidget insightId={insight.insight_id} />
       <p className="footer-line">{insight.latency_ms.toFixed(1)} ms · session {insight.session_id}</p>
     </>
+  );
+}
+
+function InlineRating({ insightId }) {
+  const [voted, setVoted] = useState(null); // 'correct' | 'incorrect'
+
+  async function rate(correct) {
+    if (voted || !insightId) return;
+    setVoted(correct ? 'correct' : 'incorrect');
+    await fetch('/api/v1/feedback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ insight_id: insightId, rating: correct ? 5 : 1, correct }),
+    }).catch(() => {});
+  }
+
+  if (voted) {
+    return (
+      <span style={{ fontSize: 10, color: voted === 'correct' ? '#4ade80' : '#f87171', fontWeight: 600 }}>
+        {voted === 'correct' ? '✓' : '✗'}
+      </span>
+    );
+  }
+  return (
+    <span style={{ display: 'inline-flex', gap: 3 }}>
+      <button onClick={() => rate(true)}
+        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px 3px', color: '#4ade8088', lineHeight: 1 }}
+        title="Mark correct">
+        <ThumbsUp size={10} />
+      </button>
+      <button onClick={() => rate(false)}
+        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px 3px', color: '#f8717188', lineHeight: 1 }}
+        title="Mark incorrect">
+        <ThumbsDown size={10} />
+      </button>
+    </span>
   );
 }
 
@@ -2264,7 +2300,7 @@ function HistoryPanel() {
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse' }}>
                 <thead>
-                  <tr>{['Driver','Track','Lap','Compound','Risk','Conf','Judge','Policy','Time'].map(h => (
+                  <tr>{['Driver','Track','Lap','Compound','Risk','Conf','Judge','Policy','Time','Rate'].map(h => (
                     <th key={h} style={{ textAlign: 'left', padding: '3px 6px', color: 'var(--muted)', fontWeight: 600, whiteSpace: 'nowrap' }}>{h}</th>
                   ))}</tr>
                 </thead>
@@ -2286,6 +2322,9 @@ function HistoryPanel() {
                       <td style={{ padding: '3px 6px', color: 'var(--muted)' }}>{ins.policy}</td>
                       <td style={{ padding: '3px 6px', color: 'var(--muted)', whiteSpace: 'nowrap' }}>
                         {ins.created_at ? new Date(ins.created_at).toLocaleTimeString() : '—'}
+                      </td>
+                      <td style={{ padding: '3px 6px', whiteSpace: 'nowrap' }}>
+                        <InlineRating insightId={ins.insight_id} />
                       </td>
                     </tr>
                     );
@@ -2895,6 +2934,39 @@ function FoldSpread({ accuracies, mean }) {
   );
 }
 
+function PerClassMetricsTable({ perClass }) {
+  if (!perClass || Object.keys(perClass).length === 0) return null;
+  const entries = Object.entries(perClass);
+  return (
+    <div style={{ marginTop: 7, padding: '6px 8px', borderRadius: 4, background: '#060c18', border: '1px solid #1e293b' }}>
+      <p style={{ fontSize: 9, color: 'var(--muted)', margin: '0 0 6px', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
+        Per-class CV metrics
+      </p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        {entries.map(([cls, m]) => {
+          const f1  = m.f1 ?? 0;
+          const col = f1 >= 0.70 ? '#22c55e' : f1 >= 0.50 ? '#f59e0b' : '#ef4444';
+          return (
+            <div key={cls} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 9, fontFamily: 'monospace', color: '#64748b', width: 72, flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cls}</span>
+              <div style={{ flex: 1, height: 5, background: '#0d1b2e', borderRadius: 3, overflow: 'hidden' }}>
+                <div style={{ width: `${f1 * 100}%`, height: '100%', background: col, borderRadius: 3 }} />
+              </div>
+              <span style={{ fontSize: 9, fontFamily: 'monospace', color: col, width: 32, textAlign: 'right' }}>
+                {(f1 * 100).toFixed(0)}%
+              </span>
+              <span style={{ fontSize: 9, fontFamily: 'monospace', color: '#475569', width: 52 }}>
+                P {(m.precision * 100).toFixed(0)}% R {(m.recall * 100).toFixed(0)}%
+              </span>
+              <span style={{ fontSize: 9, color: '#334155', minWidth: 28 }}>n={m.support}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function ConfusionMatrixGrid({ matrix, labels }) {
   if (!matrix || !labels) return null;
   const max = Math.max(...matrix.flat(), 1);
@@ -2983,6 +3055,15 @@ function ClassifierModelsPanel({ clfHistory }) {
   const [error, setError]                 = useState('');
   const [retraining, setRetraining]       = useState(false);
   const [retrainResult, setRetrainResult] = useState(null);
+  const [tuning, setTuning]               = useState(false);
+  const [tuneResult, setTuneResult]       = useState(null);
+  const [bestParams, setBestParams]       = useState(null);
+  const [tuningAll, setTuningAll]         = useState(false);
+  const [tuneAllProgress, setTuneAllProgress] = useState([]);
+  const [tuneAllDone, setTuneAllDone]     = useState(false);
+  const [retrainingAll, setRetrainingAll] = useState(false);
+  const [retrainAllProgress, setRetrainAllProgress] = useState([]);
+  const [retrainAllDone, setRetrainAllDone] = useState(false);
   const [featImportance, setFeatImportance] = useState(null);
   const [loadingFeat, setLoadingFeat]     = useState(false);
   const [modelTypes, setModelTypes]       = useState({ types: ['logistic', 'hgbc'], labels: { logistic: 'LogisticRegression', hgbc: 'HistGradientBoosting' }, defaults: {} });
@@ -3031,9 +3112,85 @@ function ClassifierModelsPanel({ clfHistory }) {
     setRetraining(false);
   }
 
+  async function loadBestParams(agent) {
+    const r = await fetch(`/api/v1/model/best-params/${agent}`).catch(() => null);
+    if (r?.ok) setBestParams(await r.json());
+    else setBestParams(null);
+  }
+
+  const _ALL_AGENTS = ['tire', 'battery', 'weather', 'telemetry', 'safety_car', 'fuel', 'meta'];
+
+  async function runRetrainAll() {
+    setRetrainingAll(true); setRetrainAllDone(false); setError('');
+    const initial = _ALL_AGENTS.map(a => ({ agent: a, status: 'pending', result: null }));
+    setRetrainAllProgress(initial);
+    for (let i = 0; i < _ALL_AGENTS.length; i++) {
+      const agent = _ALL_AGENTS[i];
+      setRetrainAllProgress(prev => prev.map(r => r.agent === agent ? { ...r, status: 'running' } : r));
+      const resp = await fetch('/api/v1/model/retrain', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ agent }),
+      }).catch(() => null);
+      const ok = resp?.ok;
+      const data = ok ? await resp.json() : null;
+      setRetrainAllProgress(prev => prev.map(r =>
+        r.agent === agent ? { ...r, status: ok ? 'done' : 'error', result: data } : r
+      ));
+      if (agent === selectedAgent && ok) {
+        setRetrainResult(data);
+        loadSnapshots(agent);
+      }
+    }
+    setRetrainingAll(false); setRetrainAllDone(true);
+  }
+
+  async function runTuneAll(nTrials = 30) {
+    setTuningAll(true); setTuneAllDone(false); setError('');
+    const initial = _ALL_AGENTS.map(a => ({ agent: a, status: 'pending', result: null }));
+    setTuneAllProgress(initial);
+    for (let i = 0; i < _ALL_AGENTS.length; i++) {
+      const agent = _ALL_AGENTS[i];
+      setTuneAllProgress(prev => prev.map(r => r.agent === agent ? { ...r, status: 'running' } : r));
+      const resp = await fetch('/api/v1/model/tune', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ agent, n_trials: nTrials }),
+      }).catch(() => null);
+      const ok = resp?.ok;
+      const data = ok ? await resp.json() : null;
+      setTuneAllProgress(prev => prev.map(r =>
+        r.agent === agent ? { ...r, status: ok ? 'done' : 'error', result: data } : r
+      ));
+      // If this is the currently-viewed agent, update its bestParams badge too
+      if (agent === selectedAgent && ok) setBestParams({ tuned: true, ...data });
+    }
+    setTuningAll(false); setTuneAllDone(true);
+  }
+
+  async function runTune(nTrials = 30) {
+    setTuning(true); setTuneResult(null); setError('');
+    const r = await fetch('/api/v1/model/tune', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ agent: selectedAgent, n_trials: nTrials }),
+    }).catch(() => null);
+    if (r?.ok) {
+      const data = await r.json();
+      setTuneResult(data);
+      setBestParams({ tuned: true, ...data });
+    } else {
+      const msg = await r?.text().catch(() => '');
+      setError(r?.status === 503 ? 'optuna not installed — run: pip install optuna' : `Tune failed: ${r?.status} ${msg}`);
+    }
+    setTuning(false);
+  }
+
   useEffect(() => {
     loadSnapshots(selectedAgent);
     loadFeatImportance(selectedAgent);
+    loadBestParams(selectedAgent);
+    setTuneResult(null);
   }, [selectedAgent]);
 
   async function runTest(snapshot) {
@@ -3115,12 +3272,187 @@ function ClassifierModelsPanel({ clfHistory }) {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
           <p style={{ fontSize: 10, color: 'var(--muted)', margin: 0, textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
             Snapshots — {selectedAgent}
+            {bestParams?.tuned && (
+              <span style={{ marginLeft: 6, fontSize: 8, padding: '1px 6px', borderRadius: 6,
+                background: '#1e3a5f', color: '#93c5fd', border: '1px solid #3b82f655', fontWeight: 400 }}>
+                tuned +{bestParams.improvement_pp?.toFixed(1)}pp
+              </span>
+            )}
           </p>
-          <button className="kb-btn" onClick={runRetrain} disabled={retraining}
-            style={{ fontSize: 10, padding: '2px 10px', color: retraining ? '#64748b' : '#93c5fd', borderColor: retraining ? '#334155' : '#3b82f6' }}>
-            {retraining ? <><Activity size={10} className="spin" style={{ marginRight: 3 }} />Retraining…</> : 'Retrain'}
-          </button>
+          <div style={{ display: 'flex', gap: 5 }}>
+            <button className="kb-btn" onClick={() => runTuneAll(30)} disabled={tuningAll || tuning || retraining || retrainingAll}
+              style={{ fontSize: 10, padding: '2px 10px', color: tuningAll ? '#64748b' : '#c4b5fd', borderColor: tuningAll ? '#334155' : '#6d28d9' }}>
+              {tuningAll ? <><Activity size={10} className="spin" style={{ marginRight: 3 }} />Tuning all…</> : <><FlaskConical size={10} style={{ marginRight: 3 }} />Tune All</>}
+            </button>
+            <button className="kb-btn" onClick={() => runTune(30)} disabled={tuning || tuningAll || retraining || retrainingAll}
+              style={{ fontSize: 10, padding: '2px 10px', color: tuning ? '#64748b' : '#a78bfa', borderColor: tuning ? '#334155' : '#7c3aed' }}>
+              {tuning ? <><Activity size={10} className="spin" style={{ marginRight: 3 }} />Tuning…</> : <><FlaskConical size={10} style={{ marginRight: 3 }} />Tune</>}
+            </button>
+            <button className="kb-btn" onClick={runRetrainAll} disabled={retrainingAll || retraining || tuning || tuningAll}
+              style={{ fontSize: 10, padding: '2px 10px', color: retrainingAll ? '#64748b' : '#67e8f9', borderColor: retrainingAll ? '#334155' : '#0891b2' }}>
+              {retrainingAll ? <><Activity size={10} className="spin" style={{ marginRight: 3 }} />Retraining all…</> : 'Retrain All'}
+            </button>
+            <button className="kb-btn" onClick={runRetrain} disabled={retraining || tuning || tuningAll || retrainingAll}
+              style={{ fontSize: 10, padding: '2px 10px', color: retraining ? '#64748b' : '#93c5fd', borderColor: retraining ? '#334155' : '#3b82f6' }}>
+              {retraining ? <><Activity size={10} className="spin" style={{ marginRight: 3 }} />Retraining…</> : 'Retrain'}
+            </button>
+          </div>
         </div>
+
+        {tuneAllProgress.length > 0 && (
+          <div style={{ marginBottom: 8, padding: '8px 10px', borderRadius: 5, background: '#0c0818', border: '1px solid #6d28d955', fontSize: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+              {tuningAll
+                ? <><Activity size={10} className="spin" style={{ color: '#a78bfa', marginRight: 4 }} /><span style={{ color: '#a78bfa', fontWeight: 700 }}>Tuning all agents…</span></>
+                : <span style={{ color: tuneAllDone ? '#4ade80' : '#a78bfa', fontWeight: 700 }}>{tuneAllDone ? '✓ All agents tuned' : 'Tune All'}</span>
+              }
+              {tuneAllDone && (() => {
+                const done = tuneAllProgress.filter(r => r.status === 'done' && r.result);
+                const avgImp = done.length ? done.reduce((s, r) => s + (r.result.improvement_pp ?? 0), 0) / done.length : 0;
+                return <span style={{ color: avgImp >= 0 ? '#22c55e' : '#f59e0b', fontFamily: 'monospace' }}>avg {avgImp >= 0 ? '+' : ''}{avgImp.toFixed(2)}pp</span>;
+              })()}
+            </div>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 9 }}>
+              <thead>
+                <tr style={{ color: '#475569', borderBottom: '1px solid #1e293b' }}>
+                  <th style={{ textAlign: 'left',  padding: '2px 5px' }}>agent</th>
+                  <th style={{ textAlign: 'right', padding: '2px 5px' }}>baseline</th>
+                  <th style={{ textAlign: 'right', padding: '2px 5px' }}>best</th>
+                  <th style={{ textAlign: 'right', padding: '2px 5px' }}>Δ</th>
+                  <th style={{ textAlign: 'right', padding: '2px 5px' }}>trials</th>
+                  <th style={{ textAlign: 'center', padding: '2px 5px' }}>status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {tuneAllProgress.map(({ agent, status, result }) => {
+                  const imp = result?.improvement_pp ?? null;
+                  const statusColor = { pending: '#334155', running: '#a78bfa', done: '#4ade80', error: '#ef4444' }[status];
+                  const statusIcon  = { pending: '·', running: '⟳', done: '✓', error: '✗' }[status];
+                  return (
+                    <tr key={agent} style={{ borderBottom: '1px solid #0f172a', background: agent === selectedAgent ? '#0d1b2e' : 'transparent' }}>
+                      <td style={{ padding: '3px 5px', color: agent === selectedAgent ? '#93c5fd' : '#94a3b8', fontFamily: 'monospace' }}>{agent}</td>
+                      <td style={{ padding: '3px 5px', color: '#64748b', textAlign: 'right', fontFamily: 'monospace' }}>
+                        {result ? `${(result.baseline_cv_accuracy * 100).toFixed(1)}%` : '—'}
+                      </td>
+                      <td style={{ padding: '3px 5px', color: '#94a3b8', textAlign: 'right', fontFamily: 'monospace' }}>
+                        {result ? `${(result.best_cv_accuracy * 100).toFixed(1)}%` : '—'}
+                      </td>
+                      <td style={{ padding: '3px 5px', textAlign: 'right', fontFamily: 'monospace',
+                        color: imp == null ? '#334155' : imp >= 0 ? '#4ade80' : '#f59e0b' }}>
+                        {imp != null ? `${imp >= 0 ? '+' : ''}${imp.toFixed(2)}pp` : '—'}
+                      </td>
+                      <td style={{ padding: '3px 5px', color: '#475569', textAlign: 'right' }}>
+                        {result?.n_complete ?? '—'}
+                      </td>
+                      <td style={{ padding: '3px 5px', textAlign: 'center', color: statusColor, fontWeight: 700 }}>
+                        {status === 'running' ? <Activity size={9} className="spin" /> : statusIcon}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            {tuneAllDone && (
+              <p style={{ margin: '6px 0 0', fontSize: 9, color: '#475569' }}>
+                Params saved for all agents — click <strong>Retrain</strong> to apply to the current agent, or use the flywheel to apply all at once.
+              </p>
+            )}
+          </div>
+        )}
+
+        {retrainAllProgress.length > 0 && (
+          <div style={{ marginBottom: 8, padding: '8px 10px', borderRadius: 5, background: '#060d18', border: '1px solid #0891b255', fontSize: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+              {retrainingAll
+                ? <><Activity size={10} className="spin" style={{ color: '#67e8f9', marginRight: 4 }} /><span style={{ color: '#67e8f9', fontWeight: 700 }}>Retraining all agents…</span></>
+                : <span style={{ color: retrainAllDone ? '#4ade80' : '#67e8f9', fontWeight: 700 }}>{retrainAllDone ? '✓ All agents retrained' : 'Retrain All'}</span>
+              }
+            </div>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 9 }}>
+              <thead>
+                <tr style={{ color: '#475569', borderBottom: '1px solid #1e293b' }}>
+                  <th style={{ textAlign: 'left',  padding: '2px 5px' }}>agent</th>
+                  <th style={{ textAlign: 'right', padding: '2px 5px' }}>cv_acc</th>
+                  <th style={{ textAlign: 'right', padding: '2px 5px' }}>n_real</th>
+                  <th style={{ textAlign: 'right', padding: '2px 5px' }}>lift</th>
+                  <th style={{ textAlign: 'center', padding: '2px 5px' }}>status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {retrainAllProgress.map(({ agent, status, result }) => {
+                  const lift = result?.transfer_lift;
+                  const statusColor = { pending: '#334155', running: '#67e8f9', done: '#4ade80', error: '#ef4444' }[status];
+                  const statusIcon  = { pending: '·', running: '⟳', done: '✓', error: '✗' }[status];
+                  return (
+                    <tr key={agent} style={{ borderBottom: '1px solid #0f172a', background: agent === selectedAgent ? '#0d1b2e' : 'transparent' }}>
+                      <td style={{ padding: '3px 5px', color: agent === selectedAgent ? '#93c5fd' : '#94a3b8', fontFamily: 'monospace' }}>{agent}</td>
+                      <td style={{ padding: '3px 5px', color: '#94a3b8', textAlign: 'right', fontFamily: 'monospace' }}>
+                        {result ? `${(result.accuracy * 100).toFixed(1)}%` : '—'}
+                      </td>
+                      <td style={{ padding: '3px 5px', color: '#64748b', textAlign: 'right' }}>
+                        {result != null ? result.n_real : '—'}
+                      </td>
+                      <td style={{ padding: '3px 5px', textAlign: 'right', fontFamily: 'monospace',
+                        color: lift == null ? '#334155' : lift >= 0 ? '#4ade80' : '#f59e0b' }}>
+                        {lift != null ? `${lift >= 0 ? '+' : ''}${(lift * 100).toFixed(1)}pp` : '—'}
+                      </td>
+                      <td style={{ padding: '3px 5px', textAlign: 'center', color: statusColor, fontWeight: 700 }}>
+                        {status === 'running' ? <Activity size={9} className="spin" /> : statusIcon}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {tuneResult && (
+          <div style={{ marginBottom: 8, padding: '8px 10px', borderRadius: 5, background: '#100a1e', border: '1px solid #7c3aed55', fontSize: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+              <span style={{ color: '#a78bfa', fontWeight: 700 }}>✓ Tune complete</span>
+              <span style={{ color: tuneResult.improvement_pp >= 0 ? '#22c55e' : '#f59e0b', fontFamily: 'monospace', fontWeight: 700 }}>
+                {tuneResult.improvement_pp >= 0 ? '+' : ''}{tuneResult.improvement_pp?.toFixed(2)}pp
+              </span>
+              <span style={{ color: '#475569' }}>baseline {(tuneResult.baseline_cv_accuracy * 100).toFixed(1)}% → best {(tuneResult.best_cv_accuracy * 100).toFixed(1)}%</span>
+              <span style={{ color: '#334155', marginLeft: 'auto' }}>{tuneResult.n_complete} trials</span>
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+              {Object.entries(tuneResult.best_params ?? {}).map(([k, v]) => (
+                <span key={k} style={{ fontSize: 9, fontFamily: 'monospace', padding: '2px 7px', borderRadius: 5,
+                  background: '#0d1b2e', border: '1px solid #1e293b', color: '#93c5fd' }}>
+                  {k}: {typeof v === 'number' && !Number.isInteger(v) ? v.toFixed(4) : v}
+                </span>
+              ))}
+            </div>
+            {tuneResult.trial_scores?.length > 0 && (
+              <div style={{ marginTop: 6 }}>
+                <svg viewBox={`0 0 ${tuneResult.trial_scores.length * 10} 30`} preserveAspectRatio="none"
+                  style={{ width: '100%', height: 28, display: 'block', borderRadius: 3, background: '#060c18' }}>
+                  {(() => {
+                    const scores = tuneResult.trial_scores;
+                    const lo = Math.min(...scores), hi = Math.max(...scores);
+                    const range = hi - lo || 0.001;
+                    return scores.map((s, i) => {
+                      const x = i * 10 + 5;
+                      const h = ((s - lo) / range) * 22 + 4;
+                      const y = 30 - h;
+                      const isBest = s === hi;
+                      return <rect key={i} x={x - 3} y={y} width={6} height={h}
+                        fill={isBest ? '#a78bfa' : '#3b2f6e'} rx={1} />;
+                    });
+                  })()}
+                </svg>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, color: '#334155', marginTop: 1 }}>
+                  <span>trial 1</span><span style={{ color: '#a78bfa' }}>▪ best</span><span>trial {tuneResult.n_complete}</span>
+                </div>
+              </div>
+            )}
+            <p style={{ fontSize: 9, color: '#475569', margin: '6px 0 0' }}>
+              Params saved — click <strong>Retrain</strong> to apply them to a new model.
+            </p>
+          </div>
+        )}
         {retrainResult && (
           <div style={{ marginBottom: 8, padding: '5px 9px', borderRadius: 5, background: '#0a1e0f', border: '1px solid #166534', fontSize: 10, fontFamily: 'monospace', color: '#4ade80' }}>
             ✓ Retrain complete
@@ -3132,6 +3464,7 @@ function ClassifierModelsPanel({ clfHistory }) {
                 transfer {retrainResult.transfer_lift >= 0 ? '+' : ''}{(retrainResult.transfer_lift * 100).toFixed(1)}pp
               </span>
             )}
+            <PerClassMetricsTable perClass={retrainResult.per_class} />
           </div>
         )}
         {snapshots.length === 0 && (
@@ -3187,6 +3520,7 @@ function ClassifierModelsPanel({ clfHistory }) {
                 </div>
               )}
               {snap.cv_fold_accuracies && <FoldSpread accuracies={snap.cv_fold_accuracies} mean={snap.accuracy} />}
+              <PerClassMetricsTable perClass={snap.cv_per_class} />
               {tested && (
                 <div style={{ marginTop: 5, padding: '6px 9px', borderRadius: 4, background: '#0d1b2e', border: '1px solid #1e3a5f' }}>
                   <div style={{ fontSize: 10, fontFamily: 'monospace', color: '#93c5fd' }}>
@@ -3275,6 +3609,291 @@ function QualityTrendChart({ history }) {
   );
 }
 
+function LivePerformanceCard({ data }) {
+  if (!data) return <p className="muted" style={{ fontSize: 11 }}>Loading live performance…</p>;
+
+  const agents      = Object.entries(data.agent_accuracy ?? {});
+  const drift       = data.drift ?? {};
+  const eceHistory  = data.ece_history ?? [];
+  const alerted     = drift.alerted_features ?? [];
+  const driftFeats  = Object.entries(drift.features ?? {})
+    .sort((a, b) => Math.abs(b[1].z_score) - Math.abs(a[1].z_score));
+
+  const W = 1000, H = 60;
+  const eceVals = eceHistory.map(h => h.ece).filter(v => v != null);
+  let eceSparkline = null;
+  if (eceVals.length >= 2) {
+    const n  = eceVals.length;
+    const xs = eceVals.map((_, i) => (i / (n - 1)) * W);
+    const lo = Math.min(...eceVals), hi = Math.max(...eceVals);
+    const range = hi - lo || 0.001;
+    const pts = eceVals.map((v, i) => {
+      const y = 4 + ((v - lo) / range) * (H - 8);
+      return `${xs[i]},${y}`;
+    }).join(' ');
+    eceSparkline = (
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none"
+        style={{ width: '100%', height: 52, background: '#0a0f1e', borderRadius: 4, display: 'block', marginBottom: 4 }}>
+        {xs.map((x, i) => (
+          <line key={i} x1={x} y1={0} x2={x} y2={H} stroke="rgba(255,255,255,0.04)" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+        ))}
+        <polyline points={pts} fill="none" stroke="#f59e0b" strokeWidth="2.5" vectorEffect="non-scaling-stroke" />
+      </svg>
+    );
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+
+      {/* ECE trend */}
+      <div>
+        <p style={{ fontSize: 10, color: 'var(--muted)', margin: '0 0 6px', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
+          Calibration ECE trend
+        </p>
+        {eceSparkline ? (
+          <>
+            {eceSparkline}
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--muted)' }}>
+              <span>{eceHistory[0]?.recorded_at?.slice(0, 10)}</span>
+              <span style={{ color: '#f59e0b' }}>latest ECE {eceHistory[eceHistory.length - 1]?.ece?.toFixed(4)} (↓ better)</span>
+              <span>{eceHistory[eceHistory.length - 1]?.recorded_at?.slice(0, 10)}</span>
+            </div>
+          </>
+        ) : (
+          <p className="muted" style={{ fontSize: 11 }}>
+            {eceHistory.length === 0
+              ? 'No calibration history yet — retrain the calibrator and record a quality snapshot.'
+              : 'Need ≥2 snapshots to show trend.'}
+          </p>
+        )}
+      </div>
+
+      {/* Per-agent precision */}
+      <div>
+        <p style={{ fontSize: 10, color: 'var(--muted)', margin: '0 0 8px', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
+          Per-agent precision (live outcomes)
+        </p>
+        {agents.length === 0 ? (
+          <p className="muted" style={{ fontSize: 11 }}>No labeled outcomes yet — run the outcome labeler to populate.</p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {agents.map(([agent, stats]) => {
+              const pct   = stats.precision != null ? stats.precision * 100 : null;
+              const color = pct == null ? '#64748b' : pct >= 70 ? '#22c55e' : pct >= 50 ? '#f59e0b' : '#ef4444';
+              return (
+                <div key={agent} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 10, color: 'var(--muted)', width: 88, flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{agent}</span>
+                  <div style={{ flex: 1, height: 7, background: '#0d1b2e', borderRadius: 4, overflow: 'hidden' }}>
+                    <div style={{ width: `${pct ?? 0}%`, height: '100%', background: color, borderRadius: 4, transition: 'width 0.4s ease' }} />
+                  </div>
+                  <span style={{ fontSize: 10, fontFamily: 'monospace', color, width: 40, textAlign: 'right' }}>
+                    {pct != null ? `${pct.toFixed(0)}%` : '—'}
+                  </span>
+                  <span style={{ fontSize: 9, color: '#334155', minWidth: 32 }}>n={stats.n_total}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Feature drift */}
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+          <p style={{ fontSize: 10, color: 'var(--muted)', margin: 0, textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
+            Feature drift
+          </p>
+          {drift.ready ? (
+            alerted.length > 0
+              ? <span style={{ fontSize: 10, color: '#ef4444', padding: '1px 7px', borderRadius: 8, background: '#ef444418', border: '1px solid #ef444440' }}>
+                  {alerted.length} alert{alerted.length !== 1 ? 's' : ''}
+                </span>
+              : <span style={{ fontSize: 10, color: '#22c55e', padding: '1px 7px', borderRadius: 8, background: '#22c55e18', border: '1px solid #22c55e40' }}>
+                  nominal
+                </span>
+          ) : (
+            <span style={{ fontSize: 10, color: '#64748b' }}>
+              warming up ({drift.baseline_size ?? 0}/{drift.min_baseline ?? 50})
+            </span>
+          )}
+        </div>
+        {driftFeats.length > 0 ? (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+            {driftFeats.map(([feat, info]) => {
+              const z = info.z_score ?? 0;
+              const c = info.alerted ? '#ef4444' : Math.abs(z) > 2 ? '#f59e0b' : '#334155';
+              return (
+                <span key={feat} title={`Z=${z.toFixed(2)}`} style={{
+                  fontSize: 9, padding: '2px 6px', borderRadius: 5, fontFamily: 'monospace',
+                  background: info.alerted ? '#ef444411' : '#0d1b2e',
+                  border: `1px solid ${c}55`, color: c,
+                }}>
+                  {feat} {z >= 0 ? '+' : ''}{z.toFixed(1)}σ
+                </span>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="muted" style={{ fontSize: 11 }}>
+            {drift.ready
+              ? 'No drift data — submit telemetry to the /analyze endpoint to populate.'
+              : `Collecting baseline — ${drift.baseline_size ?? 0} of ${drift.min_baseline ?? 50} samples seen.`}
+          </p>
+        )}
+      </div>
+
+    </div>
+  );
+}
+
+const OUTCOME_FILTERS = ['all', 'correct', 'incorrect', 'unlabeled'];
+const OUTCOME_COLOR   = { correct: '#22c55e', incorrect: '#ef4444', unlabeled: '#475569' };
+const OUTCOME_ICON    = { correct: '✓', incorrect: '✗', unlabeled: '·' };
+const ALL_AGENTS      = ['tire', 'battery', 'weather', 'telemetry', 'safety_car', 'fuel', 'meta'];
+
+function PredictionOutcomeTable() {
+  const [rows, setRows]               = useState([]);
+  const [loading, setLoading]         = useState(false);
+  const [outcomeFilter, setOutcomeFilter] = useState('all');
+  const [agentFilter, setAgentFilter] = useState('all');
+  const [expanded, setExpanded]       = useState(null);
+
+  async function load(of = outcomeFilter, af = agentFilter) {
+    setLoading(true);
+    const p = new URLSearchParams({ limit: 100 });
+    if (of !== 'all') p.set('outcome', of);
+    if (af !== 'all') p.set('agent', af);
+    const r = await fetch(`/api/v1/outcomes/predictions?${p}`).catch(() => null);
+    if (r?.ok) setRows(await r.json());
+    setLoading(false);
+  }
+
+  useEffect(() => { load(); }, []);
+
+  function setOutcome(v) { setOutcomeFilter(v); load(v, agentFilter); }
+  function setAgent(v)   { setAgentFilter(v);   load(outcomeFilter, v); }
+
+  const toggle = id => setExpanded(e => e === id ? null : id);
+
+  return (
+    <div>
+      {/* Filter bar */}
+      <div style={{ display: 'flex', gap: 5, marginBottom: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+        {OUTCOME_FILTERS.map(o => {
+          const active = outcomeFilter === o;
+          const col    = o === 'all' ? '#64748b' : OUTCOME_COLOR[o];
+          return (
+            <button key={o} onClick={() => setOutcome(o)} style={{
+              fontSize: 9, padding: '2px 9px', borderRadius: 8, cursor: 'pointer', textTransform: 'capitalize',
+              background: active ? col + '22' : '#0d1b2e',
+              color: active ? col : '#475569',
+              border: `1px solid ${active ? col + '66' : '#1e293b'}`,
+            }}>{o}</button>
+          );
+        })}
+        <span style={{ color: '#1e293b', margin: '0 2px' }}>|</span>
+        <select value={agentFilter} onChange={e => setAgent(e.target.value)} style={{
+          fontSize: 9, background: '#0d1b2e', border: '1px solid #1e293b', color: '#64748b',
+          borderRadius: 6, padding: '2px 6px', cursor: 'pointer',
+        }}>
+          <option value="all">all agents</option>
+          {ALL_AGENTS.map(a => <option key={a} value={a}>{a}</option>)}
+        </select>
+        <button className="kb-btn" onClick={() => load()} disabled={loading}
+          style={{ marginLeft: 'auto', fontSize: 9, padding: '2px 8px' }}>
+          <RefreshCw size={9} className={loading ? 'spin' : ''} />
+        </button>
+      </div>
+
+      {/* Rows */}
+      {rows.length === 0 ? (
+        <p className="muted" style={{ fontSize: 11 }}>
+          {loading ? 'Loading…' : 'No predictions found. Run the outcome labeler to start labeling insights.'}
+        </p>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {rows.map(row => {
+            const isOpen  = expanded === row.insight_id;
+            const oc      = OUTCOME_COLOR[row.outcome] ?? '#475569';
+            const rc      = RISK_META[row.risk]?.color ?? '#64748b';
+            const agIcon  = AGENT_ICON[row.agents?.[0]];
+            return (
+              <div key={row.insight_id}
+                onClick={() => toggle(row.insight_id)}
+                style={{
+                  padding: '6px 9px', borderRadius: 6, cursor: 'pointer',
+                  background: isOpen ? '#0a0f1e' : '#060c18',
+                  border: `1px solid ${isOpen ? '#1e3a5f' : '#0f172a'}`,
+                  transition: 'background 0.15s',
+                }}>
+                {/* Compact header row */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: oc, width: 12, flexShrink: 0 }}>
+                    {OUTCOME_ICON[row.outcome]}
+                  </span>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: rc, flexShrink: 0 }}>{row.risk}</span>
+                  <span style={{ fontSize: 10, color: '#94a3b8', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {row.driver_id} @ {row.track_id}{row.lap != null ? ` lap ${row.lap}` : ''}
+                    {row.compound && <span style={{ color: COMPOUND_COLOR[row.compound] ?? '#64748b', marginLeft: 4 }}>{row.compound}</span>}
+                  </span>
+                  <div style={{ display: 'flex', gap: 3, flexShrink: 0 }}>
+                    {row.agents.map(a => {
+                      const ai = AGENT_ICON[a];
+                      return ai ? (
+                        <span key={a} title={a} style={{ color: ai.color, display: 'flex', alignItems: 'center' }}>
+                          <ai.Icon size={10} />
+                        </span>
+                      ) : (
+                        <span key={a} style={{ fontSize: 9, color: '#334155', fontFamily: 'monospace' }}>{a}</span>
+                      );
+                    })}
+                  </div>
+                  <span style={{ fontSize: 9, fontFamily: 'monospace', color: '#475569', flexShrink: 0 }}>
+                    {(row.confidence * 100).toFixed(0)}%
+                  </span>
+                  <span style={{ fontSize: 9, color: '#334155', flexShrink: 0 }}>
+                    {row.created_at?.slice(0, 10)}
+                  </span>
+                </div>
+
+                {/* Expanded detail */}
+                {isOpen && (
+                  <div style={{ marginTop: 7, paddingTop: 7, borderTop: '1px solid #0f172a' }}>
+                    {row.recommendation && (
+                      <p style={{ fontSize: 10, color: '#94a3b8', margin: '0 0 6px', lineHeight: 1.5 }}>
+                        {row.recommendation}
+                      </p>
+                    )}
+                    {row.findings.length > 0 && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                        {row.findings.map((f, i) => {
+                          const fc = RISK_META[f.risk]?.color ?? '#64748b';
+                          const fi = AGENT_ICON[f.agent];
+                          return (
+                            <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'flex-start', fontSize: 10 }}>
+                              <span style={{ color: fc, flexShrink: 0, fontWeight: 700 }}>{f.risk}</span>
+                              {fi && <fi.Icon size={10} style={{ color: fi.color, flexShrink: 0, marginTop: 1 }} />}
+                              <span style={{ color: '#64748b' }}>{f.agent}</span>
+                              <span style={{ color: '#475569', flex: 1 }}>{f.message}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                    <div style={{ marginTop: 5, fontSize: 9, color: '#334155', fontFamily: 'monospace' }}>
+                      {row.insight_id}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function OutcomeLabelingCard() {
   const [year, setYear]         = useState(2026);
   const [roundNum, setRoundNum] = useState(1);
@@ -3302,7 +3921,11 @@ function OutcomeLabelingCard() {
       if (!dryRun) loadSummary();
     } else {
       const msg = await r?.text().catch(() => '');
-      setError(`Failed ${r?.status}: ${msg}`);
+      if (r?.status === 401) {
+        setError('Auth required for writes — set your API key in Settings (top-right gear icon).');
+      } else {
+        setError(`Failed ${r?.status}: ${msg}`);
+      }
     }
     setRunning(false);
   }
@@ -3397,6 +4020,7 @@ function ModelLabPanel({ version }) {
   const [retrievalData, setRetrievalData]   = useState(null);
   const [qualityHistory, setQualityHistory] = useState([]);
   const [clfHistory, setClfHistory]         = useState([]);
+  const [livePerf, setLivePerf]             = useState(null);
   const [loading, setLoading]               = useState(false);
   const [promoting, setPromoting]           = useState(false);
   const [runningRetrieval, setRunningRetrieval] = useState(false);
@@ -3426,6 +4050,11 @@ function ModelLabPanel({ version }) {
     if (r?.ok) setClfHistory(await r.json());
   }
 
+  async function loadLivePerf() {
+    const r = await fetch('/api/v1/live/performance').catch(() => null);
+    if (r?.ok) setLivePerf(await r.json());
+  }
+
   async function recordSnapshot() {
     setRecordingSnapshot(true);
     await fetch('/api/v1/quality/record?trigger=manual', { method: 'POST' }).catch(() => null);
@@ -3438,6 +4067,7 @@ function ModelLabPanel({ version }) {
     refreshEval();
     loadQualityHistory();
     loadClfHistory();
+    loadLivePerf();
     fetch('/api/v1/eval/retrieval').then(r => r.ok ? r.json() : null).then(d => { if (d) setRetrievalData(d); }).catch(() => {});
   }, []);
 
@@ -3749,6 +4379,29 @@ function ModelLabPanel({ version }) {
             </button>
           </div>
           <ClassifierModelsPanel clfHistory={clfHistory} />
+        </div>
+
+        <div style={{ borderTop: '1px solid var(--card-border)' }} />
+
+        {/* Live performance */}
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+            <h2 style={{ margin: 0, fontSize: 14 }}><TrendingUp size={13} /> Live Performance</h2>
+            <button className="kb-btn" onClick={loadLivePerf}>
+              <RefreshCw size={11} /> Refresh
+            </button>
+          </div>
+          <LivePerformanceCard data={livePerf} />
+        </div>
+
+        <div style={{ borderTop: '1px solid var(--card-border)' }} />
+
+        {/* Prediction vs outcome */}
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', marginBottom: 10 }}>
+            <h2 style={{ margin: 0, fontSize: 14 }}><CheckSquare size={13} /> Predictions vs Outcomes</h2>
+          </div>
+          <PredictionOutcomeTable />
         </div>
 
         <div style={{ borderTop: '1px solid var(--card-border)' }} />
