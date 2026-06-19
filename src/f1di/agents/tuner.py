@@ -66,7 +66,6 @@ def tune_agent(agent: str, n_trials: int = 30, seed: int = 42) -> dict:
     generate_synthetic = mod.generate_synthetic
 
     from f1di.agents.classifier_utils import (
-        build_model,
         cross_val_eval,
         multiclass_brier,
         save_best_params,
