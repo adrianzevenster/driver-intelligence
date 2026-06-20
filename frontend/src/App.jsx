@@ -237,52 +237,61 @@ function ModelHealthBadge() {
 
   if (agents.length === 0 && jc.r == null && !drift.ready) return null;
 
+  const agentSummaries = agents.map(([agent, stats]) => {
+    const pct = stats.precision != null ? stats.precision * 100 : null;
+    return `${AGENT_SHORT[agent] ?? agent}: ${pct != null ? pct.toFixed(0) + '%' : 'no data'} (n=${stats.n_total})`;
+  });
+  const scoredAgents = agents.filter(([, stats]) => stats.precision != null);
+  const healthyAgents = scoredAgents.filter(([, stats]) => stats.precision >= 0.7).length;
+  const agentState =
+    scoredAgents.length === 0 ? 'unknown' :
+    healthyAgents === scoredAgents.length ? 'ok' :
+    healthyAgents >= Math.ceil(scoredAgents.length / 2) ? 'warn' : 'bad';
+  const lat = data?.latency;
+  const latencyState = !lat || lat.p95 == null ? 'unknown' : lat.p95 > 500 ? 'bad' : lat.p95 > 200 ? 'warn' : 'ok';
+  const driftState = !drift.ready ? 'unknown' : driftAlerted ? 'bad' : 'ok';
+  const judgeState = jc.r == null ? 'unknown' : Math.abs(jc.r) >= 0.5 ? 'ok' : Math.abs(jc.r) >= 0.3 ? 'warn' : 'unknown';
+  const details = [
+    agentSummaries.length ? `Agents: ${agentSummaries.join(', ')}` : null,
+    drift.ready
+      ? `Drift: ${driftAlerted ? `${(drift.alerted_features ?? []).length} features alerted` : 'no alerts'}`
+      : `Drift: warmup ${drift.baseline_size ?? 0}/${drift.min_baseline ?? 50}`,
+    jc.r != null ? `Judge correlation: r=${jc.r >= 0 ? '+' : ''}${jc.r.toFixed(2)} (n=${jc.n})` : null,
+    lat?.p95 != null ? `Latency: p50=${lat.p50}ms p95=${lat.p95}ms p99=${lat.p99}ms (n=${lat.n})` : null,
+  ].filter(Boolean).join('\n');
+
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 10, flexWrap: 'wrap', color: '#475569' }}>
-      {agents.map(([agent, stats]) => {
-        const pct = stats.precision != null ? stats.precision * 100 : null;
-        const col = pct == null ? '#334155' : pct >= 70 ? '#22c55e' : pct >= 50 ? '#f59e0b' : '#ef4444';
-        const label = AGENT_SHORT[agent] ?? agent;
-        return (
-          <span key={agent} style={{ display: 'flex', alignItems: 'center', gap: 3 }}
-            title={`${agent}: ${pct != null ? pct.toFixed(0) + '%' : 'no data'} precision (n=${stats.n_total})`}>
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: col, flexShrink: 0 }} />
-            <span style={{ color: '#475569' }}>{label}</span>
-            {pct != null && <span style={{ color: col, fontWeight: 600 }}>{pct.toFixed(0)}%</span>}
-          </span>
-        );
-      })}
-      {agents.length > 0 && <span style={{ color: '#1e293b' }}>|</span>}
-      <span title={`Drift baseline: ${drift.baseline_size ?? 0} obs`}
-        style={{ color: !drift.ready ? '#334155' : driftAlerted ? '#ef4444' : '#22c55e' }}>
-        {!drift.ready
-          ? `drift warmup ${drift.baseline_size ?? 0}/${drift.min_baseline ?? 50}`
-          : driftAlerted
-            ? `drift ⚠ ${(drift.alerted_features ?? []).length} feat`
-            : 'drift ✓'}
+    <div className="model-health" title={details}>
+      {agents.length > 0 && (
+        <span className={`model-health-chip ${agentState}`}>
+          <span className="model-health-dot" />
+          <span>Agents</span>
+          <strong>{healthyAgents}/{scoredAgents.length || agents.length}</strong>
+        </span>
+      )}
+      <span className={`model-health-chip ${driftState}`}>
+        <span className="model-health-dot" />
+        <span>Drift</span>
+        <strong>
+          {!drift.ready
+            ? `${drift.baseline_size ?? 0}/${drift.min_baseline ?? 50}`
+            : driftAlerted
+              ? `${(drift.alerted_features ?? []).length}`
+              : 'OK'}
+        </strong>
       </span>
       {jc.r != null && (
-        <>
-          <span style={{ color: '#1e293b' }}>|</span>
-          <span title={`LLM judge ↔ human correlation (n=${jc.n}): ${jc.interpretation}`}
-            style={{ color: Math.abs(jc.r) >= 0.5 ? '#22c55e' : Math.abs(jc.r) >= 0.3 ? '#f59e0b' : '#64748b' }}>
-            judge r={jc.r >= 0 ? '+' : ''}{jc.r.toFixed(2)}
-          </span>
-        </>
+        <span className={`model-health-chip ${judgeState}`}>
+          <span>Judge</span>
+          <strong>{jc.r >= 0 ? '+' : ''}{jc.r.toFixed(2)}</strong>
+        </span>
       )}
-      {(() => {
-        const lat = data?.latency;
-        if (!lat || lat.p95 == null) return null;
-        const col = lat.p95 > 500 ? '#ef4444' : lat.p95 > 200 ? '#f59e0b' : '#22c55e';
-        return (
-          <>
-            <span style={{ color: '#1e293b' }}>|</span>
-            <span style={{ color: col }} title={`Insight latency p50=${lat.p50}ms p99=${lat.p99}ms (n=${lat.n})`}>
-              p95 {lat.p95}ms
-            </span>
-          </>
-        );
-      })()}
+      {lat?.p95 != null && (
+        <span className={`model-health-chip ${latencyState}`}>
+          <span>p95</span>
+          <strong>{lat.p95}ms</strong>
+        </span>
+      )}
     </div>
   );
 }
