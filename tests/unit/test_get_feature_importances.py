@@ -1,9 +1,6 @@
 """Tests for MetaLearner.get_feature_importances()."""
 from __future__ import annotations
 
-import numpy as np
-import pytest
-
 from f1di.inference.meta_learner import FEATURE_NAMES, MetaLearner, generate_synthetic
 
 

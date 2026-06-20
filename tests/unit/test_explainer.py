@@ -1,7 +1,6 @@
 """Tests for the SHAP-based explainer."""
 from __future__ import annotations
 
-import pytest
 from unittest.mock import MagicMock
 
 
@@ -41,7 +40,6 @@ def test_explain_findings_no_model(tmp_path, monkeypatch):
 
 def test_explain_findings_below_threshold(tmp_path, monkeypatch):
     """Returns empty list when meta-learner has < 20 real labels."""
-    import pickle
     from f1di.inference.meta_learner import MetaLearner, generate_synthetic
 
     X, y = generate_synthetic(n=200, seed=42)

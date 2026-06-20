@@ -50,7 +50,6 @@ def explain_findings(findings: list, iso_confidence: float) -> list[dict]:
                 vals = sv[0]
         except Exception:
             try:
-                import numpy as np
                 background = x_s
                 explainer = shap.LinearExplainer(meta._model, background)
                 sv = explainer.shap_values(x_s)
@@ -61,7 +60,6 @@ def explain_findings(findings: list, iso_confidence: float) -> list[dict]:
         if vals is None:
             return []
 
-        import numpy as np
         raw_x = x[0]
         contribs = []
         for name, sv_val, fv in zip(FEATURE_NAMES, vals, raw_x):

@@ -2,8 +2,6 @@
 from __future__ import annotations
 
 import numpy as np
-import pytest
-from pathlib import Path
 from unittest.mock import patch
 
 
@@ -59,7 +57,8 @@ def test_tire_partial_fit_incremental_updates(tmp_path):
         partial_fit_from_labels(output_path=path)
         mtime1 = path.stat().st_mtime_ns
 
-    import time; time.sleep(0.05)
+    import time
+    time.sleep(0.05)
     X2 = rng.random((5, n_feats))
     y2 = rng.integers(0, 4, 5, dtype=np.int32)
     with patch("f1di.agents.tire_classifier._load_labeled_from_db", return_value=(X2, y2)):

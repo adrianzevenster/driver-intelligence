@@ -1,4 +1,6 @@
 from prometheus_client import Counter, Gauge, Histogram
+import threading as _threading
+from collections import deque as _deque
 
 INSIGHT_LATENCY = Histogram(
     "f1di_insight_latency_ms",
@@ -46,9 +48,6 @@ CALIBRATION_REGRESSION_BLOCKED = Gauge(
     "f1di_calibration_regression_blocked",
     "1 if the most recent retrain was blocked due to ECE regression, 0 otherwise",
 )
-
-import threading as _threading
-from collections import deque as _deque
 
 _LATENCY_LOCK = _threading.Lock()
 _LATENCY_WINDOW: _deque = _deque(maxlen=200)
