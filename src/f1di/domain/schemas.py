@@ -181,3 +181,4 @@ class DriverInsight(BaseModel):
     findings: list[AgentFinding]
     policy: Literal["SHOW", "ENGINEER_ONLY", "SUPPRESS"]
     latency_ms: float
+    shap_explanation: list[dict[str, Any]] = Field(default_factory=list)

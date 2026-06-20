@@ -154,6 +154,41 @@ class MetaLearner:
         # index 1 = P(correct=1)
         return float(self._model.predict_proba(x_s)[0][1])
 
+    def get_feature_importances(self) -> dict[str, float]:
+        """Return normalized feature importance for each input dimension.
+
+        Uses coef_ for LogisticRegression, feature_importances_ for tree models that
+        expose it (RF, GBT), and permutation importance for HGBT (which lacks a native
+        gini/gain summary).  Values normalize to sum=1.0.
+        """
+        raw = None
+        try:
+            raw = np.abs(self._model.coef_[0])
+        except AttributeError:
+            pass
+
+        if raw is None:
+            try:
+                raw = np.array(self._model.feature_importances_)
+            except AttributeError:
+                pass
+
+        if raw is None:
+            try:
+                from sklearn.inspection import permutation_importance
+                X_syn, y_syn = generate_synthetic(n=200, seed=99)
+                X_s = self._scaler.transform(X_syn)
+                r = permutation_importance(
+                    self._model, X_s, y_syn, n_repeats=5, random_state=0, n_jobs=1,
+                )
+                raw = np.maximum(r.importances_mean, 0.0)
+            except Exception:
+                return {}
+
+        total = float(raw.sum()) or 1.0
+        names = FEATURE_NAMES[: len(raw)]
+        return {name: round(float(v) / total, 4) for name, v in zip(names, raw)}
+
     def save(self, path: Path = _META_PATH) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(pickle.dumps(self))

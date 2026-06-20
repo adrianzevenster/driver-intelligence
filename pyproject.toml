@@ -40,6 +40,7 @@ streaming = ["confluent-kafka>=2.4.0"]
 regression = ["pytest>=8.2.0", "pytest-cov>=5.0.0"]
 dev = ["ruff>=0.8.0"]
 tuner = ["optuna>=3.6.0"]
+explainability = ["shap>=0.44"]
 frontend = []
 # Production persistence + migrations
 persistence = ["sqlalchemy>=2.0.0", "alembic>=1.13.0", "aiosqlite>=0.20.0", "asyncpg>=0.29.0"]

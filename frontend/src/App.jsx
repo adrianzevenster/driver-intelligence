@@ -206,6 +206,87 @@ function BackendBadges({ version }) {
   );
 }
 
+// ── Model health badge (header) ────────────────────────────────────────────
+
+const AGENT_SHORT = {
+  tire_strategy: 'tire', telemetry: 'telem', battery: 'batt',
+  weather: 'wthr', safety_car: 'sc', fuel: 'fuel',
+};
+
+function ModelHealthBadge() {
+  const [data, setData] = useState(null);
+  useEffect(() => {
+    function load() {
+      fetch('/api/v1/live/performance')
+        .then(r => r.ok ? r.json() : null)
+        .then(d => { if (d) setData(d); })
+        .catch(() => {});
+    }
+    load();
+    const id = setInterval(load, 60000);
+    return () => clearInterval(id);
+  }, []);
+
+  if (!data) return null;
+
+  const agents7d = data.agent_accuracy_7d ?? {};
+  const agents   = Object.entries(Object.keys(agents7d).length ? agents7d : (data.agent_accuracy ?? {}));
+  const drift    = data.drift ?? {};
+  const jc       = data.judge_correlation ?? {};
+  const driftAlerted = (drift.alerted_features ?? []).length > 0;
+
+  if (agents.length === 0 && jc.r == null && !drift.ready) return null;
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 10, flexWrap: 'wrap', color: '#475569' }}>
+      {agents.map(([agent, stats]) => {
+        const pct = stats.precision != null ? stats.precision * 100 : null;
+        const col = pct == null ? '#334155' : pct >= 70 ? '#22c55e' : pct >= 50 ? '#f59e0b' : '#ef4444';
+        const label = AGENT_SHORT[agent] ?? agent;
+        return (
+          <span key={agent} style={{ display: 'flex', alignItems: 'center', gap: 3 }}
+            title={`${agent}: ${pct != null ? pct.toFixed(0) + '%' : 'no data'} precision (n=${stats.n_total})`}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: col, flexShrink: 0 }} />
+            <span style={{ color: '#475569' }}>{label}</span>
+            {pct != null && <span style={{ color: col, fontWeight: 600 }}>{pct.toFixed(0)}%</span>}
+          </span>
+        );
+      })}
+      {agents.length > 0 && <span style={{ color: '#1e293b' }}>|</span>}
+      <span title={`Drift baseline: ${drift.baseline_size ?? 0} obs`}
+        style={{ color: !drift.ready ? '#334155' : driftAlerted ? '#ef4444' : '#22c55e' }}>
+        {!drift.ready
+          ? `drift warmup ${drift.baseline_size ?? 0}/${drift.min_baseline ?? 50}`
+          : driftAlerted
+            ? `drift ⚠ ${(drift.alerted_features ?? []).length} feat`
+            : 'drift ✓'}
+      </span>
+      {jc.r != null && (
+        <>
+          <span style={{ color: '#1e293b' }}>|</span>
+          <span title={`LLM judge ↔ human correlation (n=${jc.n}): ${jc.interpretation}`}
+            style={{ color: Math.abs(jc.r) >= 0.5 ? '#22c55e' : Math.abs(jc.r) >= 0.3 ? '#f59e0b' : '#64748b' }}>
+            judge r={jc.r >= 0 ? '+' : ''}{jc.r.toFixed(2)}
+          </span>
+        </>
+      )}
+      {(() => {
+        const lat = data?.latency;
+        if (!lat || lat.p95 == null) return null;
+        const col = lat.p95 > 500 ? '#ef4444' : lat.p95 > 200 ? '#f59e0b' : '#22c55e';
+        return (
+          <>
+            <span style={{ color: '#1e293b' }}>|</span>
+            <span style={{ color: col }} title={`Insight latency p50=${lat.p50}ms p99=${lat.p99}ms (n=${lat.n})`}>
+              p95 {lat.p95}ms
+            </span>
+          </>
+        );
+      })()}
+    </div>
+  );
+}
+
 // ── Stats form ─────────────────────────────────────────────────────────────
 
 const DEFAULT_STATS = {
@@ -520,6 +601,22 @@ function InsightPanel({ insight, modelBackend }) {
             ))}
           </ul>
         </>
+      )}
+      {(insight.shap_explanation ?? []).length > 0 && (
+        <div style={{ marginTop: 6, padding: '6px 8px', background: '#0a0f1e', borderRadius: 4, fontSize: 9 }}>
+          <span style={{ color: '#475569', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Top drivers</span>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px', marginTop: 3 }}>
+            {insight.shap_explanation.map(({ feature, value, contribution }) => {
+              const col = contribution > 0 ? '#22c55e' : '#ef4444';
+              return (
+                <span key={feature} style={{ fontFamily: 'monospace', color: '#94a3b8' }}>
+                  {feature}=<span style={{ color: '#e2e8f0' }}>{value.toFixed(2)}</span>
+                  {' '}<span style={{ color: col }}>{contribution > 0 ? '+' : ''}{contribution.toFixed(3)}</span>
+                </span>
+              );
+            })}
+          </div>
+        </div>
       )}
       <FeedbackWidget insightId={insight.insight_id} />
       <JudgeScoreWidget insightId={insight.insight_id} />
@@ -3609,16 +3706,38 @@ function QualityTrendChart({ history }) {
   );
 }
 
+// Colours assigned to agents consistently across charts
+const AGENT_COLORS = [
+  '#38bdf8', '#a78bfa', '#4ade80', '#fb923c', '#f472b6', '#facc15', '#67e8f9',
+];
+
+function agentColor(agent, allAgents) {
+  const idx = allAgents.indexOf(agent);
+  return AGENT_COLORS[idx % AGENT_COLORS.length];
+}
+
 function LivePerformanceCard({ data }) {
   if (!data) return <p className="muted" style={{ fontSize: 11 }}>Loading live performance…</p>;
 
-  const agents      = Object.entries(data.agent_accuracy ?? {});
+  const agentsAll   = Object.entries(data.agent_accuracy ?? {});
+  const agents7d    = Object.entries(data.agent_accuracy_7d ?? {});
+  const displayAgents = agents7d.length ? agents7d : agentsAll;
+  const allAgentNames = [...new Set([
+    ...agentsAll.map(([a]) => a),
+    ...agents7d.map(([a]) => a),
+    ...(data.rolling_precision ?? []).map(r => r.agent),
+  ])].sort();
+
   const drift       = data.drift ?? {};
   const eceHistory  = data.ece_history ?? [];
   const alerted     = drift.alerted_features ?? [];
   const driftFeats  = Object.entries(drift.features ?? {})
     .sort((a, b) => Math.abs(b[1].z_score) - Math.abs(a[1].z_score));
+  const rolling     = data.rolling_precision ?? [];
+  const reliability = data.reliability ?? [];
+  const jc          = data.judge_correlation ?? {};
 
+  // ── ECE sparkline ──────────────────────────────────────────────────────────
   const W = 1000, H = 60;
   const eceVals = eceHistory.map(h => h.ece).filter(v => v != null);
   let eceSparkline = null;
@@ -3642,8 +3761,179 @@ function LivePerformanceCard({ data }) {
     );
   }
 
+  // ── Rolling precision multi-line chart ────────────────────────────────────
+  let rollingChart = null;
+  if (rolling.length >= 2) {
+    const dates   = [...new Set(rolling.map(r => r.date))].sort();
+    const agents  = [...new Set(rolling.map(r => r.agent))].sort();
+    const CW = 1000, CH = 100;
+    const xScale = dates.length > 1 ? CW / (dates.length - 1) : CW;
+    const lines = agents.map(agent => {
+      const pts = dates.map((d, i) => {
+        const row = rolling.find(r => r.date === d && r.agent === agent);
+        if (!row || row.precision == null) return null;
+        const x = i * xScale;
+        const y = 6 + (1 - row.precision) * (CH - 12);
+        return `${x},${y}`;
+      }).filter(Boolean);
+      if (pts.length < 1) return null;
+      const color = agentColor(agent, allAgentNames);
+      return { agent, pts, color };
+    }).filter(Boolean);
+
+    rollingChart = (
+      <>
+        <svg viewBox={`0 0 ${CW} ${CH}`} preserveAspectRatio="none"
+          style={{ width: '100%', height: 80, background: '#0a0f1e', borderRadius: 4, display: 'block', marginBottom: 4 }}>
+          {/* 70% and 50% guide lines */}
+          {[0.7, 0.5].map(v => {
+            const y = 6 + (1 - v) * (CH - 12);
+            return (
+              <line key={v} x1={0} y1={y} x2={CW} y2={y}
+                stroke={v === 0.7 ? '#22c55e22' : '#f59e0b22'} strokeWidth="1.5" vectorEffect="non-scaling-stroke" strokeDasharray="6,4" />
+            );
+          })}
+          {lines.map(({ agent, pts, color }) => (
+            <polyline key={agent} points={pts.join(' ')} fill="none" stroke={color} strokeWidth="2" vectorEffect="non-scaling-stroke" />
+          ))}
+        </svg>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 6 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {lines.map(({ agent, color }) => (
+              <span key={agent} style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 9 }}>
+                <span style={{ width: 14, height: 2, background: color, display: 'inline-block', borderRadius: 1 }} />
+                <span style={{ color: '#64748b' }}>{agent}</span>
+              </span>
+            ))}
+          </div>
+          <div style={{ display: 'flex', gap: 10, fontSize: 9, color: '#334155', flexShrink: 0 }}>
+            <span style={{ color: '#22c55e88' }}>— 70%</span>
+            <span style={{ color: '#f59e0b88' }}>— 50%</span>
+          </div>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, color: '#334155', marginTop: 2 }}>
+          <span>{dates[0]}</span><span>{dates[dates.length - 1]}</span>
+        </div>
+      </>
+    );
+  }
+
+  // ── Reliability diagram ───────────────────────────────────────────────────
+  let reliabilityChart = null;
+  if (reliability.length >= 2) {
+    const RW = 1000, RH = 80;
+    const barW = Math.floor(RW / 10) - 4;
+    reliabilityChart = (
+      <svg viewBox={`0 0 ${RW} ${RH}`} preserveAspectRatio="none"
+        style={{ width: '100%', height: 70, background: '#0a0f1e', borderRadius: 4, display: 'block' }}>
+        {/* diagonal reference line (perfect calibration) */}
+        <line x1={0} y1={RH - 4} x2={RW} y2={4} stroke="#ffffff18" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+        {reliability.map((b, i) => {
+          const xPos  = i * (RW / 10) + 2;
+          const barH  = b.actual_accuracy * (RH - 8);
+          const y     = RH - 4 - barH;
+          const gap   = b.actual_accuracy - b.mean_confidence;
+          const col   = Math.abs(gap) < 0.05 ? '#22c55e' : gap < 0 ? '#ef4444' : '#3b82f6';
+          return (
+            <g key={i}>
+              <rect x={xPos} y={y} width={barW} height={barH} fill={col} fillOpacity={0.7} rx={1} />
+              <title>{`conf ${(b.mean_confidence * 100).toFixed(0)}% → actual ${(b.actual_accuracy * 100).toFixed(0)}% (n=${b.n})`}</title>
+            </g>
+          );
+        })}
+      </svg>
+    );
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+
+      {/* Judge correlation */}
+      {(jc.r != null || jc.n > 0) && (
+        <div style={{ padding: '8px 10px', borderRadius: 5, background: '#060c18', border: '1px solid #0f172a', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 10, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>Judge correlation</span>
+          {jc.r != null ? (
+            <>
+              <span style={{
+                fontSize: 13, fontWeight: 700, fontFamily: 'monospace',
+                color: Math.abs(jc.r) >= 0.5 ? '#22c55e' : Math.abs(jc.r) >= 0.3 ? '#f59e0b' : '#64748b',
+              }}>r={jc.r >= 0 ? '+' : ''}{jc.r.toFixed(3)}</span>
+              <span style={{ fontSize: 10, color: '#475569' }}>{jc.interpretation}</span>
+              <span style={{ fontSize: 9, color: '#334155', marginLeft: 'auto' }}>n={jc.n} rated+judged</span>
+            </>
+          ) : (
+            <span style={{ fontSize: 10, color: '#334155' }}>Need ≥3 rated+judged insights (have {jc.n ?? 0})</span>
+          )}
+        </div>
+      )}
+
+      {/* Rolling precision trend */}
+      <div>
+        <p style={{ fontSize: 10, color: 'var(--muted)', margin: '0 0 6px', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
+          Per-agent precision — rolling 14 days
+        </p>
+        {rollingChart ?? (
+          <p className="muted" style={{ fontSize: 11 }}>
+            No labeled outcomes yet — run the outcome labeler to populate.
+            <br /><span style={{ color: '#334155' }}>Go to Predictions vs Outcomes → Outcome Labeling below.</span>
+          </p>
+        )}
+      </div>
+
+      {/* Per-agent precision bars (7d window, fallback all-time) */}
+      <div>
+        <p style={{ fontSize: 10, color: 'var(--muted)', margin: '0 0 8px', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
+          Per-agent precision {agents7d.length ? '(last 7 days)' : '(all time)'}
+        </p>
+        {displayAgents.length === 0 ? (
+          <p className="muted" style={{ fontSize: 11 }}>No labeled outcomes yet.</p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {displayAgents.map(([agent, stats]) => {
+              const pct   = stats.precision != null ? stats.precision * 100 : null;
+              const color = pct == null ? '#64748b' : pct >= 70 ? '#22c55e' : pct >= 50 ? '#f59e0b' : '#ef4444';
+              return (
+                <div key={agent} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 10, color: 'var(--muted)', width: 88, flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{agent}</span>
+                  <div style={{ flex: 1, height: 7, background: '#0d1b2e', borderRadius: 4, overflow: 'hidden' }}>
+                    <div style={{ width: `${pct ?? 0}%`, height: '100%', background: color, borderRadius: 4, transition: 'width 0.4s ease' }} />
+                  </div>
+                  <span style={{ fontSize: 10, fontFamily: 'monospace', color, width: 40, textAlign: 'right' }}>
+                    {pct != null ? `${pct.toFixed(0)}%` : '—'}
+                  </span>
+                  <span style={{ fontSize: 9, color: '#334155', minWidth: 32 }}>n={stats.n_total}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Reliability diagram */}
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+          <p style={{ fontSize: 10, color: 'var(--muted)', margin: 0, textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
+            Reliability diagram
+          </p>
+          <span style={{ fontSize: 9, color: '#334155' }}>(confidence bins vs actual accuracy)</span>
+        </div>
+        {reliabilityChart ? (
+          <>
+            {reliabilityChart}
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, marginTop: 3 }}>
+              <span style={{ color: '#334155' }}>0%</span>
+              <div style={{ display: 'flex', gap: 10, fontSize: 9, color: '#475569' }}>
+                <span style={{ color: '#22c55e88' }}>■ calibrated</span>
+                <span style={{ color: '#ef444488' }}>■ over-confident</span>
+                <span style={{ color: '#3b82f688' }}>■ under-confident</span>
+              </div>
+              <span style={{ color: '#334155' }}>100%</span>
+            </div>
+          </>
+        ) : (
+          <p className="muted" style={{ fontSize: 11 }}>Need labeled feedback to compute reliability.</p>
+        )}
+      </div>
 
       {/* ECE trend */}
       <div>
@@ -3665,35 +3955,6 @@ function LivePerformanceCard({ data }) {
               ? 'No calibration history yet — retrain the calibrator and record a quality snapshot.'
               : 'Need ≥2 snapshots to show trend.'}
           </p>
-        )}
-      </div>
-
-      {/* Per-agent precision */}
-      <div>
-        <p style={{ fontSize: 10, color: 'var(--muted)', margin: '0 0 8px', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
-          Per-agent precision (live outcomes)
-        </p>
-        {agents.length === 0 ? (
-          <p className="muted" style={{ fontSize: 11 }}>No labeled outcomes yet — run the outcome labeler to populate.</p>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {agents.map(([agent, stats]) => {
-              const pct   = stats.precision != null ? stats.precision * 100 : null;
-              const color = pct == null ? '#64748b' : pct >= 70 ? '#22c55e' : pct >= 50 ? '#f59e0b' : '#ef4444';
-              return (
-                <div key={agent} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 10, color: 'var(--muted)', width: 88, flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{agent}</span>
-                  <div style={{ flex: 1, height: 7, background: '#0d1b2e', borderRadius: 4, overflow: 'hidden' }}>
-                    <div style={{ width: `${pct ?? 0}%`, height: '100%', background: color, borderRadius: 4, transition: 'width 0.4s ease' }} />
-                  </div>
-                  <span style={{ fontSize: 10, fontFamily: 'monospace', color, width: 40, textAlign: 'right' }}>
-                    {pct != null ? `${pct.toFixed(0)}%` : '—'}
-                  </span>
-                  <span style={{ fontSize: 9, color: '#334155', minWidth: 32 }}>n={stats.n_total}</span>
-                </div>
-              );
-            })}
-          </div>
         )}
       </div>
 
@@ -3741,6 +4002,158 @@ function LivePerformanceCard({ data }) {
           </p>
         )}
       </div>
+
+      {/* Latency p50/p95/p99 */}
+      {data.latency?.p50 != null && (
+        <div>
+          <p style={{ fontSize: 10, color: 'var(--muted)', margin: '0 0 6px', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
+            Insight latency (rolling 200)
+          </p>
+          <div style={{ display: 'flex', gap: 12 }}>
+            {[['p50', data.latency.p50], ['p95', data.latency.p95], ['p99', data.latency.p99]].map(([label, ms]) => {
+              const col = ms > 500 ? '#ef4444' : ms > 200 ? '#f59e0b' : '#22c55e';
+              return (
+                <div key={label} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                  <span style={{ fontSize: 14, fontFamily: 'monospace', fontWeight: 700, color: col }}>{ms}<span style={{ fontSize: 9, color: '#475569', marginLeft: 2 }}>ms</span></span>
+                  <span style={{ fontSize: 9, color: '#334155' }}>{label}</span>
+                </div>
+              );
+            })}
+            <span style={{ fontSize: 9, color: '#334155', alignSelf: 'center', marginLeft: 8 }}>n={data.latency.n} requests</span>
+          </div>
+        </div>
+      )}
+
+      {/* Synthetic data audit */}
+      {data.synthetic_audit?.agents && (
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+            <p style={{ fontSize: 10, color: 'var(--muted)', margin: 0, textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
+              Synthetic label alignment
+            </p>
+            <span style={{ fontSize: 9, color: '#334155' }}>last audit {data.synthetic_audit.audited_at?.slice(0, 10)}</span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+            {Object.entries(data.synthetic_audit.agents).map(([agent, r]) => {
+              if (r.skipped) return (
+                <div key={agent} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 10, color: '#334155', width: 80, flexShrink: 0, fontFamily: 'monospace' }}>{agent}</span>
+                  <span style={{ fontSize: 9, color: '#334155' }}>skipped — {r.reason}</span>
+                </div>
+              );
+              const col = r.aligned ? '#22c55e' : '#ef4444';
+              const delta = r.acc_delta ?? 0;
+              return (
+                <div key={agent} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 10, color: 'var(--muted)', width: 80, flexShrink: 0, fontFamily: 'monospace' }}>{agent}</span>
+                  <span style={{ fontSize: 9, color: col, width: 14, textAlign: 'center' }}>{r.aligned ? '✓' : '⚠'}</span>
+                  <span style={{ fontSize: 9, color: '#475569' }}>synth {(r.acc_synth*100).toFixed(1)}% → blend {(r.acc_blend*100).toFixed(1)}%</span>
+                  <span style={{ fontSize: 9, fontFamily: 'monospace', color: col, marginLeft: 'auto' }}>
+                    {delta >= 0 ? '+' : ''}{(delta*100).toFixed(1)}pp
+                  </span>
+                  <span style={{ fontSize: 9, color: '#334155' }}>n={r.n_real}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Alert rate chart */}
+      <div>
+        <p style={{ fontSize: 10, color: 'var(--muted)', margin: '0 0 6px', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
+          Alert rate — 30 days (WARNING / CRITICAL)
+        </p>
+        {(data.alert_rate ?? []).length >= 2 ? (() => {
+          const series = data.alert_rate ?? [];
+          const dates  = [...new Set(series.map(r => r.date))].sort();
+          const AW = 1000, AH = 60;
+          const xScale = dates.length > 1 ? AW / (dates.length - 1) : AW;
+          const riskColor = { WARNING: '#f97316', CRITICAL: '#ef4444', WATCH: '#f59e0b' };
+          const byRisk = {};
+          for (const row of series) {
+            if (!byRisk[row.risk]) byRisk[row.risk] = {};
+            byRisk[row.risk][row.date] = row.n;
+          }
+          const maxN = Math.max(1, ...series.map(r => r.n));
+          return (
+            <>
+              <svg viewBox={`0 0 ${AW} ${AH}`} preserveAspectRatio="none"
+                style={{ width: '100%', height: 52, background: '#0a0f1e', borderRadius: 4, display: 'block', marginBottom: 4 }}>
+                {Object.entries(byRisk).map(([risk, byDate]) => {
+                  const col = riskColor[risk] ?? '#64748b';
+                  const pts = dates.map((d, i) => {
+                    const n = byDate[d] ?? 0;
+                    const x = i * xScale;
+                    const y = AH - 4 - (n / maxN) * (AH - 8);
+                    return `${x},${y}`;
+                  }).join(' ');
+                  return <polyline key={risk} points={pts} fill="none" stroke={col} strokeWidth="2" vectorEffect="non-scaling-stroke" />;
+                })}
+              </svg>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, color: '#334155', alignItems: 'center' }}>
+                <span>{dates[0]}</span>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  {Object.keys(byRisk).map(risk => (
+                    <span key={risk} style={{ color: riskColor[risk] ?? '#64748b' }}>— {risk.toLowerCase()}</span>
+                  ))}
+                </div>
+                <span>{dates[dates.length - 1]}</span>
+              </div>
+            </>
+          );
+        })() : (
+          <p className="muted" style={{ fontSize: 11 }}>No WARNING/CRITICAL insights in the past 30 days yet.</p>
+        )}
+      </div>
+
+      {/* Per-driver precision */}
+      {Object.keys(data.per_driver_precision ?? {}).length > 0 && (() => {
+        const drivers = Object.entries(data.per_driver_precision ?? {});
+        const agentNames = [...new Set(drivers.flatMap(([, am]) => Object.keys(am)))].sort();
+        return (
+          <div>
+            <p style={{ fontSize: 10, color: 'var(--muted)', margin: '0 0 6px', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
+              Per-driver precision (last 7 days)
+            </p>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 9, fontFamily: 'monospace' }}>
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: 'left', padding: '2px 6px', color: '#334155', fontWeight: 600, borderBottom: '1px solid #0f172a' }}>driver</th>
+                    {agentNames.map(a => (
+                      <th key={a} style={{ padding: '2px 6px', color: '#334155', fontWeight: 600, borderBottom: '1px solid #0f172a', textAlign: 'center' }}>{a.replace('_strategy', '').replace('_', ' ')}</th>
+                    ))}
+                    <th style={{ padding: '2px 6px', color: '#334155', fontWeight: 600, borderBottom: '1px solid #0f172a', textAlign: 'right' }}>n</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {drivers.map(([driver, agentMap]) => {
+                    const totalN = Object.values(agentMap).reduce((s, v) => s + v.n_total, 0);
+                    return (
+                      <tr key={driver} style={{ borderBottom: '1px solid #060c18' }}>
+                        <td style={{ padding: '2px 6px', color: '#94a3b8' }}>{driver}</td>
+                        {agentNames.map(agent => {
+                          const stats = agentMap[agent];
+                          const pct = stats?.precision != null ? stats.precision * 100 : null;
+                          const col = pct == null ? '#1e293b' : pct >= 70 ? '#22c55e' : pct >= 50 ? '#f59e0b' : '#ef4444';
+                          return (
+                            <td key={agent} style={{ padding: '2px 6px', textAlign: 'center', color: col }}
+                              title={stats ? `n=${stats.n_total}` : 'no data'}>
+                              {pct != null ? `${pct.toFixed(0)}%` : '·'}
+                            </td>
+                          );
+                        })}
+                        <td style={{ padding: '2px 6px', color: '#334155', textAlign: 'right' }}>{totalN}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+      })()}
 
     </div>
   );
@@ -4021,12 +4434,14 @@ function ModelLabPanel({ version }) {
   const [qualityHistory, setQualityHistory] = useState([]);
   const [clfHistory, setClfHistory]         = useState([]);
   const [livePerf, setLivePerf]             = useState(null);
+  const [metaWeights, setMetaWeights]       = useState(null);
   const [loadingPerf, setLoadingPerf]       = useState(false);
   const [loading, setLoading]               = useState(false);
   const [promoting, setPromoting]           = useState(false);
   const [runningRetrieval, setRunningRetrieval] = useState(false);
   const [recordingSnapshot, setRecordingSnapshot] = useState(false);
   const [promoteResult, setPromoteResult]   = useState(null);
+  const [promotionHistory, setPromotionHistory] = useState([]);
   const [error, setError]                   = useState('');
 
   async function refreshCompare(ver) {
@@ -4072,6 +4487,10 @@ function ModelLabPanel({ version }) {
     loadClfHistory();
     loadLivePerf();
     fetch('/api/v1/eval/retrieval').then(r => r.ok ? r.json() : null).then(d => { if (d) setRetrievalData(d); }).catch(() => {});
+    fetch('/api/v1/shadow/promotion-history').then(r => r.ok ? r.json() : []).then(d => setPromotionHistory(d)).catch(() => {});
+    fetch('/api/v1/ml/meta-weights').then(r => r.ok ? r.json() : null).then(d => { if (d) setMetaWeights(d); }).catch(() => {});
+    const id = setInterval(loadLivePerf, 60000);
+    return () => clearInterval(id);
   }, []);
 
   async function runShadow() {
@@ -4254,6 +4673,19 @@ function ModelLabPanel({ version }) {
                       : `Not promoted — ${promoteResult.reason?.replace(/_/g, ' ')}`}
                   </div>
                 )}
+                {promotionHistory.length > 0 && (
+                  <div style={{ marginTop: 8, padding: '6px 9px', borderRadius: 5, background: '#060c18', border: '1px solid #0f172a', fontSize: 9 }}>
+                    <p style={{ margin: '0 0 4px', color: '#334155', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Promotion history</p>
+                    {promotionHistory.slice(-5).reverse().map((p, i) => (
+                      <div key={i} style={{ display: 'flex', gap: 6, color: '#475569', marginBottom: 2 }}>
+                        <span style={{ color: p.auto ? '#a78bfa' : '#38bdf8' }}>{p.auto ? 'auto' : 'manual'}</span>
+                        <span>{p.promoted_at?.slice(0, 10)}</span>
+                        <span style={{ color: '#334155' }}>n={p.n_shadow}</span>
+                        {p.p_value != null && <span style={{ color: '#334155' }}>p={p.p_value?.toFixed(3)}</span>}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )
           ) : (
@@ -4385,6 +4817,45 @@ function ModelLabPanel({ version }) {
         </div>
 
         <div style={{ borderTop: '1px solid var(--card-border)' }} />
+
+        {/* Meta-learner weights */}
+        {metaWeights && (
+          <>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                <h2 style={{ margin: 0, fontSize: 14 }}><Activity size={13} /> Meta-Learner Weights</h2>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 10, color: '#475569' }}>
+                  {metaWeights.active_in_inference
+                    ? <span style={{ color: '#22c55e' }}>● active in inference</span>
+                    : <span style={{ color: '#64748b' }}>● inactive (need ≥20 real labels, have {metaWeights.n_real})</span>}
+                  <span>n_real={metaWeights.n_real} cv_acc={metaWeights.accuracy?.toFixed(3)}</span>
+                </div>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {Object.entries(metaWeights.feature_importances ?? {})
+                  .sort(([, a], [, b]) => b - a)
+                  .map(([feat, imp]) => {
+                    const pct = imp * 100;
+                    const isRisk = feat.endsWith('_risk');
+                    const color = isRisk ? '#f97316' : feat.endsWith('_conf') ? '#38bdf8' : '#a78bfa';
+                    return (
+                      <div key={feat} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ fontSize: 9, color: '#64748b', width: 110, flexShrink: 0, fontFamily: 'monospace' }}>{feat}</span>
+                        <div style={{ flex: 1, height: 6, background: '#0d1b2e', borderRadius: 3, overflow: 'hidden' }}>
+                          <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: 3 }} />
+                        </div>
+                        <span style={{ fontSize: 9, fontFamily: 'monospace', color, width: 36, textAlign: 'right' }}>{pct.toFixed(1)}%</span>
+                      </div>
+                    );
+                  })}
+              </div>
+              <p style={{ fontSize: 9, color: '#334155', margin: '6px 0 0' }}>
+                Orange = risk weight inputs · Blue = confidence inputs · Purple = derived features
+              </p>
+            </div>
+            <div style={{ borderTop: '1px solid var(--card-border)' }} />
+          </>
+        )}
 
         {/* Live performance */}
         <div>
@@ -5039,6 +5510,7 @@ export default function App() {
               <span className="ece-value">{calibEce.toFixed(4)}</span>
             </div>
           )}
+          <ModelHealthBadge />
           <Gauge size={34} strokeWidth={1.5} />
         </div>
       </header>

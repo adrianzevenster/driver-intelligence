@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime as _dt
 import json
 import logging
 import shutil
@@ -37,7 +38,7 @@ def _promote_live_model(versioned_path: Path, live_path: Path) -> None:
             pass
 
 
-def per_agent_accuracy() -> dict[str, dict]:
+def per_agent_accuracy(since: _dt.datetime | None = None) -> dict[str, dict]:
     """Per-agent precision computed from labeled WARNING/CRITICAL insights in the DB.
 
     For each agent, 'precision' is the fraction of WARNING/CRITICAL findings
@@ -60,6 +61,8 @@ def per_agent_accuracy() -> dict[str, dict]:
                 .outerjoin(InsightRecord, FeedbackRecord.insight_id == InsightRecord.insight_id)
                 .where(InsightRecord.risk.in_(["WARNING", "CRITICAL"]))
             )
+            if since is not None:
+                stmt = stmt.where(InsightRecord.created_at >= since)
             for fb, ins in session.execute(stmt).all():
                 if ins is None:
                     continue
@@ -93,6 +96,241 @@ def per_agent_accuracy() -> dict[str, dict]:
         }
         for agent, s in sorted(agent_stats.items())
     }
+
+
+def rolling_precision_series(days: int = 14) -> list[dict]:
+    """Per-agent precision bucketed by calendar day for the past N days.
+
+    Returns list of {date, agent, precision, n} sorted by date, suitable
+    for drawing per-agent trend lines on the live-performance card.
+    """
+    import json as _json
+    try:
+        from sqlalchemy import select
+        from f1di.storage.database import db_session
+        from f1di.storage.models import FeedbackRecord, InsightRecord
+    except Exception:
+        return []
+
+    cutoff = _dt.datetime.utcnow() - _dt.timedelta(days=days)
+    by_date_agent: dict[tuple[str, str], dict[str, int]] = {}
+    try:
+        with db_session() as session:
+            stmt = (
+                select(FeedbackRecord, InsightRecord)
+                .outerjoin(InsightRecord, FeedbackRecord.insight_id == InsightRecord.insight_id)
+                .where(InsightRecord.risk.in_(["WARNING", "CRITICAL"]))
+                .where(InsightRecord.created_at >= cutoff)
+                .order_by(InsightRecord.created_at)
+            )
+            for fb, ins in session.execute(stmt).all():
+                if ins is None:
+                    continue
+                if fb.correct is not None:
+                    is_correct = fb.correct
+                elif fb.rating is not None:
+                    is_correct = fb.rating >= 4
+                else:
+                    continue
+                date_str = ins.created_at.strftime("%Y-%m-%d")
+                try:
+                    findings = _json.loads(ins.findings_json or "[]")
+                except Exception:
+                    continue
+                for finding in findings:
+                    if finding.get("risk") not in ("WARNING", "CRITICAL"):
+                        continue
+                    agent = finding.get("agent", "unknown")
+                    key = (date_str, agent)
+                    s = by_date_agent.setdefault(key, {"n_correct": 0, "n_total": 0})
+                    s["n_total"] += 1
+                    if is_correct:
+                        s["n_correct"] += 1
+    except Exception as exc:
+        logger.warning("rolling_precision_series failed: %s", exc)
+        return []
+
+    return [
+        {
+            "date": date_str,
+            "agent": agent,
+            "precision": round(s["n_correct"] / s["n_total"], 4) if s["n_total"] > 0 else None,
+            "n": s["n_total"],
+        }
+        for (date_str, agent), s in sorted(by_date_agent.items())
+    ]
+
+
+def reliability_diagram_data(n_bins: int = 10) -> list[dict]:
+    """Confidence bins vs. actual accuracy for a reliability (calibration) diagram.
+
+    Returns list of {bucket_min, bucket_max, mean_confidence, actual_accuracy, n}
+    for each non-empty decile bucket. Buckets with n=0 are omitted.
+    """
+    try:
+        pairs = _feedback_pairs()
+    except Exception:
+        return []
+    if not pairs:
+        return []
+
+    bins: list[dict] = [
+        {"bucket_min": i / n_bins, "bucket_max": (i + 1) / n_bins, "confs": [], "labels": []}
+        for i in range(n_bins)
+    ]
+    for conf, label in pairs:
+        idx = min(int(conf * n_bins), n_bins - 1)
+        bins[idx]["confs"].append(conf)
+        bins[idx]["labels"].append(label)
+
+    result = []
+    for b in bins:
+        n = len(b["labels"])
+        if n == 0:
+            continue
+        result.append({
+            "bucket_min": round(b["bucket_min"], 2),
+            "bucket_max": round(b["bucket_max"], 2),
+            "mean_confidence": round(sum(b["confs"]) / n, 4),
+            "actual_accuracy": round(sum(b["labels"]) / n, 4),
+            "n": n,
+        })
+    return result
+
+
+def per_driver_precision(since: _dt.datetime | None = None) -> dict[str, dict[str, dict]]:
+    """Per-driver, per-agent precision from labeled WARNING/CRITICAL insights.
+
+    Returns {driver_id: {agent: {precision, n_correct, n_total}}}
+    Only drivers with n_total >= 3 across all agents are included.
+    """
+    import json as _json
+    try:
+        from sqlalchemy import select
+        from f1di.storage.database import db_session
+        from f1di.storage.models import FeedbackRecord, InsightRecord
+    except Exception:
+        return {}
+
+    raw: dict[str, dict[str, dict[str, int]]] = {}
+    try:
+        with db_session() as session:
+            stmt = (
+                select(FeedbackRecord, InsightRecord)
+                .outerjoin(InsightRecord, FeedbackRecord.insight_id == InsightRecord.insight_id)
+                .where(InsightRecord.risk.in_(["WARNING", "CRITICAL"]))
+            )
+            if since is not None:
+                stmt = stmt.where(InsightRecord.created_at >= since)
+            for fb, ins in session.execute(stmt).all():
+                if ins is None:
+                    continue
+                if fb.correct is not None:
+                    is_correct = fb.correct
+                elif fb.rating is not None:
+                    is_correct = fb.rating >= 4
+                else:
+                    continue
+                driver = ins.driver_id or "unknown"
+                try:
+                    findings = _json.loads(ins.findings_json or "[]")
+                except Exception:
+                    continue
+                for finding in findings:
+                    if finding.get("risk") not in ("WARNING", "CRITICAL"):
+                        continue
+                    agent = finding.get("agent", "unknown")
+                    s = raw.setdefault(driver, {}).setdefault(agent, {"n_correct": 0, "n_total": 0})
+                    s["n_total"] += 1
+                    if is_correct:
+                        s["n_correct"] += 1
+    except Exception as exc:
+        logger.warning("per_driver_precision query failed: %s", exc)
+        return {}
+
+    result = {}
+    for driver, agent_map in raw.items():
+        total_n = sum(s["n_total"] for s in agent_map.values())
+        if total_n < 3:
+            continue
+        result[driver] = {
+            agent: {
+                "precision": round(s["n_correct"] / s["n_total"], 4) if s["n_total"] > 0 else None,
+                "n_correct": s["n_correct"],
+                "n_total": s["n_total"],
+            }
+            for agent, s in sorted(agent_map.items())
+        }
+    return dict(sorted(result.items(), key=lambda kv: -sum(s["n_total"] for s in kv[1].values()))[:20])
+
+
+def alert_rate_series(days: int = 30) -> list[dict]:
+    """Daily count of WARNING/CRITICAL/WATCH insights for the past N days.
+
+    Returns [{date, risk, n}] sorted by date, skipping shadow rows.
+    """
+    try:
+        from sqlalchemy import func, select
+        from f1di.storage.database import db_session
+        from f1di.storage.models import InsightRecord
+    except Exception:
+        return []
+
+    cutoff = _dt.datetime.utcnow() - _dt.timedelta(days=days)
+    try:
+        with db_session() as session:
+            rows = session.execute(
+                select(
+                    func.date(InsightRecord.created_at).label("date"),
+                    InsightRecord.risk,
+                    func.count().label("n"),
+                )
+                .where(InsightRecord.shadow == False)  # noqa: E712
+                .where(InsightRecord.created_at >= cutoff)
+                .where(InsightRecord.risk.in_(["WARNING", "CRITICAL", "WATCH"]))
+                .group_by(func.date(InsightRecord.created_at), InsightRecord.risk)
+                .order_by(func.date(InsightRecord.created_at))
+            ).all()
+        return [{"date": str(row.date), "risk": row.risk, "n": row.n} for row in rows]
+    except Exception as exc:
+        logger.warning("alert_rate_series failed: %s", exc)
+        return []
+
+
+def check_precision_degradation(
+    threshold: float = 0.60,
+    drop_pp: float = 0.10,
+    lookback_days: int = 7,
+    baseline_days: int = 30,
+) -> list[dict]:
+    """Detect agents whose recent precision has dropped significantly.
+
+    An agent is flagged when its lookback_days precision is both below
+    `threshold` AND has dropped by at least `drop_pp` from the baseline.
+    Agents with fewer than 5 recent samples are skipped.
+    """
+    now = _dt.datetime.utcnow()
+    recent   = per_agent_accuracy(since=now - _dt.timedelta(days=lookback_days))
+    baseline = per_agent_accuracy(since=now - _dt.timedelta(days=baseline_days))
+
+    alerts = []
+    for agent, r in recent.items():
+        prec_7d = r.get("precision")
+        if prec_7d is None or r.get("n_total", 0) < 5:
+            continue
+        prec_base = baseline.get(agent, {}).get("precision")
+        if prec_base is None:
+            continue
+        drop = prec_base - prec_7d
+        if prec_7d < threshold and drop >= drop_pp:
+            alerts.append({
+                "agent": agent,
+                "precision_recent": round(prec_7d, 4),
+                "precision_baseline": round(prec_base, 4),
+                "drop_pp": round(drop * 100, 1),
+                "n_recent": r["n_total"],
+            })
+    return alerts
 
 
 def _feedback_pairs() -> list[tuple[float, float]]:

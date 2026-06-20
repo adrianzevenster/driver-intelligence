@@ -214,3 +214,22 @@ def notify_if_configured(insight: DriverInsight) -> None:
     has_slack = bool(getattr(settings, "slack_webhook_url", ""))
     if has_email or has_telegram or has_slack:
         get_notifier().notify(insight)
+
+
+def send_system_alert(subject: str, plain: str) -> None:
+    """Send a plain-text system-level alert (not tied to a specific insight).
+
+    Silently no-ops when no delivery channel is configured.
+    """
+    has_email    = bool(getattr(settings, "smtp_username", "") and getattr(settings, "smtp_password", ""))
+    has_telegram = bool(getattr(settings, "telegram_bot_token", ""))
+    has_slack    = bool(getattr(settings, "slack_webhook_url", ""))
+    if not (has_email or has_telegram or has_slack):
+        return
+    notifier = get_notifier()
+    if has_email:
+        notifier._email(subject, plain, f"<pre style='font-family:monospace'>{plain}</pre>")
+    if has_telegram:
+        notifier._telegram(f"*{subject}*\n{plain}")
+    if has_slack:
+        notifier._slack(f"*{subject}*\n{plain}")

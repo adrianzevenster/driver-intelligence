@@ -216,6 +216,87 @@ def _session_id_for_race(year: int, round_num: int, track_id: str) -> list[str]:
     ]
 
 
+def label_quiet_stints(year: int, round_num: int) -> int:
+    """Label SUPPRESS/LOW insights that had no incident as correct (negative class).
+
+    For each insight with risk LOW or policy SUPPRESS that has no existing feedback
+    and was generated at least 2 hours before now, writes a
+    FeedbackRecord(correct=True, rating=4, submitted_by='null_outcome').
+    This prevents the flywheel from being biased purely toward incidents.
+
+    Returns the number of new FeedbackRecord rows written.
+    """
+    import datetime as _dt
+    try:
+        from sqlalchemy import select
+        from f1di.storage.database import db_session
+        from f1di.storage.models import FeedbackRecord, InsightRecord
+    except Exception as exc:
+        logger.warning("label_quiet_stints: db unavailable: %s", exc)
+        return 0
+
+    candidate_prefixes = [
+        f"live_{year}_{round_num}",
+        f"replay_{year}_{round_num}",
+        f"f1_{year}_{round_num}",
+        f"fastf1_{year}_{round_num}",
+    ]
+
+    cutoff = _dt.datetime.utcnow() - _dt.timedelta(hours=2)
+    n_written = 0
+
+    try:
+        with db_session() as db:
+            for prefix in candidate_prefixes:
+                stmt = (
+                    select(InsightRecord)
+                    .where(
+                        InsightRecord.session_id.like(f"{prefix}%"),
+                        InsightRecord.created_at <= cutoff,
+                    )
+                    .where(
+                        (InsightRecord.risk == "LOW")
+                        | (InsightRecord.policy == "SUPPRESS")
+                        | (InsightRecord.risk == "INFO")
+                    )
+                )
+                insights = db.execute(stmt).scalars().all()
+
+                for ins in insights:
+                    existing = db.execute(
+                        select(FeedbackRecord).where(
+                            FeedbackRecord.insight_id == ins.insight_id,
+                        )
+                    ).scalar_one_or_none()
+                    if existing:
+                        continue
+
+                    fb = FeedbackRecord(
+                        insight_id=ins.insight_id,
+                        rating=4,
+                        correct=True,
+                        comment=f"null_outcome year={year} round={round_num}",
+                        submitted_by="null_outcome",
+                    )
+                    db.add(fb)
+                    n_written += 1
+
+            if n_written > 0:
+                try:
+                    db.commit()
+                except Exception as exc:
+                    logger.warning("label_quiet_stints commit failed: %s", exc)
+                    db.rollback()
+                    n_written = 0
+    except Exception as exc:
+        logger.error("label_quiet_stints db error year=%s round=%s: %s", year, round_num, exc)
+        return 0
+
+    if n_written > 0:
+        logger.info("null_outcome_labels year=%d round=%d n=%d", year, round_num, n_written)
+    return n_written
+
+
 def label_race(
     year: int,
     round_num: int,

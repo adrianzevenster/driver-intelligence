@@ -46,3 +46,29 @@ CALIBRATION_REGRESSION_BLOCKED = Gauge(
     "f1di_calibration_regression_blocked",
     "1 if the most recent retrain was blocked due to ECE regression, 0 otherwise",
 )
+
+import threading as _threading
+from collections import deque as _deque
+
+_LATENCY_LOCK = _threading.Lock()
+_LATENCY_WINDOW: _deque = _deque(maxlen=200)
+
+
+def record_insight_latency(ms: float) -> None:
+    """Record one insight latency sample into the rolling window."""
+    with _LATENCY_LOCK:
+        _LATENCY_WINDOW.append(ms)
+
+
+def latency_percentiles() -> dict:
+    """Return p50/p95/p99 from the rolling window of recent insight latencies."""
+    with _LATENCY_LOCK:
+        vals = sorted(_LATENCY_WINDOW)
+    if not vals:
+        return {"p50": None, "p95": None, "p99": None, "n": 0}
+    n = len(vals)
+
+    def _p(pct: float) -> float:
+        return round(vals[min(int(pct / 100 * n), n - 1)], 1)
+
+    return {"p50": _p(50), "p95": _p(95), "p99": _p(99), "n": n}

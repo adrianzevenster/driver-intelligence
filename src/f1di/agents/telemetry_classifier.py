@@ -291,3 +291,45 @@ def train_from_labels(
         "prior_accuracy": round(clf.prior_cv_accuracy, 4) if clf.prior_cv_accuracy is not None else None,
         "transfer_lift": round(clf.accuracy - clf.prior_cv_accuracy, 4) if clf.prior_cv_accuracy is not None else None,
     }
+
+
+_INCREMENTAL_PATH = Path("data/calibration/telemetry_incremental.pkl")
+
+
+def partial_fit_from_labels(output_path: Path = _INCREMENTAL_PATH) -> dict:
+    """Incrementally update an SGDClassifier with new real labels (warm-start)."""
+    import pickle as _pickle
+    from sklearn.linear_model import SGDClassifier
+    from sklearn.metrics import accuracy_score
+    from sklearn.preprocessing import StandardScaler
+
+    X_real, y_real = _load_labeled_from_db()
+    if len(y_real) < 4:
+        return {"skipped": True, "reason": "< 4 real labels"}
+
+    all_classes = np.array(sorted(_LABEL_MAP.keys()), dtype=np.int32)
+
+    clf, scaler = None, None
+    if output_path.exists():
+        try:
+            with open(output_path, "rb") as fh:
+                clf, scaler = _pickle.load(fh)
+        except Exception:
+            clf, scaler = None, None
+
+    if clf is None:
+        scaler = StandardScaler()
+        clf = SGDClassifier(loss="log_loss", random_state=42, max_iter=1)
+        X_syn, y_syn = generate_synthetic(n=400, seed=0)
+        X_all = np.vstack([X_syn, X_real])
+        y_all = np.concatenate([y_syn, y_real])
+        clf.partial_fit(scaler.fit_transform(X_all), y_all, classes=all_classes)
+    else:
+        clf.partial_fit(scaler.transform(X_real), y_real)
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(output_path, "wb") as fh:
+        _pickle.dump((clf, scaler), fh)
+
+    acc = float(accuracy_score(y_real, clf.predict(scaler.transform(X_real))))
+    return {"n_real": len(y_real), "accuracy": acc, "incremental": True}

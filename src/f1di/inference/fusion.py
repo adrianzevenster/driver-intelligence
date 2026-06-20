@@ -101,6 +101,13 @@ class InferenceOrchestrator:
             confidence = round(0.6 * meta_conf + 0.4 * confidence, 4)
             uncertainty = round(max(0.0, 1.0 - confidence), 4)
 
+        shap_explanation: list[dict] = []
+        try:
+            from f1di.inference.explainer import explain_findings
+            shap_explanation = explain_findings(findings, confidence)
+        except Exception:
+            pass
+
         recommendation = self._rules_recommendation(highest.risk, findings, calibration_features)
         if not skip_llm and settings.llm_backend != "rules" and not settings.deterministic:
             recommendation = self._llm_recommendation(
@@ -134,6 +141,7 @@ class InferenceOrchestrator:
             findings=findings,
             policy=policy,
             latency_ms=(time.perf_counter() - start) * 1000,
+            shap_explanation=shap_explanation,
         )
 
     def _llm_recommendation(

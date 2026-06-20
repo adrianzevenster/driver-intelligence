@@ -40,6 +40,8 @@ from f1di.observability.metrics import (
     INSIGHTS_TOTAL,
     RAG_RESULTS,
     READY_CHECK_TOTAL,
+    latency_percentiles,
+    record_insight_latency,
 )
 
 try:
@@ -356,6 +358,7 @@ def create_insight(
             logger.debug("Notification skipped: %s", exc)
 
     INSIGHT_LATENCY.observe(insight.latency_ms)
+    record_insight_latency(insight.latency_ms)
     INSIGHTS_TOTAL.labels(risk=insight.risk.value, policy=insight.policy, audience=audience.value).inc()
     CONFIDENCE_GAUGE.set(insight.confidence)
     RAG_RESULTS.observe(len(insight.evidence))
@@ -562,6 +565,54 @@ def judge_correlation() -> dict[str, Any]:
         "judge_mean": round(mean_s, 4),
         "human_accuracy": round(mean_c, 4),
     }
+
+
+@app.get("/v1/ml/precision-degradation")
+def precision_degradation() -> list[dict[str, Any]]:
+    """Return agents whose recent (7-day) precision has degraded vs the 30-day baseline."""
+    from f1di.confidence.online import check_precision_degradation
+    return check_precision_degradation()
+
+
+@app.get("/v1/ml/synthetic-audit")
+def synthetic_audit_result() -> dict:
+    """Return the most recent synthetic label quality audit, or trigger one if stale/missing."""
+    from f1di.evaluation.synthetic_audit import load_last_audit, run_audit
+    existing = load_last_audit()
+    if existing is None:
+        try:
+            agents = run_audit()
+            existing = load_last_audit() or {"agents": agents}
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail=f"Audit failed: {exc}")
+    return existing
+
+
+@app.get("/v1/ml/meta-weights")
+def meta_learner_weights() -> dict[str, Any]:
+    """Return the meta-learner feature importances and model metadata."""
+    meta_path = Path("data/calibration/meta_learner.pkl")
+    if not meta_path.exists():
+        raise HTTPException(status_code=404, detail="Meta-learner not yet trained — need ≥20 real labels.")
+    try:
+        from f1di.inference.meta_learner import MetaLearner
+        meta = MetaLearner.load(meta_path)
+        return {
+            "feature_importances": meta.get_feature_importances(),
+            "n_train": meta.n_train,
+            "n_real": meta.n_real,
+            "accuracy": round(meta.accuracy, 4),
+            "active_in_inference": meta.n_real >= 20,
+            "model_type": getattr(meta, "model_type", "unknown"),
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/v1/ml/latency")
+def insight_latency_percentiles() -> dict[str, Any]:
+    """Return p50/p95/p99 insight latency from the rolling window (last 200 requests)."""
+    return latency_percentiles()
 
 
 @app.get("/v1/ml/quality")
@@ -1476,6 +1527,19 @@ def shadow_promote(
     return {"promoted": True, **record}
 
 
+@app.get("/v1/shadow/promotion-history")
+def shadow_promotion_history() -> list[dict[str, Any]]:
+    """Return the log of past shadow challenger promotions (manual and auto)."""
+    import json as _json
+    promotions_path = Path("data/calibration/promotions.json")
+    if not promotions_path.exists():
+        return []
+    try:
+        return _json.loads(promotions_path.read_text())
+    except Exception:
+        return []
+
+
 # ---------------------------------------------------------------------------
 # Calibrator
 # ---------------------------------------------------------------------------
@@ -1575,9 +1639,11 @@ def drift_status() -> dict:
 
 @app.get("/v1/live/performance")
 def live_performance() -> dict:
-    """Bundle per-agent accuracy, calibration ECE history, and feature drift for the live-performance card."""
+    """Bundle per-agent accuracy, calibration ECE history, feature drift, judge correlation,
+    rolling precision series, and reliability diagram data for the live-performance card."""
+    import datetime as _datetime
     import json as _json
-    from f1di.confidence.online import per_agent_accuracy
+    from f1di.confidence.online import per_agent_accuracy, reliability_diagram_data, rolling_precision_series
     from f1di.observability.drift import get_tracker
 
     ece_history: list[dict] = []
@@ -1597,10 +1663,58 @@ def live_performance() -> dict:
         except Exception:
             pass
 
+    # Inline judge correlation — avoids an internal HTTP round-trip.
+    judge_corr: dict = {"r": None, "n": 0}
+    try:
+        from f1di.storage.database import db_session
+        from f1di.storage.models import FeedbackRecord, JudgeScoreRecord
+        from sqlalchemy import select as _select
+        with db_session() as _session:
+            _rows = _session.execute(
+                _select(JudgeScoreRecord.mean_score, FeedbackRecord.correct)
+                .join(FeedbackRecord, JudgeScoreRecord.insight_id == FeedbackRecord.insight_id)
+                .where(FeedbackRecord.correct.isnot(None))
+            ).all()
+        _n = len(_rows)
+        if _n >= 3:
+            _scores = [r.mean_score for r in _rows]
+            _correct = [1.0 if r.correct else 0.0 for r in _rows]
+            _ms = sum(_scores) / _n
+            _mc = sum(_correct) / _n
+            _num = sum((s - _ms) * (c - _mc) for s, c in zip(_scores, _correct))
+            _ds = sum((s - _ms) ** 2 for s in _scores) ** 0.5
+            _dc = sum((c - _mc) ** 2 for c in _correct) ** 0.5
+            _r = round(_num / (_ds * _dc), 4) if _ds * _dc > 1e-9 else 0.0
+            judge_corr = {
+                "r": _r,
+                "n": _n,
+                "interpretation": (
+                    "strong" if abs(_r) >= 0.5
+                    else "moderate" if abs(_r) >= 0.3
+                    else "weak" if abs(_r) >= 0.1
+                    else "no signal"
+                ),
+            }
+        else:
+            judge_corr = {"r": None, "n": _n}
+    except Exception:
+        pass
+
+    since_7d = _datetime.datetime.utcnow() - _datetime.timedelta(days=7)
+    from f1di.confidence.online import alert_rate_series, per_driver_precision
+    from f1di.evaluation.synthetic_audit import load_last_audit
     return {
         "agent_accuracy": per_agent_accuracy(),
+        "agent_accuracy_7d": per_agent_accuracy(since=since_7d),
+        "rolling_precision": rolling_precision_series(days=14),
         "ece_history": ece_history,
         "drift": get_tracker().status(),
+        "judge_correlation": judge_corr,
+        "reliability": reliability_diagram_data(),
+        "alert_rate": alert_rate_series(days=30),
+        "per_driver_precision": per_driver_precision(since=since_7d),
+        "synthetic_audit": load_last_audit(),
+        "latency": latency_percentiles(),
     }
 
 
@@ -1650,12 +1764,18 @@ def feedback_stats() -> dict:
                     (FeedbackRecord.correct.isnot(None)) | (FeedbackRecord.rating.isnot(None))
                 )
             ).scalar_one()
+        null_outcome = session.execute(
+            select(func.count())
+            .select_from(FeedbackRecord)
+            .where(FeedbackRecord.submitted_by == "null_outcome")
+        ).scalar_one()
         stats["total"] = paired   # show paired count so progress bar matches retrain gate
         stats["correct"] = correct
         stats["incorrect"] = incorrect
         stats["with_rating"] = rating_agg[0] or 0
         stats["avg_rating"] = round(float(rating_agg[1]), 2) if rating_agg[1] else None
         stats["ready_to_retrain"] = paired >= stats["min_for_retrain"]
+        stats["null_outcome_labels"] = null_outcome
     except Exception as exc:
         logger.debug("feedback_stats DB query failed: %s", exc)
 
