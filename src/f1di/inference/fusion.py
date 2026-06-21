@@ -5,8 +5,6 @@ import time
 import uuid
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
-
 from f1di.agents.battery import BatteryAgent
 from f1di.agents.fuel import FuelAgent
 from f1di.agents.safety_car import SafetyCarAgent
@@ -19,6 +17,8 @@ from f1di.domain.schemas import DriverInsight, InsightAudience, RiskLevel, Telem
 from f1di.features.extractor import extract_features
 from f1di.rag import make_retriever
 from f1di.rag.store import HybridMemoryRetriever, load_markdown_knowledge
+
+logger = logging.getLogger(__name__)
 
 RISK_ORDER = [RiskLevel.INFO, RiskLevel.WATCH, RiskLevel.WARNING, RiskLevel.CRITICAL]
 
