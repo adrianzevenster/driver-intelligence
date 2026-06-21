@@ -447,18 +447,27 @@ def insight_history(
 
 @app.get("/v1/insights/{insight_id}/judge")
 def get_judge_score(insight_id: str) -> dict[str, Any]:
-    """Return the LLM judge score for a single insight, or 404 if not yet scored."""
+    """Return the LLM judge score for a single insight, or pending while scoring."""
     try:
         from f1di.storage.database import db_session
-        from f1di.storage.repository import get_judge_score as _get
+        from f1di.storage.repository import get_judge_score as _get, insight_exists
     except ImportError:
         raise HTTPException(status_code=503, detail="Persistence layer not installed.")
     with db_session() as session:
         record = _get(session, insight_id)
+        exists = record is not None or insight_exists(session, insight_id)
     if record is None:
-        raise HTTPException(status_code=404, detail="Judge score not yet available.")
+        if not exists:
+            raise HTTPException(status_code=404, detail="Insight not found.")
+        return {
+            "insight_id": insight_id,
+            "status": "pending",
+            "scored": False,
+        }
     return {
         "insight_id": record.insight_id,
+        "status": "scored",
+        "scored": True,
         "safety": record.safety,
         "actionability": record.actionability,
         "register": record.register,

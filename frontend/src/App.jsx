@@ -731,13 +731,21 @@ function JudgeScoreWidget({ insightId }) {
   useEffect(() => {
     if (!insightId) return;
     let cancelled = false;
+    retriesRef.current = 0;
 
     async function poll() {
       if (cancelled) return;
       const res = await fetch(`/api/v1/insights/${insightId}/judge`).catch(() => null);
       if (cancelled) return;
       if (res && res.ok) {
-        setScore(await res.json());
+        const data = await res.json();
+        if (data?.status === 'pending' || data?.scored === false) {
+          retriesRef.current += 1;
+          if (retriesRef.current < 8) setTimeout(poll, 2500);
+          else setPending(false);
+          return;
+        }
+        setScore(data);
         setPending(false);
         return;
       }

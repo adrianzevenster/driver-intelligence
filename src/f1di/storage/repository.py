@@ -219,6 +219,12 @@ def get_judge_score(session: Session, insight_id: str) -> JudgeScoreRecord | Non
     )
 
 
+def insight_exists(session: Session, insight_id: str) -> bool:
+    return session.scalar(
+        select(InsightRecord.id).where(InsightRecord.insight_id == insight_id).limit(1)
+    ) is not None
+
+
 def get_judge_scores_bulk(session: Session, insight_ids: list[str]) -> dict[str, float]:
     """Return {insight_id: mean_score} for all scored insights in the given list."""
     if not insight_ids:

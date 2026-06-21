@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import uuid
 from pathlib import Path
 from unittest.mock import patch
 
@@ -22,6 +23,83 @@ def test_judge_correlation_returns_shape_when_no_data():
     if result["n"] < 3:
         assert result["r"] is None
         assert "message" in result
+
+
+def test_judge_score_pending_payload_for_saved_unscored_insight():
+    _init_db()
+    from f1di.api.main import get_judge_score
+    from f1di.storage.database import db_session
+    from f1di.storage.models import InsightRecord
+
+    insight_id = str(uuid.uuid4())
+    with db_session() as session:
+        session.add(
+            InsightRecord(
+                insight_id=insight_id,
+                session_id="test-session",
+                driver_id="VER",
+                track_id="silverstone",
+                risk="INFO",
+                confidence=0.7,
+                uncertainty=0.3,
+                policy="ALLOW",
+                audience="DRIVER",
+                recommendation="Maintain current delta.",
+                latency_ms=12.0,
+            )
+        )
+
+    result = get_judge_score(insight_id)
+
+    assert result == {
+        "insight_id": insight_id,
+        "status": "pending",
+        "scored": False,
+    }
+
+
+def test_judge_score_returns_scored_payload():
+    _init_db()
+    from f1di.api.main import get_judge_score
+    from f1di.storage.database import db_session
+    from f1di.storage.models import InsightRecord, JudgeScoreRecord
+
+    insight_id = str(uuid.uuid4())
+    with db_session() as session:
+        session.add(
+            InsightRecord(
+                insight_id=insight_id,
+                session_id="test-session",
+                driver_id="VER",
+                track_id="silverstone",
+                risk="WARNING",
+                confidence=0.8,
+                uncertainty=0.2,
+                policy="ALLOW",
+                audience="DRIVER",
+                recommendation="Brake migration is drifting; reduce entry speed.",
+                latency_ms=15.0,
+            )
+        )
+        session.add(
+            JudgeScoreRecord(
+                insight_id=insight_id,
+                safety=0.9,
+                actionability=0.8,
+                register=0.7,
+                calibration=0.6,
+                mean_score=0.75,
+                rationale="Good score.",
+            )
+        )
+
+    result = get_judge_score(insight_id)
+
+    assert result["insight_id"] == insight_id
+    assert result["status"] == "scored"
+    assert result["scored"] is True
+    assert result["mean_score"] == 0.75
+    assert result["rationale"] == "Good score."
 
 
 def test_fit_thresholds_empty_telemetry():
