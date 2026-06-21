@@ -97,6 +97,16 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         logger.debug("Could not seed calibration metrics: %s", exc)
 
+    # Pre-warm the orchestrator so the first user request isn't blocked by the
+    # 60-second Qdrant knowledge upsert (SentenceTransformer + 74 docs).
+    try:
+        import asyncio
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, get_orchestrator)
+        logger.info("Orchestrator pre-warmed.")
+    except Exception as exc:
+        logger.warning("Orchestrator pre-warm failed: %s", exc)
+
     # Start background ingestion if enabled.
     scheduler = None
     if settings.ingestion_auto_enabled:

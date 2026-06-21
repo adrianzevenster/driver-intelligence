@@ -73,21 +73,26 @@ def save_best_params(
     n_trials: int,
 ) -> None:
     """Persist Optuna results to data/calibration/{agent}_best_params.json."""
-    _BEST_PARAMS_DIR.mkdir(parents=True, exist_ok=True)
-    (_BEST_PARAMS_DIR / f"{agent}_best_params.json").write_text(
-        json.dumps(
-            {
-                "agent": agent,
-                "params": params,
-                "cv_accuracy": round(best_score, 4),
-                "baseline_cv_accuracy": round(baseline_score, 4),
-                "improvement_pp": round((best_score - baseline_score) * 100, 2),
-                "n_trials": n_trials,
-                "tuned_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            },
-            indent=2,
+    try:
+        _BEST_PARAMS_DIR.mkdir(parents=True, exist_ok=True)
+        (_BEST_PARAMS_DIR / f"{agent}_best_params.json").write_text(
+            json.dumps(
+                {
+                    "agent": agent,
+                    "params": params,
+                    "cv_accuracy": round(best_score, 4),
+                    "baseline_cv_accuracy": round(baseline_score, 4),
+                    "improvement_pp": round((best_score - baseline_score) * 100, 2),
+                    "n_trials": n_trials,
+                    "tuned_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                },
+                indent=2,
+            )
         )
-    )
+    except OSError as exc:
+        logger.warning(
+            "save_best_params skipped — cannot write calibration dir (permission issue?): %s", exc
+        )
 
 
 def build_model(model_type: str = "logistic", max_depth: int = 4, agent: str | None = None):
@@ -315,7 +320,11 @@ def record_history(
     history_path: Path = _HISTORY_PATH, threshold: float | None = None,
 ) -> None:
     """Append one classifier fit entry to model_history.json."""
-    history_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        history_path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        logger.warning("record_history skipped — cannot create calibration dir: %s", exc)
+        return
     try:
         entries: list = json.loads(history_path.read_text()) if history_path.exists() else []
     except Exception:
@@ -342,8 +351,11 @@ def record_history(
         "blocked": blocked,
         "block_threshold": round(threshold, 4) if threshold is not None else None,
     })
-    history_path.write_text(json.dumps(entries, indent=2))
-    logger.info("model_history updated: agent=%s version=%s acc=%.4f", agent, getattr(clf, "model_version", "?"), clf.accuracy)
+    try:
+        history_path.write_text(json.dumps(entries, indent=2))
+        logger.info("model_history updated: agent=%s version=%s acc=%.4f", agent, getattr(clf, "model_version", "?"), clf.accuracy)
+    except OSError as exc:
+        logger.warning("record_history write failed — permission issue on volume: %s", exc)
 
 
 def save_with_snapshot(
@@ -380,7 +392,20 @@ def save_with_snapshot(
     ts = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
     stem = live_path.stem
     versioned_path = live_path.parent / f"{stem}_{ts}.pkl"
-    live_path.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        live_path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        logger.warning(
+            "save_with_snapshot skipped — cannot create calibration dir (permission issue?): %s", exc
+        )
+        return {
+            "blocked": False,
+            "versioned_path": str(versioned_path),
+            "accuracy": round(clf.accuracy, 4),
+            "prev_accuracy": None,
+            "threshold": round(min_accuracy_delta, 4),
+        }
 
     prev_accuracy: float | None = None
     prev_std: float | None = None
@@ -395,7 +420,17 @@ def save_with_snapshot(
             pass
 
     # Always write the versioned copy for audit.
-    versioned_path.write_bytes(pickle.dumps(clf))
+    try:
+        versioned_path.write_bytes(pickle.dumps(clf))
+    except OSError as exc:
+        logger.warning("save_with_snapshot write failed — permission issue on volume: %s", exc)
+        return {
+            "blocked": False,
+            "versioned_path": str(versioned_path),
+            "accuracy": round(clf.accuracy, 4),
+            "prev_accuracy": round(prev_accuracy, 4) if prev_accuracy is not None else None,
+            "threshold": round(min_accuracy_delta, 4),
+        }
 
     new_std = getattr(clf, "cv_accuracy_std", None)
     new_n_splits = getattr(clf, "cv_n_splits", 0) or 0
@@ -411,11 +446,16 @@ def save_with_snapshot(
     )
 
     if not blocked:
-        shutil.copy2(versioned_path, live_path)
-        logger.info(
-            "%s saved: acc=%.4f n_real=%d versioned=%s",
-            stem, clf.accuracy, clf.n_real, versioned_path.name,
-        )
+        try:
+            shutil.copy2(versioned_path, live_path)
+            logger.info(
+                "%s saved: acc=%.4f n_real=%d versioned=%s",
+                stem, clf.accuracy, clf.n_real, versioned_path.name,
+            )
+        except OSError as exc:
+            logger.warning(
+                "%s copy to live path failed — permission issue on volume: %s", stem, exc
+            )
     else:
         logger.warning(
             "%s retrain BLOCKED — new acc %.4f regressed from %.4f (delta=%.4f > threshold=%.4f); "

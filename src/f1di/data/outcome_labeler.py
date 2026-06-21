@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import logging
 import os
+import traceback
 import warnings
 from collections import defaultdict
 from dataclasses import dataclass
@@ -321,6 +322,21 @@ def label_race(
             n_labeled_incorrect=0, n_no_match=0, incidents_found=[],
         )
 
+    try:
+        return _label_race_inner(fastf1, canonical_track_id, year, round_num, dry_run=dry_run)
+    except Exception:
+        logger.error(
+            "outcome_labeler_unhandled year=%s round=%s:\n%s",
+            year, round_num, traceback.format_exc(),
+        )
+        return OutcomeReport(
+            year=year, round_num=round_num, track_id="unknown",
+            n_insights_examined=0, n_labeled_correct=0,
+            n_labeled_incorrect=0, n_no_match=0, incidents_found=[],
+        )
+
+
+def _label_race_inner(fastf1, canonical_track_id, year: int, round_num: int, *, dry_run: bool) -> OutcomeReport:
     os.makedirs(_CACHE_DIR, exist_ok=True)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")

@@ -191,9 +191,14 @@ class TireStrategyAgent(RaceAgent):
             if ood > 4.0:
                 logger.warning("tire: OOD features (max_z=%.1f) — confidence penalised", ood)
                 conf = conf * 0.85
-        # Safety floor: never let the classifier suppress a hard CRITICAL condition
-        # below WARNING (or WARNING below WATCH). Rules act as a minimum guarantee.
-        if risk_str == "INFO":
+        # Safety floor: classifier acts as a minimum guarantee — rules can only raise.
+        # CRITICAL floor first: extreme wear + grip collapse is always critical regardless
+        # of what the classifier predicted (catches classifiers that under-fire on rare
+        # high-wear embedded fixtures).
+        if wear_pressure > t.wear_critical and features.grip_estimate < 0.55:
+            risk_str = "CRITICAL"
+            conf = max(conf, 0.82)
+        elif risk_str == "INFO":
             if wear_pressure > t.wear_critical and features.grip_estimate < 0.62:
                 risk_str = "WARNING"
                 conf = max(conf, 0.68)
@@ -208,6 +213,12 @@ class TireStrategyAgent(RaceAgent):
             if wear_pressure > t.wear_critical and features.grip_estimate < 0.62:
                 risk_str = "WARNING"
                 conf = max(conf, 0.68)
+            elif wear_pressure > t.wear_warning and features.grip_estimate < 0.72:
+                # Wear above the warning band + grip degrading must be at least WARNING.
+                # Guard grip < 0.72 prevents false positives on high-wear/stable-grip tracks
+                # (e.g. Silverstone with a lower circuit-specific wear_warning).
+                risk_str = "WARNING"
+                conf = max(conf, 0.70)
         summary, feat_dict = _summary_and_extras(risk_str, features, wear_pressure, projected_fl, projected_fr)
         conf = min(0.92, max(0.48, conf))
         class_probs = {cls: round(float(p), 4) for cls, p in zip(clf.classes_, proba)}

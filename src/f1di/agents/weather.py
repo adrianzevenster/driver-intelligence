@@ -68,6 +68,13 @@ class WeatherAgent(RaceAgent):
                 if ood > 4.0:
                     logger.warning("weather: OOD features (max_z=%.1f) — confidence penalised", ood)
                     conf = conf * 0.85
+            # Hard override: rain above the warning threshold must fire at least WARNING.
+            # The classifier deprioritises rain when crosswind is low, but a rain ≥ crossover
+            # reading is always a strategy-relevant signal regardless of wind direction.
+            t = _thresh.get(window.track_id)
+            if features.rain_intensity >= t.rain_warning and risk_str in ("INFO", "WATCH"):
+                risk_str = "WARNING"
+                conf = max(conf, 0.76 + (0.04 if features.grip_estimate < 0.65 else 0.0))
             conf = min(0.88, max(0.48, conf))
             summary, feat_dict = _summary(risk_str, features)
             class_probs = {cls: round(float(p), 4) for cls, p in zip(clf.classes_, proba)}
