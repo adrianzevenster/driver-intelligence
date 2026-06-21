@@ -299,7 +299,12 @@ def _load_race_session(year: int, round_num: int, session_type: str = "R"):
     """
     ff1 = _ff1()
     session = ff1.get_session(year, round_num, _check_session_type(session_type))
-    session.load(laps=True, telemetry=True, weather=True, messages=False)
+    try:
+        session.load(laps=True, telemetry=True, weather=True, messages=False)
+    except Exception as exc:
+        raise ValueError(
+            f"Failed to load session data for {year} R{round_num}: {exc}"
+        ) from exc
     return session
 
 
@@ -395,26 +400,43 @@ def build_window(
     driver_laps = session.laps.pick_drivers(driver.upper())
     valid_laps = driver_laps[driver_laps["LapTime"].notna()]
 
-    if lap_number is None:
-        anchor = (
-            valid_laps.loc[valid_laps["LapTime"].idxmin()]
-            if len(valid_laps) > 0
-            else driver_laps.iloc[-1]
-        )
-        end_lap = int(anchor["LapNumber"])
-    else:
-        end_lap = lap_number
-    start_lap = max(1, end_lap - window_laps + 1)
+    weather = _session_weather(session)
 
-    window = _window_for_lap_range(
-        driver_laps, driver, track_id, session_id, start_lap, end_lap,
-        _session_weather(session), n_samples,
-    )
-    if window is None:
-        raise ValueError(
-            f"No telemetry for {driver} laps {start_lap}-{end_lap} in {year} R{round_num}"
+    if lap_number is not None:
+        start_lap = max(1, lap_number - window_laps + 1)
+        window = _window_for_lap_range(
+            driver_laps, driver, track_id, session_id, start_lap, lap_number, weather, n_samples,
         )
-    return window
+        if window is None:
+            raise ValueError(
+                f"No telemetry for {driver} laps {start_lap}-{lap_number} in {year} R{round_num}"
+            )
+        return window
+
+    # Auto-select: prefer fastest lap, but fall back through all valid laps
+    # (sorted fastest → slowest) so a data gap doesn't cause a hard failure.
+    candidate_laps = (
+        list(valid_laps.sort_values("LapTime")["LapNumber"].astype(int))
+        if len(valid_laps) > 0
+        else list(driver_laps["LapNumber"].dropna().astype(int))
+    )
+    # Also try the driver's last lap in case the fastest lap has no telemetry.
+    if candidate_laps:
+        last_lap = int(driver_laps["LapNumber"].max())
+        if last_lap not in candidate_laps:
+            candidate_laps.append(last_lap)
+
+    for end_lap in candidate_laps:
+        start_lap = max(1, end_lap - window_laps + 1)
+        window = _window_for_lap_range(
+            driver_laps, driver, track_id, session_id, start_lap, end_lap, weather, n_samples,
+        )
+        if window is not None:
+            return window
+
+    raise ValueError(
+        f"No telemetry found for {driver} in {year} R{round_num}"
+    )
 
 
 def build_all_lap_windows(

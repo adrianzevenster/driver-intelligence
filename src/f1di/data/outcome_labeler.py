@@ -336,9 +336,17 @@ def label_race(
                 n_labeled_incorrect=0, n_no_match=0, incidents_found=[],
             )
 
-    location = session.event.get("Location", "")
-    track_id = canonical_track_id(location)
-    incidents = _extract_incidents(session)
+    try:
+        location = str(session.event.get("Location", "") or "")
+        track_id = canonical_track_id(location)
+        incidents = _extract_incidents(session)
+    except Exception as exc:
+        logger.error("outcome_labeler_parse_failed year=%s round=%s: %s", year, round_num, exc)
+        return OutcomeReport(
+            year=year, round_num=round_num, track_id="unknown",
+            n_insights_examined=0, n_labeled_correct=0,
+            n_labeled_incorrect=0, n_no_match=0, incidents_found=[],
+        )
 
     logger.info(
         "outcome_labeler found %d incidents  year=%s round=%s track=%s",

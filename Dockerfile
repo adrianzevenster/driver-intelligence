@@ -25,8 +25,8 @@ COPY alembic.ini ./
 COPY --from=frontend-build /app/frontend/dist ./frontend/dist
 RUN pip install --no-cache-dir --no-deps -e .
 RUN useradd --create-home --shell /usr/sbin/nologin appuser && \
-    mkdir -p /app/data/storage && \
-    chown -R appuser /app/data/storage /app/.cache
+    mkdir -p /app/data/storage /app/data/calibration && \
+    chown -R appuser /app/data /app/.cache
 USER appuser
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=2).read()"
