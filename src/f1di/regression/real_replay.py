@@ -205,7 +205,7 @@ def evaluate_cases(
 ) -> dict[str, Any]:
     rows = []
     for case in cases:
-        insight = orchestrator.analyze(window_from_case(case))
+        insight = orchestrator.analyze(window_from_case(case), skip_llm=True, record_drift=False)
         expected_agents = set(case.get("expected_agents", []))
         expected_sources = set(case.get("expected_sources", []))
         expected_policy = case.get("expected_policy")

@@ -2066,7 +2066,13 @@ def session_insight(
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
-    insight = get_orchestrator().analyze(window, audience=audience)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Session data error: {exc}")
+    try:
+        insight = get_orchestrator().analyze(window, audience=audience)
+    except Exception as exc:
+        logger.exception("session_insight analyze failed driver=%s year=%s round=%s", driver, year, round_num)
+        raise HTTPException(status_code=500, detail=f"Inference error: {exc}")
     _persist_insight(insight, window)
     return insight
 

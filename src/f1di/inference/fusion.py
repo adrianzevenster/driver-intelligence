@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import logging
 import time
 import uuid
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 from f1di.agents.battery import BatteryAgent
 from f1di.agents.fuel import FuelAgent
@@ -54,8 +57,11 @@ class InferenceOrchestrator:
                 if not self.retriever.documents:
                     self.retriever.add_documents(load_markdown_knowledge(kb_path))
             else:
-                # Qdrant: always upsert so new/updated circuit docs land with correct metadata
-                self.retriever.add_documents(load_markdown_knowledge(kb_path))
+                try:
+                    # Qdrant: always upsert so new/updated circuit docs land with correct metadata
+                    self.retriever.add_documents(load_markdown_knowledge(kb_path))
+                except Exception as exc:
+                    logger.warning("knowledge_upsert_failed (retrieval will degrade): %s", exc)
         self.agents = [TelemetryAnalysisAgent(), TireStrategyAgent(), WeatherAgent(), BatteryAgent(), SafetyCarAgent(), FuelAgent()]
         self.calibrator = self._load_calibrator()
 
