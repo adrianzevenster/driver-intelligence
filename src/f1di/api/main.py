@@ -1708,6 +1708,16 @@ def drift_status() -> dict:
     return get_tracker().status()
 
 
+@app.post("/v1/drift/refresh")
+def refresh_drift_status(limit: int = 200) -> dict:
+    """Reload the drift baseline from stored telemetry and return current status."""
+    from f1di.observability.drift import get_tracker
+
+    tracker = get_tracker()
+    seeded = tracker.seed_from_db(limit=limit)
+    return {"seeded": seeded, **tracker.status()}
+
+
 @app.get("/v1/live/performance")
 def live_performance() -> dict:
     """Bundle per-agent accuracy, calibration ECE history, feature drift, judge correlation,

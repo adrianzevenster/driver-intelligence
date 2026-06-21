@@ -129,6 +129,31 @@ def test_fit_thresholds_empty_telemetry():
     assert isinstance(result["skipped"], list)
 
 
+def test_refresh_drift_status_returns_seed_count(monkeypatch):
+    from f1di.api.main import refresh_drift_status
+    import f1di.observability.drift as drift
+
+    class FakeTracker:
+        def seed_from_db(self, limit: int = 200) -> int:
+            assert limit == 25
+            return 12
+
+        def status(self) -> dict:
+            return {
+                "ready": False,
+                "baseline_size": 12,
+                "min_baseline": 50,
+                "features": {},
+            }
+
+    monkeypatch.setattr(drift, "get_tracker", lambda: FakeTracker())
+
+    result = refresh_drift_status(limit=25)
+
+    assert result["seeded"] == 12
+    assert result["baseline_size"] == 12
+
+
 def test_capture_fixtures_no_incorrect_predictions():
     _init_db()
     from f1di.api.main import capture_fixtures_from_feedback

@@ -2475,14 +2475,36 @@ function HistoryPanel() {
 function DriftStatusCard() {
   const [drift, setDrift]     = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState('');
+  const [refreshedAt, setRefreshedAt] = useState(null);
+
+  function loadStatus() {
+    setLoading(true);
+    setError('');
+    fetch('/api/v1/drift/status')
+      .then(async r => {
+        if (!r.ok) throw new Error((await r.json().catch(() => null))?.detail ?? `Drift status failed (${r.status})`);
+        return r.json();
+      })
+      .then(d => { setDrift(d); setRefreshedAt(new Date()); })
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false));
+  }
 
   function refresh() {
     setLoading(true);
-    fetch('/api/v1/drift/status').then(r => r.ok ? r.json() : null)
-      .then(d => { setDrift(d); setLoading(false); }).catch(() => setLoading(false));
+    setError('');
+    fetch('/api/v1/drift/refresh', { method: 'POST' })
+      .then(async r => {
+        if (!r.ok) throw new Error((await r.json().catch(() => null))?.detail ?? `Drift refresh failed (${r.status})`);
+        return r.json();
+      })
+      .then(d => { setDrift(d); setRefreshedAt(new Date()); })
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false));
   }
 
-  useEffect(() => { refresh(); }, []);
+  useEffect(() => { loadStatus(); }, []);
 
   const features = drift?.features ? Object.entries(drift.features) : [];
   const alerted  = drift?.alerted_features ?? [];
@@ -2495,6 +2517,7 @@ function DriftStatusCard() {
           <RefreshCw size={11} className={loading ? 'spin' : ''} /> Refresh
         </button>
       </div>
+      {error && <p style={{ fontSize: 11, color: '#ef4444', margin: '0 0 8px' }}>{error}</p>}
 
       {!drift?.ready ? (
         <div>
@@ -2504,7 +2527,10 @@ function DriftStatusCard() {
           <div style={{ height: 4, borderRadius: 2, background: 'var(--card-border)', overflow: 'hidden' }}>
             <div style={{ width: `${Math.min(100, ((drift?.baseline_size ?? 0) / (drift?.min_baseline ?? 50)) * 100)}%`, height: '100%', background: '#3b82f6', borderRadius: 2 }} />
           </div>
-          <p className="muted" style={{ fontSize: 10, marginTop: 4 }}>Run analyses in Telemetry or Session tabs to build the baseline.</p>
+          <p className="muted" style={{ fontSize: 10, marginTop: 4 }}>
+            {drift?.seeded != null ? `Reloaded ${drift.seeded} stored telemetry rows.` : 'Run analyses in Telemetry or Session tabs to build the baseline.'}
+            {refreshedAt && ` Updated ${refreshedAt.toLocaleTimeString()}.`}
+          </p>
         </div>
       ) : (
         <>
@@ -2513,6 +2539,7 @@ function DriftStatusCard() {
               {alerted.length > 0 ? `⚠ ${alerted.length} feature${alerted.length > 1 ? 's' : ''} drifting` : '✓ No drift detected'}
             </span>
             <span className="muted" style={{ fontSize: 10 }}>baseline {drift.baseline_size} obs · updated {drift.last_updated?.slice(11, 19) ?? '—'}</span>
+            {drift.seeded != null && <span className="muted" style={{ fontSize: 10 }}>reloaded {drift.seeded} rows</span>}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             {features.sort(([, a], [, b]) => Math.abs(b.z_score) - Math.abs(a.z_score)).map(([feat, info]) => {
@@ -2554,6 +2581,9 @@ function CalibrationCard() {
   async function retrain() {
     setRetraining(true); setResult(null); setError('');
     try {
+      if (!getApiKey()) {
+        throw new Error('API key required. Open System → API Key and save the server F1DI_API_KEY value.');
+      }
       const res = await fetch('/api/v1/calibrator/retrain', { method: 'POST', headers: authHeaders() });
       const text = await res.text();
       let d = null;
@@ -2569,7 +2599,11 @@ function CalibrationCard() {
       setResult(d);
       load();
     } catch (e) {
-      setError(e.message);
+      setError(
+        e.message === 'Invalid or missing X-API-Key header'
+          ? 'API key rejected. Open System → API Key and save the server F1DI_API_KEY value.'
+          : e.message
+      );
     } finally {
       setRetraining(false);
     }
