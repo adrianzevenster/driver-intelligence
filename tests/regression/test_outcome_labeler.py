@@ -226,3 +226,37 @@ def test_outcome_report_asdict_is_serializable():
     )
     # Must be JSON-serializable (for the API endpoint)
     json.dumps(asdict(report))
+
+
+def test_outcome_label_endpoint_serializes_numpy_scalars():
+    import numpy as np
+
+    from f1di.api.main import label_race_outcomes
+    from f1di.data.outcome_labeler import OutcomeReport
+
+    report = OutcomeReport(
+        year=2026,
+        round_num=np.int64(1),
+        track_id="melbourne",
+        n_insights_examined=np.int64(2),
+        n_labeled_correct=np.int64(1),
+        n_labeled_incorrect=np.int64(1),
+        n_no_match=np.int64(0),
+        incidents_found=[
+            {
+                "driver": "VER",
+                "lap": np.int64(12),
+                "type": "safety_car",
+                "severity": np.float64(0.7),
+            }
+        ],
+    )
+
+    with patch("f1di.data.outcome_labeler.label_race", return_value=report):
+        result = label_race_outcomes(year=2026, round_num=1, dry_run=True)
+
+    assert result["round_num"] == 1
+    assert isinstance(result["round_num"], int)
+    assert isinstance(result["n_insights_examined"], int)
+    assert isinstance(result["incidents_found"][0]["lap"], int)
+    assert isinstance(result["incidents_found"][0]["severity"], float)

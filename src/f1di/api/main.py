@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json as _json
 import logging
+import math
 import pickle
+import threading
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -12,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, Request, Response, Security, UploadFile
+from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.security.api_key import APIKeyHeader
@@ -53,6 +56,22 @@ configure_logging(settings.log_level)
 logger = logging.getLogger("f1di.api")
 
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+
+def _json_ready(value: Any) -> Any:
+    """Convert scientific Python scalar/container values into JSON-safe values."""
+    if isinstance(value, dict):
+        return {str(_json_ready(k)): _json_ready(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_json_ready(v) for v in value]
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    if hasattr(value, "item"):
+        try:
+            return _json_ready(value.item())
+        except Exception:
+            return str(value)
+    return value
 
 
 def _require_api_key(key: str | None = Security(_api_key_header)) -> None:
@@ -285,6 +304,19 @@ class SessionCooldown:
 
 _cooldown = SessionCooldown(settings.alert_cooldown_laps)
 
+_judge_state_lock = threading.Lock()
+_judge_state: dict[str, str] = {}
+
+
+def _set_judge_state(insight_id: str, state: str) -> None:
+    with _judge_state_lock:
+        _judge_state[insight_id] = state
+
+
+def _get_judge_state(insight_id: str) -> str | None:
+    with _judge_state_lock:
+        return _judge_state.get(insight_id)
+
 
 def _run_shadow_v2(production_insight: DriverInsight, window: TelemetryWindow) -> None:
     """Re-score the production insight using the v2 challenger weights and save as shadow."""
@@ -314,6 +346,7 @@ def _run_shadow_v2(production_insight: DriverInsight, window: TelemetryWindow) -
 
 def _run_judge_background(insight_id: str, recommendation: str, risk: str, audience: str) -> None:
     """Score a recommendation with the LLM judge and persist the result."""
+    _set_judge_state(insight_id, "pending")
     try:
         from f1di.evaluation.llm_judge import evaluate_recommendation
         from f1di.storage.database import db_session
@@ -321,6 +354,7 @@ def _run_judge_background(insight_id: str, recommendation: str, risk: str, audie
 
         score = evaluate_recommendation(recommendation, risk=risk, audience=audience)
         if score is None:
+            _set_judge_state(insight_id, "failed")
             return
         with db_session() as session:
             save_judge_score(
@@ -333,9 +367,25 @@ def _run_judge_background(insight_id: str, recommendation: str, risk: str, audie
                 mean_score=score.mean,
                 rationale=score.rationale,
             )
+        _set_judge_state(insight_id, "scored")
         logger.debug("Judge scored insight %s: mean=%.3f", insight_id, score.mean)
     except Exception as exc:
+        _set_judge_state(insight_id, "failed")
         logger.warning("Background judge failed for %s: %s", insight_id, exc)
+
+
+def _start_judge_background(insight: DriverInsight) -> None:
+    _set_judge_state(insight.insight_id, "pending")
+    threading.Thread(
+        target=_run_judge_background,
+        args=(
+            insight.insight_id,
+            insight.recommendation,
+            insight.risk.value,
+            insight.audience.value,
+        ),
+        daemon=True,
+    ).start()
 
 
 @app.post("/v1/insights", response_model=DriverInsight)
@@ -351,10 +401,10 @@ def create_insight(
 
     # Persist to DB (non-blocking — failure doesn't affect the response).
     _persist_insight(insight, window)
+    _start_judge_background(insight)
 
     # Shadow challenger: re-score with v2 weights in a background thread.
     if settings.shadow_challenger_enabled:
-        import threading
         threading.Thread(
             target=_run_shadow_v2, args=(insight, window), daemon=True
         ).start()
@@ -395,14 +445,6 @@ def _persist_insight(insight: DriverInsight, window: TelemetryWindow | None = No
     except Exception as exc:
         logger.warning("Failed to persist insight %s: %s", insight.insight_id, exc)
         return
-
-    import threading
-    t = threading.Thread(
-        target=_run_judge_background,
-        args=(insight.insight_id, insight.recommendation, insight.risk.value, insight.audience.value),
-        daemon=True,
-    )
-    t.start()
 
 
 # ---------------------------------------------------------------------------
@@ -448,20 +490,30 @@ def insight_history(
 @app.get("/v1/insights/{insight_id}/judge")
 def get_judge_score(insight_id: str) -> dict[str, Any]:
     """Return the LLM judge score for a single insight, or pending while scoring."""
+    state = _get_judge_state(insight_id)
     try:
         from f1di.storage.database import db_session
         from f1di.storage.repository import get_judge_score as _get, insight_exists
     except ImportError:
         raise HTTPException(status_code=503, detail="Persistence layer not installed.")
-    with db_session() as session:
-        record = _get(session, insight_id)
-        exists = record is not None or insight_exists(session, insight_id)
+    try:
+        with db_session() as session:
+            record = _get(session, insight_id)
+            exists = record is not None or insight_exists(session, insight_id)
+    except Exception:
+        if state in {"pending", "failed"}:
+            return {
+                "insight_id": insight_id,
+                "status": state,
+                "scored": False,
+            }
+        raise
     if record is None:
-        if not exists:
+        if not exists and state not in {"pending", "failed"}:
             raise HTTPException(status_code=404, detail="Insight not found.")
         return {
             "insight_id": insight_id,
-            "status": "pending",
+            "status": state or "pending",
             "scored": False,
         }
     return {
@@ -2424,7 +2476,7 @@ def label_race_outcomes(
     if not dry_run and background_tasks is not None:
         from f1di.agents.auto_retrain import maybe_retrain_all
         background_tasks.add_task(maybe_retrain_all)
-    return asdict(result)
+    return jsonable_encoder(_json_ready(asdict(result)))
 
 
 @app.get("/v1/outcomes/summary")

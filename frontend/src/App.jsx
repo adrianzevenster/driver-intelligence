@@ -739,16 +739,21 @@ function JudgeScoreWidget({ insightId }) {
       if (cancelled) return;
       if (res && res.ok) {
         const data = await res.json();
-        if (data?.status === 'pending' || data?.scored === false) {
+        if (data?.status === 'pending') {
           retriesRef.current += 1;
           if (retriesRef.current < 8) setTimeout(poll, 2500);
           else setPending(false);
+          return;
+        }
+        if (data?.status === 'failed' || data?.scored === false) {
+          setPending(false);
           return;
         }
         setScore(data);
         setPending(false);
         return;
       }
+      if (res && res.status === 404) { setPending(false); return; }
       if (res && res.status !== 404) { setPending(false); return; }
       retriesRef.current += 1;
       if (retriesRef.current < 8) setTimeout(poll, 2500);

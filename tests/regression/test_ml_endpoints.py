@@ -58,6 +58,22 @@ def test_judge_score_pending_payload_for_saved_unscored_insight():
     }
 
 
+def test_judge_score_pending_payload_for_transient_generated_insight():
+    _init_db()
+    from f1di.api.main import _set_judge_state, get_judge_score
+
+    insight_id = str(uuid.uuid4())
+    _set_judge_state(insight_id, "pending")
+
+    result = get_judge_score(insight_id)
+
+    assert result == {
+        "insight_id": insight_id,
+        "status": "pending",
+        "scored": False,
+    }
+
+
 def test_judge_score_returns_scored_payload():
     _init_db()
     from f1di.api.main import get_judge_score
