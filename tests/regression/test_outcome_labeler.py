@@ -84,6 +84,27 @@ def test_extract_incidents_detects_safety_car():
     assert len(sc_incidents) > 0
 
 
+def test_extract_incidents_falls_back_when_race_control_messages_unloaded():
+    from f1di.data.outcome_labeler import _extract_incidents
+
+    class SessionWithUnloadedMessages:
+        event = {"Location": "Spa"}
+
+        def __init__(self, laps):
+            self.laps = laps
+
+        @property
+        def race_control_messages(self):
+            raise RuntimeError("The data you are trying to access has not been loaded yet. See `Session.load`")
+
+    laps = _make_laps(["VER", "NOR", "HAM", "RUS", "LEC"], n_laps=50)
+    laps.loc[laps["LapNumber"] == 30, "LapTime"] = pd.Timedelta(seconds=130)
+
+    incidents = _extract_incidents(SessionWithUnloadedMessages(laps))
+
+    assert any(i.incident_type == "safety_car" for i in incidents)
+
+
 def test_extract_incidents_detects_forced_pit():
     from f1di.data.outcome_labeler import _extract_incidents
 

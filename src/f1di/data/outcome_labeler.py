@@ -95,7 +95,11 @@ def _normalize_rcm_time(t, session):
 
 def _extract_sc_laps_from_race_control(session, valid_laps) -> list[int]:
     """Return lap numbers of confirmed SC/VSC deployments from race control messages."""
-    rcm = getattr(session, "race_control_messages", None)
+    try:
+        rcm = getattr(session, "race_control_messages", None)
+    except Exception as exc:
+        logger.info("race_control_messages_unavailable: %s", exc)
+        return []
     if rcm is None or not hasattr(rcm, "empty") or rcm.empty:
         return []
     sc_laps: list[int] = []
