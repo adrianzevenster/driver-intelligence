@@ -2135,17 +2135,35 @@ async def live_stream_sse(
         last_lap: int | None = None
         errors = 0
 
+        _POLL_TIMEOUT = 25.0  # seconds before we give up on a single poll cycle
+
         while True:
             # Run the blocking poll in a thread.  While waiting, emit SSE
             # comment pings every 2 s so any proxy/buffer sees activity and
             # flushes rather than holding the connection open silently.
             poll_task = _asyncio.ensure_future(loop.run_in_executor(_executor, _poll))
+            poll_start = loop.time()
             while not poll_task.done():
+                if loop.time() - poll_start > _POLL_TIMEOUT:
+                    poll_task.cancel()
+                    errors += 1
+                    yield f"data: {_json.dumps({'type': 'error', 'detail': 'OpenF1 fetch timed out after 25 s — session may not have recent data'})}\n\n"
+                    if errors >= 5:
+                        yield f"data: {_json.dumps({'type': 'done'})}\n\n"
+                        return
+                    break
                 yield ": ping\n\n"
                 try:
                     await _asyncio.wait_for(_asyncio.shield(poll_task), timeout=2.0)
                 except _asyncio.TimeoutError:
                     pass
+            else:
+                # poll_task finished normally — fall through to process result
+                pass
+            if poll_task.cancelled():
+                # Timed out — skip to sleep and retry
+                await _asyncio.sleep(min(2, poll_interval))
+                continue
 
             try:
                 window, insight = poll_task.result()

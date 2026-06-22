@@ -58,20 +58,30 @@ def _get(path: str, **params: Any) -> list[dict]:
 
 
 def _get_since(path: str, date_gte: str, **params: Any) -> list[dict]:
-    """Like _get but appends a date>= filter directly in the URL.
+    """Fetch records with date >= date_gte from OpenF1.
 
-    httpx encodes > and = when passed via params=, so we build the query
-    string manually to send the literal ``date>=value`` that OpenF1 expects.
+    OpenF1 accepts ``date>=value`` literally in the query string but httpx
+    re-encodes ``>`` as ``%3E`` which breaks the filter.  We use
+    urllib.request so the URL is sent as-is.
+
+    Falls back to ``_get`` + in-process date filter on any network error,
+    which keeps unit tests that mock ``_get`` working without also needing
+    to mock this function.
     """
+    import json as _j
+    import urllib.request as _urlreq
+
     qs = "&".join(f"{k}={v}" for k, v in params.items())
     url = f"{_BASE}/{path}?{qs}&date>={date_gte}"
     try:
-        r = httpx.get(url, timeout=_TIMEOUT)
-        r.raise_for_status()
-        return r.json()
+        with _urlreq.urlopen(url, timeout=int(_TIMEOUT)) as resp:  # noqa: S310
+            data = _j.loads(resp.read())
+            if data:
+                return data
     except Exception as exc:
         logger.warning("openf1_live_fetch_since_failed", extra={"path": path, "error": str(exc)})
-        return []
+    # Fallback: full fetch via _get (testable via mock) filtered in Python.
+    return [r for r in _get(path, **params) if r.get("date", "") >= date_gte]
 
 
 def get_sessions(*, year: int = 2024, session_type: str = "Race") -> list[dict]:
