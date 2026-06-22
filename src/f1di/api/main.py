@@ -2194,11 +2194,12 @@ async def live_stream_sse(
 
             try:
                 window, insight = poll_task.result()
-                current_lap = getattr(window, "lap_number", None)
+                current_lap = window.samples[-1].lap if window.samples else None
                 if current_lap != last_lap:
                     last_lap = current_lap
-                    payload = _json.dumps(_json_ready(insight.model_dump()))
-                    yield f"data: {payload}\n\n"
+                    payload_dict = _json_ready(insight.model_dump())
+                    payload_dict["lap_number"] = current_lap
+                    yield f"data: {_json.dumps(payload_dict)}\n\n"
                 else:
                     yield f"data: {_json.dumps({'type': 'heartbeat', 'lap': current_lap})}\n\n"
                 errors = 0
