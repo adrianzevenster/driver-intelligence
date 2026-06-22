@@ -1772,6 +1772,7 @@ function LivePanel({ version }) {
   const [strategy, setStrategy]               = useState(null);
   const [strategyLoading, setStrategyLoading] = useState(false);
   const [strategyError, setStrategyError]     = useState('');
+  const fetchAbortRef                          = useRef(null);
 
   useEffect(() => {
     setError(''); setRaces([]); setRoundNum('');
@@ -1857,13 +1858,20 @@ function LivePanel({ version }) {
 
   async function fetchInsight(lapOverride) {
     if (!roundNum || !driver) return;
+
+    // Cancel any still-running request so stale results don't clobber new state.
+    fetchAbortRef.current?.abort();
+    const controller = new AbortController();
+    fetchAbortRef.current = controller;
+    const { signal } = controller;
+
     setError(''); setLoading(true);
     const lap = lapOverride ?? (replayMode ? selectedLap : null);
     const lapParam = lap != null ? `&lap_number=${lap}` : '';
     const base = `/api/v1/session/insight?year=${year}&round_num=${roundNum}&audience=${audience}&session_type=${sessionType}${lapParam}`;
 
     async function fetchOne(drv) {
-      const res = await fetch(`${base}&driver=${drv}`, { method: 'POST' });
+      const res = await fetch(`${base}&driver=${drv}`, { method: 'POST', signal });
       if (!res.ok) {
         let msg;
         try { msg = (await res.json()).detail ?? `Error ${res.status}`; }
@@ -1886,30 +1894,33 @@ function LivePanel({ version }) {
         if (replayMode && lap != null) fetchTrace(lap);
       } else {
         const [r1, r2] = await Promise.allSettled([fetchOne(driver), fetchOne(driver2)]);
+        if (signal.aborted) return;
         const d1 = r1.status === 'fulfilled' ? r1.value : null;
         const d2 = r2.status === 'fulfilled' ? r2.value : null;
-        if (!d1 && !d2) throw new Error(`No telemetry for ${driver} or ${driver2} at this lap`);
         setInsight(d1);
         setInsight2(d2);
         const warnings = [
-          r1.status === 'rejected' ? `${driver}: ${r1.reason?.message}` : null,
-          r2.status === 'rejected' ? `${driver2}: ${r2.reason?.message}` : null,
+          r1.status === 'rejected' && !r1.reason?.name?.includes('Abort')
+            ? `${driver}: ${r1.reason?.message ?? 'no telemetry'}` : null,
+          r2.status === 'rejected' && !r2.reason?.name?.includes('Abort')
+            ? `${driver2}: ${r2.reason?.message ?? 'no telemetry'}` : null,
         ].filter(Boolean);
         if (warnings.length) setError(warnings.join(' · '));
-        if (d1) {
-          const lapInfo = laps.find(l => l.lap_number === lap) ?? null;
+        const lapInfo = laps.find(l => l.lap_number === lap) ?? null;
+        if (d1 || d2) {
           setHistory(prev => [{
             id: Date.now(), lap, lapInfo, driver, driver2,
-            risk: d1.risk, recommendation: d1.recommendation,
+            risk: (d1 ?? d2).risk_level,
+            recommendation: (d1 ?? d2).recommendation,
             insight: d1, insight2: d2,
           }, ...prev].slice(0, 8));
         }
         if (replayMode && lap != null) fetchTrace(lap);
       }
     } catch (e) {
-      setError(String(e.message ?? e));
+      if (!signal.aborted) setError(String(e.message ?? e));
     } finally {
-      setLoading(false);
+      if (!signal.aborted) setLoading(false);
     }
   }
 
@@ -2107,13 +2118,17 @@ function LivePanel({ version }) {
                 <p style={{ fontWeight: 700, fontSize: '0.8rem', marginBottom: 8, color: 'var(--text)' }}>{driver}</p>
                 {insight
                   ? <InsightPanel insight={insight} modelBackend={version?.model_backend} />
-                  : <p className="muted empty-hint" style={{ fontSize: '0.75rem' }}>Click Compare to analyse.</p>}
+                  : <p className="muted empty-hint" style={{ fontSize: '0.75rem' }}>
+                      {error?.includes(driver) ? 'No telemetry at this lap.' : 'Click Compare to analyse.'}
+                    </p>}
               </div>
               <div style={{ borderLeft: '1px solid var(--border)', paddingLeft: 16 }}>
                 <p style={{ fontWeight: 700, fontSize: '0.8rem', marginBottom: 8, color: 'var(--text)' }}>{driver2}</p>
                 {insight2
                   ? <InsightPanel insight={insight2} modelBackend={version?.model_backend} />
-                  : <p className="muted empty-hint" style={{ fontSize: '0.75rem' }}>Click Compare to analyse.</p>}
+                  : <p className="muted empty-hint" style={{ fontSize: '0.75rem' }}>
+                      {error?.includes(driver2) ? 'No telemetry at this lap.' : 'Click Compare to analyse.'}
+                    </p>}
               </div>
             </div>
           </>
@@ -2198,14 +2213,22 @@ function StreamPanel({ version }) {
     es.onmessage = (e) => {
       try {
         const d = JSON.parse(e.data);
+        if (d.type === 'done') { stopStream(); return; }
         if (d.type === 'error') { setError(d.detail); return; }
         if (d.type === 'heartbeat') { setHeartbeat(d.lap); return; }
         setInsight(d);
         setLastLap(d.lap_number ?? null);
         setHeartbeat(null);
+        setError('');
       } catch {}
     };
-    es.onerror = () => { setError('Stream disconnected.'); setStreaming(false); };
+    // onerror fires on every retry attempt — only surface it if we never
+    // received any data (i.e. the connection was refused outright).
+    let receivedAny = false;
+    es.addEventListener('message', () => { receivedAny = true; });
+    es.onerror = () => {
+      if (!receivedAny) { setError('Could not connect to stream. Is the API running?'); stopStream(); }
+    };
   }
 
   function stopStream() {

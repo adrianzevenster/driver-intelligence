@@ -2110,38 +2110,46 @@ async def live_stream_sse(
 
     Emits one ``data:`` event per new lap detected.  Between new laps a
     heartbeat event is sent so the client can tell the connection is alive.
-    The stream terminates automatically after 5 consecutive errors.
+    Terminates with a ``{"type":"done"}`` event after 5 consecutive errors so
+    the client knows to stop rather than retry.
     """
     import asyncio as _asyncio
+    from concurrent.futures import ThreadPoolExecutor
     from f1di.knowledge.openf1_live import build_window
 
     orchestrator = get_orchestrator()
+    _executor = ThreadPoolExecutor(max_workers=1)
+    loop = _asyncio.get_event_loop()
+
+    def _poll():
+        """Run blocking I/O + inference in a thread so the event loop stays free."""
+        window = build_window(session_key=session_key, driver_number=driver_number)
+        insight = orchestrator.analyze(window, audience=audience)
+        _persist_insight(insight, window)
+        return window, insight
 
     async def _generate():
+        # Immediate heartbeat so the client knows the connection is alive.
+        yield f"data: {_json.dumps({'type': 'heartbeat', 'lap': None})}\n\n"
+
         last_lap: int | None = None
         errors = 0
         while True:
             try:
-                window = build_window(
-                    session_key=session_key,
-                    driver_number=driver_number,
-                )
+                window, insight = await loop.run_in_executor(_executor, _poll)
                 current_lap = getattr(window, "lap_number", None)
                 if current_lap != last_lap:
                     last_lap = current_lap
-                    insight = orchestrator.analyze(window, audience=audience)
-                    _persist_insight(insight, window)
                     payload = _json.dumps(_json_ready(insight.model_dump()))
                     yield f"data: {payload}\n\n"
                 else:
-                    heartbeat = _json.dumps({"type": "heartbeat", "lap": current_lap})
-                    yield f"data: {heartbeat}\n\n"
+                    yield f"data: {_json.dumps({'type': 'heartbeat', 'lap': current_lap})}\n\n"
                 errors = 0
             except Exception as exc:
                 errors += 1
-                error_event = _json.dumps({"type": "error", "detail": str(exc)})
-                yield f"data: {error_event}\n\n"
+                yield f"data: {_json.dumps({'type': 'error', 'detail': str(exc)})}\n\n"
                 if errors >= 5:
+                    yield f"data: {_json.dumps({'type': 'done'})}\n\n"
                     return
             await _asyncio.sleep(poll_interval)
 
