@@ -1966,7 +1966,7 @@ function LivePanel({ version }) {
           <Section title="Session">
             <div className="context-row">
               <label><span>Year</span>
-                <input type="number" className="text-input num-input" value={year} min={2018} max={2025}
+                <input type="number" className="text-input num-input" value={year} min={2018} max={2030}
                   onChange={e => setYear(Number(e.target.value))} />
               </label>
               <label style={{ flex: 2 }}><span>Race</span>
@@ -2167,7 +2167,7 @@ function LivePanel({ version }) {
 // ── Live SSE stream panel ──────────────────────────────────────────────────
 
 function StreamPanel({ version }) {
-  const [year, setYear]               = useState(2025);
+  const [year, setYear]               = useState(2026);
   const [sessions, setSessions]       = useState([]);
   const [sessionKey, setSessionKey]   = useState('');
   const [drivers, setDrivers]         = useState([]);
@@ -2256,7 +2256,7 @@ function StreamPanel({ version }) {
           <Section title="Session">
             <div className="context-row">
               <label><span>Year</span>
-                <input type="number" className="text-input num-input" value={year} min={2023} max={2025}
+                <input type="number" className="text-input num-input" value={year} min={2023} max={2030}
                   onChange={e => setYear(Number(e.target.value))} />
               </label>
               <label style={{ flex: 2 }}><span>Race</span>
