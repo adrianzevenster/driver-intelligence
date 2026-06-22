@@ -2118,8 +2118,16 @@ async def live_stream_sse(
     from f1di.knowledge.openf1_live import build_window
 
     orchestrator = get_orchestrator()
-    _executor = ThreadPoolExecutor(max_workers=1)
+    _executor = ThreadPoolExecutor(max_workers=2)
     loop = _asyncio.get_event_loop()
+
+    def _probe_lap() -> int | None:
+        """Fetch only the laps endpoint to get the current lap number quickly."""
+        from f1di.knowledge.openf1_live import get_laps
+        rows = get_laps(session_key=session_key, driver_number=driver_number)
+        if rows:
+            return int(rows[-1].get("lap_number", 1))
+        return None
 
     def _poll():
         """Run blocking I/O + inference in a thread so the event loop stays free."""
@@ -2135,19 +2143,41 @@ async def live_stream_sse(
         last_lap: int | None = None
         errors = 0
 
-        _POLL_TIMEOUT = 25.0  # seconds before we give up on a single poll cycle
+        _PROBE_TIMEOUT = 10.0    # laps-only fetch (1-3 s normally)
+        _POLL_TIMEOUT  = 300.0   # full telemetry + Ollama inference budget
 
         while True:
-            # Run the blocking poll in a thread.  While waiting, emit SSE
-            # comment pings every 2 s so any proxy/buffer sees activity and
-            # flushes rather than holding the connection open silently.
+            # ── 1. Quick laps probe → early heartbeat so the UI shows lap N
+            #    immediately rather than waiting for the full Ollama cycle.
+            probe_task = _asyncio.ensure_future(loop.run_in_executor(_executor, _probe_lap))
+            probe_start = loop.time()
+            while not probe_task.done():
+                if loop.time() - probe_start > _PROBE_TIMEOUT:
+                    probe_task.cancel()
+                    break
+                yield ": ping\n\n"
+                try:
+                    await _asyncio.wait_for(_asyncio.shield(probe_task), timeout=2.0)
+                except _asyncio.TimeoutError:
+                    pass
+            if not probe_task.cancelled():
+                try:
+                    quick_lap = probe_task.result()
+                    if quick_lap is not None:
+                        yield f"data: {_json.dumps({'type': 'heartbeat', 'lap': quick_lap})}\n\n"
+                except Exception:
+                    pass
+
+            # ── 2. Full poll: car_data + Ollama inference ─────────────────────
             poll_task = _asyncio.ensure_future(loop.run_in_executor(_executor, _poll))
             poll_start = loop.time()
+            timed_out = False
             while not poll_task.done():
                 if loop.time() - poll_start > _POLL_TIMEOUT:
                     poll_task.cancel()
+                    timed_out = True
                     errors += 1
-                    yield f"data: {_json.dumps({'type': 'error', 'detail': 'OpenF1 fetch timed out after 25 s — session may not have recent data'})}\n\n"
+                    yield f"data: {_json.dumps({'type': 'error', 'detail': f'OpenF1 fetch timed out after {_POLL_TIMEOUT:.0f}s'})}\n\n"
                     if errors >= 5:
                         yield f"data: {_json.dumps({'type': 'done'})}\n\n"
                         return
@@ -2157,11 +2187,8 @@ async def live_stream_sse(
                     await _asyncio.wait_for(_asyncio.shield(poll_task), timeout=2.0)
                 except _asyncio.TimeoutError:
                     pass
-            else:
-                # poll_task finished normally — fall through to process result
-                pass
-            if poll_task.cancelled():
-                # Timed out — skip to sleep and retry
+
+            if timed_out:
                 await _asyncio.sleep(min(2, poll_interval))
                 continue
 

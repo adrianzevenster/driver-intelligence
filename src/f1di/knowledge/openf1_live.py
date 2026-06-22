@@ -64,6 +64,9 @@ def _get_since(path: str, date_gte: str, **params: Any) -> list[dict]:
     re-encodes ``>`` as ``%3E`` which breaks the filter.  We use
     urllib.request so the URL is sent as-is.
 
+    The date_gte value must NOT contain ``+`` (timezone offset) — the ``+``
+    is treated as a space in URL query strings.  Strip it before calling.
+
     Falls back to ``_get`` + in-process date filter on any network error,
     which keeps unit tests that mock ``_get`` working without also needing
     to mock this function.
@@ -71,8 +74,10 @@ def _get_since(path: str, date_gte: str, **params: Any) -> list[dict]:
     import json as _j
     import urllib.request as _urlreq
 
+    # Strip timezone offset so the URL contains only safe characters.
+    safe_date = date_gte.split("+")[0].rstrip("Z")
     qs = "&".join(f"{k}={v}" for k, v in params.items())
-    url = f"{_BASE}/{path}?{qs}&date>={date_gte}"
+    url = f"{_BASE}/{path}?{qs}&date>={safe_date}"
     try:
         with _urlreq.urlopen(url, timeout=int(_TIMEOUT)) as resp:  # noqa: S310
             data = _j.loads(resp.read())
