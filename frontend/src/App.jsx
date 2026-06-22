@@ -2174,6 +2174,7 @@ function StreamPanel({ version }) {
   const [driverNum, setDriverNum]     = useState('');
   const [audience, setAudience]       = useState('DRIVER');
   const [streaming, setStreaming]     = useState(false);
+  const [connected, setConnected]     = useState(false);
   const [insight, setInsight]         = useState(null);
   const [lastLap, setLastLap]         = useState(null);
   const [heartbeatLap, setHeartbeat]  = useState(null);
@@ -2205,7 +2206,7 @@ function StreamPanel({ version }) {
   function startStream() {
     if (!sessionKey || !driverNum) return;
     esRef.current?.close();
-    setError(''); setInsight(null); setLastLap(null); setHeartbeat(null);
+    setError(''); setInsight(null); setLastLap(null); setHeartbeat(null); setConnected(false);
     const url = `/api/v1/live/stream/${sessionKey}/${driverNum}?audience=${audience}`;
     const es = new EventSource(url);
     esRef.current = es;
@@ -2214,6 +2215,7 @@ function StreamPanel({ version }) {
       try {
         const d = JSON.parse(e.data);
         if (d.type === 'done') { stopStream(); return; }
+        if (d.type === 'connected') { setConnected(true); return; }
         if (d.type === 'error') { setError(d.detail); return; }
         if (d.type === 'heartbeat') { setHeartbeat(d.lap); return; }
         setInsight(d);
@@ -2222,12 +2224,10 @@ function StreamPanel({ version }) {
         setError('');
       } catch {}
     };
-    // onerror fires on every retry attempt — only surface it if we never
-    // received any data (i.e. the connection was refused outright).
-    let receivedAny = false;
-    es.addEventListener('message', () => { receivedAny = true; });
     es.onerror = () => {
-      if (!receivedAny) { setError('Could not connect to stream. Is the API running?'); stopStream(); }
+      // Only hard-stop if we never received the initial 'connected' event —
+      // that means the TCP connection itself was refused or the route 404'd.
+      if (!connected) { setError('Could not reach stream endpoint. Is the API running?'); stopStream(); }
     };
   }
 
@@ -2310,14 +2310,17 @@ function StreamPanel({ version }) {
 
         {error && <pre className="error" style={{ marginTop: 8 }}>{error}</pre>}
 
-        {streaming && !error && (
+        {streaming && (
           <p className="muted" style={{ fontSize: '0.70rem', marginTop: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#22c55e', flexShrink: 0, display: 'inline-block' }} />
-            {heartbeatLap != null
-              ? `Waiting for next lap (current: ${heartbeatLap})…`
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: error ? '#ef4444' : '#22c55e', flexShrink: 0, display: 'inline-block' }} />
+            {!connected
+              ? 'Connecting to API…'
               : lastLap != null
-                ? `Streaming · last update lap ${lastLap}`
-                : 'Connecting to OpenF1…'}
+                ? `Polling OpenF1 · last insight lap ${lastLap}`
+                : heartbeatLap != null
+                  ? `Polling OpenF1 · current lap ${heartbeatLap}`
+                  : 'Connected — fetching from OpenF1…'}
+            {error && <span style={{ color: '#f87171', marginLeft: 4 }}>{error}</span>}
           </p>
         )}
 

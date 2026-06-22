@@ -2129,14 +2129,26 @@ async def live_stream_sse(
         return window, insight
 
     async def _generate():
-        # Immediate heartbeat so the client knows the connection is alive.
-        yield f"data: {_json.dumps({'type': 'heartbeat', 'lap': None})}\n\n"
+        # Tell the client the TCP connection is alive before we touch OpenF1.
+        yield f"data: {_json.dumps({'type': 'connected'})}\n\n"
 
         last_lap: int | None = None
         errors = 0
+
         while True:
+            # Run the blocking poll in a thread.  While waiting, emit SSE
+            # comment pings every 2 s so any proxy/buffer sees activity and
+            # flushes rather than holding the connection open silently.
+            poll_task = _asyncio.ensure_future(loop.run_in_executor(_executor, _poll))
+            while not poll_task.done():
+                yield ": ping\n\n"
+                try:
+                    await _asyncio.wait_for(_asyncio.shield(poll_task), timeout=2.0)
+                except _asyncio.TimeoutError:
+                    pass
+
             try:
-                window, insight = await loop.run_in_executor(_executor, _poll)
+                window, insight = poll_task.result()
                 current_lap = getattr(window, "lap_number", None)
                 if current_lap != last_lap:
                     last_lap = current_lap
@@ -2151,7 +2163,13 @@ async def live_stream_sse(
                 if errors >= 5:
                     yield f"data: {_json.dumps({'type': 'done'})}\n\n"
                     return
-            await _asyncio.sleep(poll_interval)
+
+            # Sleep between polls, pinging every 2 s to keep the connection alive.
+            remaining = poll_interval
+            while remaining > 0:
+                yield ": ping\n\n"
+                await _asyncio.sleep(min(2, remaining))
+                remaining -= 2
 
     return StreamingResponse(
         _generate(),
