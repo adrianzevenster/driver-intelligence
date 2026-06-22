@@ -57,6 +57,23 @@ def _get(path: str, **params: Any) -> list[dict]:
         return []
 
 
+def _get_since(path: str, date_gte: str, **params: Any) -> list[dict]:
+    """Like _get but appends a date>= filter directly in the URL.
+
+    httpx encodes > and = when passed via params=, so we build the query
+    string manually to send the literal ``date>=value`` that OpenF1 expects.
+    """
+    qs = "&".join(f"{k}={v}" for k, v in params.items())
+    url = f"{_BASE}/{path}?{qs}&date>={date_gte}"
+    try:
+        r = httpx.get(url, timeout=_TIMEOUT)
+        r.raise_for_status()
+        return r.json()
+    except Exception as exc:
+        logger.warning("openf1_live_fetch_since_failed", extra={"path": path, "error": str(exc)})
+        return []
+
+
 def get_sessions(*, year: int = 2024, session_type: str = "Race") -> list[dict]:
     """Return sessions for a year ordered newest first."""
     rows = _get("sessions", year=year, session_type=session_type)
@@ -88,21 +105,21 @@ def build_window(
     is scoped to that lap's time range (replay mode).
     """
     # ── Fetch raw data ────────────────────────────────────────────────────────
-    car_rows_all = sorted(
-        _get("car_data", session_key=session_key, driver_number=driver_number),
-        key=lambda r: r.get("date", ""),
-    )
     stint_rows = _get("stints", session_key=session_key, driver_number=driver_number)
     weather_rows = _get("weather", session_key=session_key)
-    lap_rows = sorted(
-        _get("laps", session_key=session_key, driver_number=driver_number),
-        key=lambda r: r.get("lap_number", 0),
-    )
     session_rows = _get("sessions", session_key=session_key)
     session_info = session_rows[0] if session_rows else {}
 
     # ── Select car-data slice ─────────────────────────────────────────────────
     if lap_number is not None:
+        lap_rows = sorted(
+            _get("laps", session_key=session_key, driver_number=driver_number),
+            key=lambda r: r.get("lap_number", 0),
+        )
+        car_rows_all = sorted(
+            _get("car_data", session_key=session_key, driver_number=driver_number),
+            key=lambda r: r.get("date", ""),
+        )
         target_lap = next((r for r in lap_rows if r.get("lap_number") == lap_number), None)
         next_lap = next((r for r in lap_rows if r.get("lap_number") == lap_number + 1), None)
         if target_lap and target_lap.get("date_start"):
@@ -115,9 +132,33 @@ def build_window(
             car_rows = car_rows_all[-n_samples:]
         current_lap = lap_number
     else:
-        car_rows = car_rows_all[-n_samples:]
-        latest_lap = max(lap_rows, key=lambda r: r.get("lap_number", 0), default={})
+        # Live mode: fetch laps first (tiny response) then scope car_data to
+        # the last 3 laps only — avoids downloading the entire race history.
+        lap_rows = sorted(
+            _get("laps", session_key=session_key, driver_number=driver_number),
+            key=lambda r: r.get("lap_number", 0),
+        )
+        latest_lap = lap_rows[-1] if lap_rows else {}
         current_lap = int(latest_lap.get("lap_number", 1))
+
+        # Use the start time of 3 laps ago as a date filter so we only pull
+        # ~300 rows instead of 50 000+ for a completed race.
+        anchor = lap_rows[-4] if len(lap_rows) >= 4 else lap_rows[0] if lap_rows else {}
+        anchor_date = anchor.get("date_start", "")
+        if anchor_date:
+            car_rows_all = sorted(
+                _get_since(
+                    "car_data", anchor_date,
+                    session_key=session_key, driver_number=driver_number,
+                ),
+                key=lambda r: r.get("date", ""),
+            )
+        else:
+            car_rows_all = sorted(
+                _get("car_data", session_key=session_key, driver_number=driver_number),
+                key=lambda r: r.get("date", ""),
+            )
+        car_rows = car_rows_all[-n_samples:]
 
     # ── Derive context ────────────────────────────────────────────────────────
     location = session_info.get("location", "unknown")
