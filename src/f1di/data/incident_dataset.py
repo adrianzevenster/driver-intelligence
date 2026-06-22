@@ -25,7 +25,7 @@ from pathlib import Path
 
 logger = logging.getLogger("f1di.data.incident")
 
-_CACHE_DIR = "/tmp/f1di_fastf1_cache"
+_CACHE_DIR = str(Path(__file__).parents[3] / "data" / "fastf1_cache")
 _DEFAULT_OUTPUT = Path("data/incidents/labeled_dataset.jsonl")
 
 # Look-ahead window: label laps this far ahead of an incident as high-risk.

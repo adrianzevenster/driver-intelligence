@@ -1682,6 +1682,71 @@ function TraceChart({ trace, trace2, driver, driver2, lap }) {
   );
 }
 
+function ComparisonDeltaCard({ insight1, driver1, insight2, driver2 }) {
+  if (!insight1 || !insight2) return null;
+
+  const RISK_ORDER = { INFO: 0, LOW: 1, MEDIUM: 2, WARNING: 3, CRITICAL: 4 };
+  const r1 = RISK_ORDER[insight1.risk_level] ?? 0;
+  const r2 = RISK_ORDER[insight2.risk_level] ?? 0;
+  const conf1 = (insight1.confidence ?? 0) * 100;
+  const conf2 = (insight2.confidence ?? 0) * 100;
+  const confDelta = conf1 - conf2;
+
+  const lowerRisk = r1 < r2 ? driver1 : r2 < r1 ? driver2 : null;
+  const higherConf = conf1 > conf2 + 1 ? driver1 : conf2 > conf1 + 1 ? driver2 : null;
+
+  const findings1 = (insight1.findings ?? []).map(f => f.agent).filter(Boolean);
+  const findings2 = (insight2.findings ?? []).map(f => f.agent).filter(Boolean);
+  const uniqueTo1 = findings1.filter(a => !findings2.includes(a));
+  const uniqueTo2 = findings2.filter(a => !findings1.includes(a));
+
+  return (
+    <div style={{
+      padding: '10px 14px', background: '#0a1628',
+      border: '1px solid #1e3a5c', borderRadius: 8, marginBottom: 12,
+      display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center',
+    }}>
+      <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#38bdf8', letterSpacing: '0.05em', flexShrink: 0 }}>
+        HEAD-TO-HEAD
+      </span>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <span style={{ fontSize: 11, color: 'var(--muted)' }}>{driver1}</span>
+        <RiskPill risk={insight1.risk_level} />
+        <span style={{ fontSize: 11, color: 'var(--muted)' }}>vs</span>
+        <RiskPill risk={insight2.risk_level} />
+        <span style={{ fontSize: 11, color: 'var(--muted)' }}>{driver2}</span>
+      </div>
+
+      <div style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--muted)' }}>
+        conf&nbsp;
+        <span style={{ color: '#e2e8f0' }}>{conf1.toFixed(0)}%</span>&nbsp;{driver1}
+        &nbsp;·&nbsp;
+        <span style={{ color: '#e2e8f0' }}>{conf2.toFixed(0)}%</span>&nbsp;{driver2}
+        {Math.abs(confDelta) > 1 && (
+          <span style={{ color: confDelta > 0 ? '#4ade80' : '#fb923c', marginLeft: 6 }}>
+            ({confDelta > 0 ? '+' : ''}{confDelta.toFixed(0)}pp {driver1})
+          </span>
+        )}
+      </div>
+
+      {(uniqueTo1.length > 0 || uniqueTo2.length > 0) && (
+        <div style={{ fontSize: 10, color: 'var(--muted)' }}>
+          {uniqueTo1.length > 0 && <span style={{ color: '#f59e0b' }}>{driver1}: {uniqueTo1.join(', ')} </span>}
+          {uniqueTo2.length > 0 && <span style={{ color: '#a78bfa' }}>{driver2}: {uniqueTo2.join(', ')}</span>}
+        </div>
+      )}
+
+      {(lowerRisk || higherConf) && (
+        <div style={{ marginLeft: 'auto', fontSize: 11, display: 'flex', gap: 10 }}>
+          {lowerRisk && <span><span style={{ color: 'var(--muted)' }}>lower risk </span><span style={{ color: '#22c55e', fontWeight: 700 }}>{lowerRisk}</span></span>}
+          {higherConf && <span><span style={{ color: 'var(--muted)' }}>higher conf </span><span style={{ color: '#38bdf8', fontWeight: 700 }}>{higherConf}</span></span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function LivePanel({ version }) {
   const [races, setRaces]             = useState([]);
   const [drivers, setDrivers]         = useState([]);
@@ -1701,6 +1766,7 @@ function LivePanel({ version }) {
   const [error, setError]             = useState('');
   const [loading, setLoading]         = useState(false);
   const [loadingDrivers, setLoadingDrivers] = useState(false);
+  const [driverLoadMessage, setDriverLoadMessage] = useState('');
   const [year, setYear]               = useState(2024);
   const [sessionType, setSessionType] = useState('R');
   const [strategy, setStrategy]               = useState(null);
@@ -1710,6 +1776,7 @@ function LivePanel({ version }) {
   useEffect(() => {
     setError(''); setRaces([]); setRoundNum('');
     setDrivers([]); setDriver(''); setDriver2('');
+    setDriverLoadMessage('');
     setLaps([]); setLaps2([]); setInsight(null); setInsight2(null);
     setHistory([]); setTrace([]); setTrace2([]);
     fetch(`/api/v1/session/races?year=${year}`)
@@ -1721,6 +1788,7 @@ function LivePanel({ version }) {
   useEffect(() => {
     if (!roundNum) return;
     setDrivers([]); setDriver(''); setDriver2('');
+    setDriverLoadMessage('');
     setLaps([]); setLaps2([]); setSelectedLap(null);
     setInsight(null); setInsight2(null);
     setHistory([]); setTrace([]); setTrace2([]);
@@ -1731,8 +1799,13 @@ function LivePanel({ version }) {
       .then(rows => {
         setDrivers(rows);
         if (rows.length) setDriver(rows[0].code);
+        if (rows.some(d => d.source === 'fallback_grid')) {
+          setDriverLoadMessage('Using fallback 2025 grid. Lap charts and analysis still require FastF1 session data.');
+        } else if (!rows.length) {
+          setDriverLoadMessage('No driver data loaded for this race. FastF1 may need network access or cached session data.');
+        }
       })
-      .catch(() => {})
+      .catch(() => setDriverLoadMessage('Could not load drivers for this race.'))
       .finally(() => setLoadingDrivers(false));
   }, [year, roundNum, sessionType]);
 
@@ -1888,25 +1961,36 @@ function LivePanel({ version }) {
               <label style={{ flex: 1 }}><span>Driver 1</span>
                 <select className="text-input" value={driver}
                   onChange={e => { setDriver(e.target.value); setInsight(null); }}
-                  disabled={!drivers.length}>
+                  disabled={!roundNum || loadingDrivers || !drivers.length}>
                   {loadingDrivers
                     ? <option>Loading…</option>
-                    : !drivers.length
+                    : !roundNum
                       ? <option>— pick race first —</option>
-                      : drivers.map(d => <option key={d.code} value={d.code}>{d.code}</option>)}
+                      : !drivers.length
+                        ? <option>— no driver data —</option>
+                        : drivers.map(d => (
+                          <option key={d.code} value={d.code}>
+                            {d.name ? `${d.code} · ${d.name}` : d.code}
+                          </option>
+                        ))}
                 </select>
               </label>
               <label style={{ flex: 1 }}><span>vs</span>
                 <select className="text-input" value={driver2}
                   onChange={e => { setDriver2(e.target.value); setInsight2(null); }}
-                  disabled={!drivers.length}>
+                  disabled={!roundNum || loadingDrivers || !drivers.length}>
                   <option value="">— none —</option>
                   {drivers.filter(d => d.code !== driver).map(d => (
-                    <option key={d.code} value={d.code}>{d.code}</option>
+                    <option key={d.code} value={d.code}>{d.name ? `${d.code} · ${d.name}` : d.code}</option>
                   ))}
                 </select>
               </label>
             </div>
+            {driverLoadMessage && (
+              <p className="muted" style={{ fontSize: '0.70rem', marginTop: 6 }}>
+                {driverLoadMessage}
+              </p>
+            )}
             {laps.length > 0 && <RaceSummaryBar laps={laps} label={driver2 ? driver : null} />}
             {driver2 && laps2.length > 0 && <RaceSummaryBar laps={laps2} label={driver2} />}
           </Section>
@@ -1984,20 +2068,26 @@ function LivePanel({ version }) {
         )}
 
         {driver2 ? (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-            <div>
-              <p style={{ fontWeight: 700, fontSize: '0.8rem', marginBottom: 8, color: 'var(--text)' }}>{driver}</p>
-              {insight
-                ? <InsightPanel insight={insight} modelBackend={version?.model_backend} />
-                : <p className="muted empty-hint" style={{ fontSize: '0.75rem' }}>Click Compare to analyse.</p>}
+          <>
+            <ComparisonDeltaCard
+              insight1={insight} driver1={driver}
+              insight2={insight2} driver2={driver2}
+            />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+              <div>
+                <p style={{ fontWeight: 700, fontSize: '0.8rem', marginBottom: 8, color: 'var(--text)' }}>{driver}</p>
+                {insight
+                  ? <InsightPanel insight={insight} modelBackend={version?.model_backend} />
+                  : <p className="muted empty-hint" style={{ fontSize: '0.75rem' }}>Click Compare to analyse.</p>}
+              </div>
+              <div style={{ borderLeft: '1px solid var(--border)', paddingLeft: 16 }}>
+                <p style={{ fontWeight: 700, fontSize: '0.8rem', marginBottom: 8, color: 'var(--text)' }}>{driver2}</p>
+                {insight2
+                  ? <InsightPanel insight={insight2} modelBackend={version?.model_backend} />
+                  : <p className="muted empty-hint" style={{ fontSize: '0.75rem' }}>Click Compare to analyse.</p>}
+              </div>
             </div>
-            <div style={{ borderLeft: '1px solid var(--border)', paddingLeft: 16 }}>
-              <p style={{ fontWeight: 700, fontSize: '0.8rem', marginBottom: 8, color: 'var(--text)' }}>{driver2}</p>
-              {insight2
-                ? <InsightPanel insight={insight2} modelBackend={version?.model_backend} />
-                : <p className="muted empty-hint" style={{ fontSize: '0.75rem' }}>Click Compare to analyse.</p>}
-            </div>
-          </div>
+          </>
         ) : (
           !insight
             ? <p className="muted empty-hint">Pick a race and driver, then click Analyse Session.</p>
@@ -2027,6 +2117,179 @@ function LivePanel({ version }) {
       </>
     )}
     </>
+  );
+}
+
+// ── Live SSE stream panel ──────────────────────────────────────────────────
+
+function StreamPanel({ version }) {
+  const [year, setYear]               = useState(2025);
+  const [sessions, setSessions]       = useState([]);
+  const [sessionKey, setSessionKey]   = useState('');
+  const [drivers, setDrivers]         = useState([]);
+  const [driverNum, setDriverNum]     = useState('');
+  const [audience, setAudience]       = useState('DRIVER');
+  const [streaming, setStreaming]     = useState(false);
+  const [insight, setInsight]         = useState(null);
+  const [lastLap, setLastLap]         = useState(null);
+  const [heartbeatLap, setHeartbeat]  = useState(null);
+  const [error, setError]             = useState('');
+  const esRef                          = useRef(null);
+
+  useEffect(() => {
+    setSessions([]); setSessionKey('');
+    fetch(`/api/v1/live/sessions?year=${year}&session_type=Race`)
+      .then(r => r.ok ? r.json() : [])
+      .then(setSessions)
+      .catch(() => {});
+  }, [year]);
+
+  useEffect(() => {
+    if (!sessionKey) return;
+    setDrivers([]); setDriverNum('');
+    fetch(`/api/v1/live/drivers/${sessionKey}`)
+      .then(r => r.ok ? r.json() : [])
+      .then(rows => {
+        setDrivers(rows);
+        if (rows.length) setDriverNum(String(rows[0].driver_number ?? ''));
+      })
+      .catch(() => {});
+  }, [sessionKey]);
+
+  useEffect(() => () => esRef.current?.close(), []);
+
+  function startStream() {
+    if (!sessionKey || !driverNum) return;
+    esRef.current?.close();
+    setError(''); setInsight(null); setLastLap(null); setHeartbeat(null);
+    const url = `/api/v1/live/stream/${sessionKey}/${driverNum}?audience=${audience}`;
+    const es = new EventSource(url);
+    esRef.current = es;
+    setStreaming(true);
+    es.onmessage = (e) => {
+      try {
+        const d = JSON.parse(e.data);
+        if (d.type === 'error') { setError(d.detail); return; }
+        if (d.type === 'heartbeat') { setHeartbeat(d.lap); return; }
+        setInsight(d);
+        setLastLap(d.lap_number ?? null);
+        setHeartbeat(null);
+      } catch {}
+    };
+    es.onerror = () => { setError('Stream disconnected.'); setStreaming(false); };
+  }
+
+  function stopStream() {
+    esRef.current?.close();
+    esRef.current = null;
+    setStreaming(false);
+  }
+
+  const selectedSession = sessions.find(s => String(s.session_key) === String(sessionKey));
+
+  return (
+    <div className="grid">
+      <div className="card input-card">
+        <div className="input-header">
+          <h2><Radio size={14} /> Live Stream</h2>
+          <div className="seg">
+            {['DRIVER', 'ENGINEER'].map(a => (
+              <button key={a} className={`seg-btn${audience === a ? ' active' : ''}`}
+                onClick={() => setAudience(a)}>{a}</button>
+            ))}
+          </div>
+        </div>
+
+        <div className="stats-form">
+          <Section title="Session">
+            <div className="context-row">
+              <label><span>Year</span>
+                <input type="number" className="text-input num-input" value={year} min={2023} max={2025}
+                  onChange={e => setYear(Number(e.target.value))} />
+              </label>
+              <label style={{ flex: 2 }}><span>Race</span>
+                <select className="text-input" value={sessionKey}
+                  onChange={e => setSessionKey(e.target.value)}>
+                  <option value="">— select —</option>
+                  {sessions.map(s => (
+                    <option key={s.session_key} value={s.session_key}>
+                      {s.location ?? s.country_name} · {(s.date_start ?? '').slice(0, 10)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            {selectedSession && (
+              <p className="muted" style={{ fontSize: '0.72rem', marginTop: 4 }}>
+                session_key {selectedSession.session_key}
+              </p>
+            )}
+          </Section>
+
+          <Section title="Driver">
+            <select className="text-input" value={driverNum}
+              onChange={e => setDriverNum(e.target.value)}
+              disabled={!sessionKey || !drivers.length}>
+              {!sessionKey
+                ? <option>— pick session first —</option>
+                : !drivers.length
+                  ? <option>Loading…</option>
+                  : drivers.map(d => (
+                    <option key={d.driver_number} value={d.driver_number}>
+                      {d.name_acronym ?? d.driver_number}
+                      {d.full_name ? ` · ${d.full_name}` : ''}
+                    </option>
+                  ))}
+            </select>
+          </Section>
+        </div>
+
+        {!streaming ? (
+          <button className="analyze-btn" onClick={startStream}
+            disabled={!sessionKey || !driverNum} style={{ marginTop: 12, width: '100%' }}>
+            <Activity size={13} /> Start Live Stream
+          </button>
+        ) : (
+          <button className="analyze-btn" onClick={stopStream}
+            style={{ marginTop: 12, width: '100%', background: '#450a0a', borderColor: '#7f1d1d' }}>
+            Stop Stream
+          </button>
+        )}
+
+        {error && <pre className="error" style={{ marginTop: 8 }}>{error}</pre>}
+
+        {streaming && !error && (
+          <p className="muted" style={{ fontSize: '0.70rem', marginTop: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#22c55e', flexShrink: 0, display: 'inline-block' }} />
+            {heartbeatLap != null
+              ? `Waiting for next lap (current: ${heartbeatLap})…`
+              : lastLap != null
+                ? `Streaming · last update lap ${lastLap}`
+                : 'Connecting to OpenF1…'}
+          </p>
+        )}
+
+        <p className="muted" style={{ fontSize: '0.70rem', marginTop: 8 }}>
+          Polls OpenF1 every 15 s. Emits a new insight when the lap counter advances.
+          Use for live race sessions or recent completed sessions.
+        </p>
+      </div>
+
+      <div className="card insight-card">
+        <h2>
+          <ShieldAlert size={15} /> Live Insight
+          {streaming && (
+            <span style={{ marginLeft: 8, fontSize: 10, color: '#22c55e', fontWeight: 700, letterSpacing: '0.05em' }}>
+              ● LIVE
+            </span>
+          )}
+        </h2>
+        {!insight
+          ? <p className="muted empty-hint">Select a session and driver, then start the stream.</p>
+          : <InsightPanel insight={insight} modelBackend={version?.model_backend} />
+        }
+      </div>
+    </div>
   );
 }
 
@@ -3433,7 +3696,7 @@ function ClassifierModelsPanel({ clfHistory }) {
             )}
           </p>
           <div style={{ display: 'flex', gap: 5 }}>
-            <button className="kb-btn" onClick={() => runTuneAll(30)} disabled={tuningAll || tuning || retraining || retrainingAll}
+            <button className="kb-btn" onClick={() => runTuneAll(10)} disabled={tuningAll || tuning || retraining || retrainingAll}
               style={{ fontSize: 10, padding: '2px 10px', color: tuningAll ? '#64748b' : '#c4b5fd', borderColor: tuningAll ? '#334155' : '#6d28d9' }}>
               {tuningAll ? <><Activity size={10} className="spin" style={{ marginRight: 3 }} />Tuning all…</> : <><FlaskConical size={10} style={{ marginRight: 3 }} />Tune All</>}
             </button>
@@ -4452,13 +4715,15 @@ function OutcomeLabelingCard() {
 
       {result && (
         <div style={{ marginTop: 6, padding: '8px 10px', borderRadius: 6, background: '#060c18', border: '1px solid #1e293b' }}>
-          <div style={{ display: 'flex', gap: 14, marginBottom: 6, fontSize: 10, fontFamily: 'monospace', flexWrap: 'wrap' }}>
+          <div style={{ marginBottom: 6, fontSize: 10, fontFamily: 'monospace' }}>
             <span style={{ color: '#64748b', fontWeight: 600 }}>{result.track_id} {result.year} R{result.round_num}</span>
+            {dryRun && <span style={{ color: '#f59e0b', fontWeight: 600, marginLeft: 8 }}>DRY RUN</span>}
+          </div>
+          <div style={{ display: 'flex', gap: 14, marginBottom: 6, fontSize: 10, fontFamily: 'monospace', flexWrap: 'wrap' }}>
             <span style={{ color: '#94a3b8' }}>{result.n_insights_examined} examined</span>
             <span style={{ color: '#4ade80' }}>{result.n_labeled_correct} correct</span>
             <span style={{ color: '#f87171' }}>{result.n_labeled_incorrect} incorrect</span>
             <span style={{ color: '#475569' }}>{result.n_no_match} no match</span>
-            {dryRun && <span style={{ color: '#f59e0b', fontWeight: 600 }}>DRY RUN — nothing written</span>}
           </div>
           {incidentCounts.length > 0 ? (
             <div>
@@ -5528,6 +5793,10 @@ export default function App() {
               onClick={() => setMode('live')}>
               <History size={14} /> Session
             </button>
+            <button className={`mode-tab${mode === 'stream' ? ' active' : ''}`}
+              onClick={() => setMode('stream')}>
+              <Radio size={14} /> Stream
+            </button>
             <button className={`mode-tab${mode === 'chat' ? ' active' : ''}`}
               onClick={() => setMode('chat')}>
               <MessageSquare size={14} /> Chat Analysis
@@ -5573,6 +5842,7 @@ export default function App() {
 
       {mode === 'telemetry'  && <TelemetryPanel version={version} />}
       {mode === 'live'       && <LivePanel version={version} />}
+      {mode === 'stream'     && <StreamPanel version={version} />}
       {mode === 'chat'       && <ChatPanel version={version} />}
       {mode === 'history'    && <HistoryPanel />}
       {mode === 'analytics'  && <AnalyticsPanel />}

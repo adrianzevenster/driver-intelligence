@@ -26,9 +26,11 @@ import warnings
 from collections import defaultdict
 from dataclasses import dataclass
 
+from pathlib import Path
+
 logger = logging.getLogger("f1di.data.outcome_labeler")
 
-_CACHE_DIR = "/tmp/f1di_fastf1_cache"
+_CACHE_DIR = str(Path(__file__).parents[3] / "data" / "fastf1_cache")
 
 # How many laps ahead an incident must occur for a WARNING/CRITICAL prediction
 # to be considered "correct".
@@ -340,38 +342,130 @@ def label_race(
         )
 
 
-def _label_race_inner(fastf1, canonical_track_id, year: int, round_num: int, *, dry_run: bool) -> OutcomeReport:
-    os.makedirs(_CACHE_DIR, exist_ok=True)
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        fastf1.Cache.enable_cache(_CACHE_DIR)
+def _openf1_get(endpoint: str, **params) -> list[dict]:
+    """Fetch from OpenF1 API with simple retry on rate-limit."""
+    import time
+    import urllib.request
+    import urllib.parse
+    qs = urllib.parse.urlencode(params)
+    url = f"https://api.openf1.org/v1/{endpoint}?{qs}"
+    for attempt in range(3):
         try:
-            session = fastf1.get_session(year, round_num, "R")
-            session.load(telemetry=False, weather=True, messages=True, laps=True)
+            with urllib.request.urlopen(url, timeout=20) as r:
+                import json
+                return json.loads(r.read())
         except Exception as exc:
-            logger.error("fastf1_load_failed year=%s round=%s: %s", year, round_num, exc)
+            if "429" in str(exc) and attempt < 2:
+                time.sleep(2 ** attempt)
+                continue
+            raise
+    return []
+
+
+def _fetch_openf1_incidents(year: int, round_num: int) -> tuple[str, list[Incident]]:
+    """Return (location, incidents) using the OpenF1 API (works from server IPs)."""
+    sessions = _openf1_get("sessions", year=year, session_name="Race")
+    sessions = [s for s in sessions if s.get("date_start")]
+    sessions.sort(key=lambda s: s["date_start"])
+    if len(sessions) < round_num:
+        raise ValueError(f"OpenF1 has only {len(sessions)} races for {year}, want round {round_num}")
+    session = sessions[round_num - 1]
+    skey = session["session_key"]
+    location = session.get("location") or session.get("country_name") or ""
+
+    rc = _openf1_get("race_control", session_key=skey)
+    stints = _openf1_get("stints", session_key=skey)
+
+    # Max race lap from stints
+    max_lap = max((s.get("lap_end") or 0 for s in stints), default=0)
+    # All driver numbers seen in stints
+    all_drivers = {str(s["driver_number"]) for s in stints}
+
+    incidents: list[Incident] = []
+
+    # ── Retirements ──────────────────────────────────────────────────────────
+    drv_max: dict[str, int] = defaultdict(int)
+    for s in stints:
+        drv = str(s["driver_number"])
+        drv_max[drv] = max(drv_max[drv], s.get("lap_end") or 0)
+    for drv, last in drv_max.items():
+        if max_lap > 0 and last < max_lap - 3:
+            incidents.append(Incident(driver=drv, lap=max(last, 1),
+                                      incident_type="retirement", severity=0.95))
+
+    # ── Safety car / Red flag from race control ──────────────────────────────
+    _SC_DEPLOY = ("SAFETY CAR DEPLOYED", "VIRTUAL SAFETY CAR DEPLOYED", "VSC DEPLOYED")
+    for msg in rc:
+        text = (msg.get("message") or "").upper()
+        flag = (msg.get("flag") or "").upper()
+        lap = msg.get("lap_number") or 0
+        if not lap:
+            continue
+        if flag == "RED" or "RED FLAG" in text:
+            for drv in all_drivers:
+                incidents.append(Incident(driver=drv, lap=lap,
+                                          incident_type="safety_car", severity=0.85))
+        elif any(kw in text for kw in _SC_DEPLOY):
+            for drv in all_drivers:
+                incidents.append(Incident(driver=drv, lap=lap,
+                                          incident_type="safety_car", severity=0.70))
+
+    # ── Forced pits: stint ended before 30% of expected compound life ────────
+    _EXPECTED = {"SOFT": 18, "MEDIUM": 26, "HARD": 35, "INTERMEDIATE": 22, "WET": 18}
+    drv_stints: dict[str, list] = defaultdict(list)
+    for s in stints:
+        drv_stints[str(s["driver_number"])].append(s)
+    for drv, ds in drv_stints.items():
+        ds.sort(key=lambda s: s.get("stint_number", 0))
+        for s in ds[:-1]:  # exclude last stint
+            compound = (s.get("compound") or "UNKNOWN").upper()
+            start = s.get("lap_start") or 0
+            end = s.get("lap_end") or 0
+            life = (end - start + 1) if end >= start and end > 0 else 0
+            expected = _EXPECTED.get(compound, 24)
+            if 0 < life < expected * 0.30 and life >= 3:
+                incidents.append(Incident(driver=drv, lap=end,
+                                          incident_type="forced_pit", severity=0.80))
+
+    return location, incidents
+
+
+def _label_race_inner(fastf1, canonical_track_id, year: int, round_num: int, *, dry_run: bool) -> OutcomeReport:
+    # ── Primary: OpenF1 (accessible from server IPs) ─────────────────────────
+    try:
+        location, incidents = _fetch_openf1_incidents(year, round_num)
+        track_id = canonical_track_id(location)
+        logger.info("outcome_labeler openf1 found %d incidents year=%s round=%s track=%s",
+                    len(incidents), year, round_num, track_id)
+    except Exception as exc:
+        logger.warning("openf1_incident_fetch_failed year=%s round=%s: %s — trying FastF1 cache",
+                       year, round_num, exc)
+        # ── Fallback: FastF1 (works locally / from pre-populated cache) ──────
+        os.makedirs(_CACHE_DIR, exist_ok=True)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            fastf1.Cache.enable_cache(_CACHE_DIR)
+            try:
+                session = fastf1.get_session(year, round_num, "R")
+                session.load(telemetry=False, weather=True, messages=True, laps=True)
+            except Exception as exc2:
+                logger.error("fastf1_load_failed year=%s round=%s: %s", year, round_num, exc2)
+                return OutcomeReport(
+                    year=year, round_num=round_num, track_id="unknown",
+                    n_insights_examined=0, n_labeled_correct=0,
+                    n_labeled_incorrect=0, n_no_match=0, incidents_found=[],
+                )
+        try:
+            location = str(session.event.get("Location", "") or "")
+            track_id = canonical_track_id(location)
+            incidents = _extract_incidents(session)
+        except Exception as exc2:
+            logger.error("outcome_labeler_parse_failed year=%s round=%s: %s", year, round_num, exc2)
             return OutcomeReport(
                 year=year, round_num=round_num, track_id="unknown",
                 n_insights_examined=0, n_labeled_correct=0,
                 n_labeled_incorrect=0, n_no_match=0, incidents_found=[],
             )
-
-    try:
-        location = str(session.event.get("Location", "") or "")
-        track_id = canonical_track_id(location)
-        incidents = _extract_incidents(session)
-    except Exception as exc:
-        logger.error("outcome_labeler_parse_failed year=%s round=%s: %s", year, round_num, exc)
-        return OutcomeReport(
-            year=year, round_num=round_num, track_id="unknown",
-            n_insights_examined=0, n_labeled_correct=0,
-            n_labeled_incorrect=0, n_no_match=0, incidents_found=[],
-        )
-
-    logger.info(
-        "outcome_labeler found %d incidents  year=%s round=%s track=%s",
-        len(incidents), year, round_num, track_id,
-    )
 
     # Build incident index: driver → [(lap, type, severity)]
     incident_index: dict[str, list[tuple[int, str, float]]] = defaultdict(list)

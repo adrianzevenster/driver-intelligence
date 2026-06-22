@@ -22,7 +22,7 @@ from f1di.agents.thresholds import CircuitThresholds, _PATH as _DEFAULT_PATH, sa
 
 logger = logging.getLogger("f1di.agents.threshold_fitter")
 
-_CACHE_DIR = "/tmp/f1di_fastf1_cache"
+_CACHE_DIR = str(Path(__file__).parents[3] / "data" / "fastf1_cache")
 
 # Global prior — used as a Bayesian anchor when circuit evidence is sparse.
 _PRIOR = CircuitThresholds()

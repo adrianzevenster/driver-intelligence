@@ -10,9 +10,11 @@ from typing import Any
 from f1di.knowledge.track_ids import canonical as canonical_track_id
 from f1di.rag.store import KnowledgeDocument
 
+from pathlib import Path
+
 logger = logging.getLogger(__name__)
 
-_CACHE_DIR = "/tmp/f1di_fastf1_cache"
+_CACHE_DIR = str(Path(__file__).parents[3] / "data" / "fastf1_cache")
 
 
 def _fmt_laptime(td: Any) -> str:

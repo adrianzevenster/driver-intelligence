@@ -16,7 +16,7 @@ from typing import Any
 from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, Request, Response, Security, UploadFile
 from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.security.api_key import APIKeyHeader
 from fastapi.staticfiles import StaticFiles
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
@@ -2099,6 +2099,59 @@ def live_insight(
     return get_orchestrator().analyze(window, audience=audience)
 
 
+@app.get("/v1/live/stream/{session_key}/{driver_number}")
+async def live_stream_sse(
+    session_key: int,
+    driver_number: int,
+    audience: InsightAudience = InsightAudience.DRIVER,
+    poll_interval: int = 15,
+) -> StreamingResponse:
+    """Server-Sent Events stream of lap-by-lap insights for a live or recent OpenF1 session.
+
+    Emits one ``data:`` event per new lap detected.  Between new laps a
+    heartbeat event is sent so the client can tell the connection is alive.
+    The stream terminates automatically after 5 consecutive errors.
+    """
+    import asyncio as _asyncio
+    from f1di.knowledge.openf1_live import build_window
+
+    orchestrator = get_orchestrator()
+
+    async def _generate():
+        last_lap: int | None = None
+        errors = 0
+        while True:
+            try:
+                window = build_window(
+                    session_key=session_key,
+                    driver_number=driver_number,
+                )
+                current_lap = getattr(window, "lap_number", None)
+                if current_lap != last_lap:
+                    last_lap = current_lap
+                    insight = orchestrator.analyze(window, audience=audience)
+                    _persist_insight(insight, window)
+                    payload = _json.dumps(_json_ready(insight.model_dump()))
+                    yield f"data: {payload}\n\n"
+                else:
+                    heartbeat = _json.dumps({"type": "heartbeat", "lap": current_lap})
+                    yield f"data: {heartbeat}\n\n"
+                errors = 0
+            except Exception as exc:
+                errors += 1
+                error_event = _json.dumps({"type": "error", "detail": str(exc)})
+                yield f"data: {error_event}\n\n"
+                if errors >= 5:
+                    return
+            await _asyncio.sleep(poll_interval)
+
+    return StreamingResponse(
+        _generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 # ---------------------------------------------------------------------------
 # FastF1 session replay
 # ---------------------------------------------------------------------------
@@ -2112,7 +2165,7 @@ def session_races(year: int = 2024) -> list[dict]:
 @app.get("/v1/session/drivers/{year}/{round_num}")
 def session_drivers(year: int, round_num: int, session_type: str = "R") -> list[dict]:
     from f1di.knowledge.fastf1_session import get_drivers
-    return get_drivers(year=year, round_num=round_num, session_type=session_type)
+    return get_drivers(year=year, round_num=round_num, session_type=session_type, allow_fallback=True)
 
 
 @app.get("/v1/session/laps/{year}/{round_num}/{driver}")

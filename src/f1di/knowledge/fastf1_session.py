@@ -71,6 +71,31 @@ def _ff1():
 # unchanged — it's a shorter race with its own laps/stints/telemetry.
 _VALID_SESSION_TYPES = {"R", "S"}
 
+_FALLBACK_GRIDS: dict[int, list[dict[str, str]]] = {
+    2025: [
+        {"code": "VER", "name": "Max Verstappen"},
+        {"code": "TSU", "name": "Yuki Tsunoda"},
+        {"code": "NOR", "name": "Lando Norris"},
+        {"code": "PIA", "name": "Oscar Piastri"},
+        {"code": "LEC", "name": "Charles Leclerc"},
+        {"code": "HAM", "name": "Lewis Hamilton"},
+        {"code": "RUS", "name": "George Russell"},
+        {"code": "ANT", "name": "Kimi Antonelli"},
+        {"code": "ALO", "name": "Fernando Alonso"},
+        {"code": "STR", "name": "Lance Stroll"},
+        {"code": "GAS", "name": "Pierre Gasly"},
+        {"code": "COL", "name": "Franco Colapinto"},
+        {"code": "ALB", "name": "Alex Albon"},
+        {"code": "SAI", "name": "Carlos Sainz"},
+        {"code": "OCO", "name": "Esteban Ocon"},
+        {"code": "BEA", "name": "Oliver Bearman"},
+        {"code": "HUL", "name": "Nico Hulkenberg"},
+        {"code": "BOR", "name": "Gabriel Bortoleto"},
+        {"code": "LAW", "name": "Liam Lawson"},
+        {"code": "HAD", "name": "Isack Hadjar"},
+    ],
+}
+
 
 def _check_session_type(session_type: str) -> str:
     st = session_type.upper()
@@ -121,13 +146,50 @@ def _load_session_laps(year: int, round_num: int, session_type: str = "R"):
     return session
 
 
-def get_drivers(year: int, round_num: int, session_type: str = "R") -> list[dict]:
-    session = _load_session_laps(year, round_num, session_type)
+def _driver_rows_from_session(session) -> list[dict]:
     try:
         codes = sorted(session.laps["Driver"].dropna().unique())
     except Exception:
-        return []
-    return [{"code": str(c)} for c in codes]
+        codes = []
+    if codes:
+        return [{"code": str(c)} for c in codes]
+
+    try:
+        results = session.results
+    except Exception:
+        results = None
+    if results is not None and not results.empty and "Abbreviation" in results:
+        codes = sorted(results["Abbreviation"].dropna().unique())
+        if codes:
+            return [{"code": str(c)} for c in codes]
+
+    rows = []
+    for number in getattr(session, "drivers", []) or []:
+        try:
+            info = session.get_driver(number)
+            code = info.get("Abbreviation")
+            if code:
+                rows.append({"code": str(code)})
+        except Exception:
+            continue
+    return sorted(rows, key=lambda r: r["code"])
+
+
+def _fallback_grid(year: int) -> list[dict]:
+    return [
+        {**row, "source": "fallback_grid"}
+        for row in _FALLBACK_GRIDS.get(year, [])
+    ]
+
+
+def get_drivers(year: int, round_num: int, session_type: str = "R", allow_fallback: bool = False) -> list[dict]:
+    session = _load_session_laps(year, round_num, session_type)
+    rows = _driver_rows_from_session(session)
+    if rows:
+        return rows
+    if allow_fallback:
+        return _fallback_grid(year)
+    return []
 
 
 def get_laps(year: int, round_num: int, driver: str, session_type: str = "R") -> list[dict]:

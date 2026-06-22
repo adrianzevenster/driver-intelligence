@@ -27,7 +27,7 @@ _SYNTH_N = {
 }
 
 _SEARCH_SPACE = {
-    "max_iter":          ("int",   100, 500),
+    "max_iter":          ("int",   100, 250),
     "max_depth":         ("int",   2,   8),
     "learning_rate":     ("float", 0.01, 0.3,  True),   # log scale
     "min_samples_leaf":  ("int",   5,   80),
