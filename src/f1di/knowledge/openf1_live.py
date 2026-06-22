@@ -158,7 +158,7 @@ def build_window(
 
     for i, row in enumerate(car_rows):
         speed = float(row.get("speed", 200))
-        throttle = float(row.get("throttle", 50))
+        throttle = min(100.0, max(0.0, float(row.get("throttle", 50))))
         brake = int(row.get("brake", 0))
         drs = int(row.get("drs", 0))
         rpm = float(row.get("rpm", 10000))

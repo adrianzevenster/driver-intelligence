@@ -1861,22 +1861,51 @@ function LivePanel({ version }) {
     const lap = lapOverride ?? (replayMode ? selectedLap : null);
     const lapParam = lap != null ? `&lap_number=${lap}` : '';
     const base = `/api/v1/session/insight?year=${year}&round_num=${roundNum}&audience=${audience}&session_type=${sessionType}${lapParam}`;
+
+    async function fetchOne(drv) {
+      const res = await fetch(`${base}&driver=${drv}`, { method: 'POST' });
+      if (!res.ok) {
+        let msg;
+        try { msg = (await res.json()).detail ?? `Error ${res.status}`; }
+        catch { msg = `Error ${res.status}`; }
+        throw new Error(msg);
+      }
+      return res.json();
+    }
+
     try {
-      const reqs = [fetch(`${base}&driver=${driver}`, { method: 'POST' })];
-      if (driver2) reqs.push(fetch(`${base}&driver=${driver2}`, { method: 'POST' }));
-      const [res1, res2] = await Promise.all(reqs);
-      if (!res1.ok) throw new Error(await res1.text());
-      const d1 = await res1.json();
-      const d2 = res2 && res2.ok ? await res2.json() : null;
-      setInsight(d1);
-      setInsight2(d2);
-      const lapInfo = laps.find(l => l.lap_number === lap) ?? null;
-      setHistory(prev => [{
-        id: Date.now(), lap, lapInfo, driver, driver2,
-        risk: d1.risk, recommendation: d1.recommendation,
-        insight: d1, insight2: d2,
-      }, ...prev].slice(0, 8));
-      if (replayMode && lap != null) fetchTrace(lap);
+      if (!driver2) {
+        const d1 = await fetchOne(driver);
+        setInsight(d1); setInsight2(null);
+        const lapInfo = laps.find(l => l.lap_number === lap) ?? null;
+        setHistory(prev => [{
+          id: Date.now(), lap, lapInfo, driver, driver2: null,
+          risk: d1.risk, recommendation: d1.recommendation,
+          insight: d1, insight2: null,
+        }, ...prev].slice(0, 8));
+        if (replayMode && lap != null) fetchTrace(lap);
+      } else {
+        const [r1, r2] = await Promise.allSettled([fetchOne(driver), fetchOne(driver2)]);
+        const d1 = r1.status === 'fulfilled' ? r1.value : null;
+        const d2 = r2.status === 'fulfilled' ? r2.value : null;
+        if (!d1 && !d2) throw new Error(`No telemetry for ${driver} or ${driver2} at this lap`);
+        setInsight(d1);
+        setInsight2(d2);
+        const warnings = [
+          r1.status === 'rejected' ? `${driver}: ${r1.reason?.message}` : null,
+          r2.status === 'rejected' ? `${driver2}: ${r2.reason?.message}` : null,
+        ].filter(Boolean);
+        if (warnings.length) setError(warnings.join(' · '));
+        if (d1) {
+          const lapInfo = laps.find(l => l.lap_number === lap) ?? null;
+          setHistory(prev => [{
+            id: Date.now(), lap, lapInfo, driver, driver2,
+            risk: d1.risk, recommendation: d1.recommendation,
+            insight: d1, insight2: d2,
+          }, ...prev].slice(0, 8));
+        }
+        if (replayMode && lap != null) fetchTrace(lap);
+      }
     } catch (e) {
       setError(String(e.message ?? e));
     } finally {
