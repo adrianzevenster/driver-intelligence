@@ -2,14 +2,19 @@ from __future__ import annotations
 
 import logging
 import math
+import threading
+import time
 from collections import deque
 from dataclasses import asdict
+from pathlib import Path
 
 logger = logging.getLogger("f1di.observability.drift")
 
 _ALERT_THRESHOLD = 3.5
 _MIN_BASELINE = 50
 _BUFFER_SIZE = 200
+_DRIFT_RETRAIN_COOLDOWN_S = 3600
+_DRIFT_RETRAIN_STAMP = Path("data/calibration/.last_drift_retrain")
 
 _TRACKED = frozenset({
     "fl_wear", "fr_wear", "rear_wear_mean",
@@ -85,10 +90,39 @@ class FeatureDriftTracker:
                 )
 
         DRIFT_ALERT_ACTIVE.set(1.0 if any_alert else 0.0)
+        if any_alert:
+            self._maybe_trigger_retrain()
         self._last_zscores = zscores
         import datetime
         self._last_updated = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
         return zscores
+
+    def _maybe_trigger_retrain(self) -> None:
+        try:
+            if (
+                _DRIFT_RETRAIN_STAMP.exists()
+                and time.time() - _DRIFT_RETRAIN_STAMP.stat().st_mtime < _DRIFT_RETRAIN_COOLDOWN_S
+            ):
+                return
+        except OSError:
+            pass
+
+        def _retrain() -> None:
+            try:
+                from f1di.confidence.online import retrain
+                result = retrain()
+                logger.info("drift_triggered_retrain result=%s", result)
+            except Exception as exc:
+                logger.warning("drift_triggered_retrain failed: %s", exc)
+            finally:
+                try:
+                    _DRIFT_RETRAIN_STAMP.parent.mkdir(parents=True, exist_ok=True)
+                    _DRIFT_RETRAIN_STAMP.touch()
+                except OSError:
+                    pass
+
+        threading.Thread(target=_retrain, daemon=True).start()
+        logger.info("drift_alert_triggered_retrain: launching background calibration retrain")
 
     def _recompute_baseline(self) -> None:
         if len(self._buffer) < 2:

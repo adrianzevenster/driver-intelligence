@@ -336,6 +336,11 @@ def _run_shadow_v2(production_insight: DriverInsight, window: TelemetryWindow) -
         })
         with db_session() as session:
             save_insight(session, shadow, window, shadow=True, challenger_version="weights-v2")
+        try:
+            from f1di.observability.metrics import SHADOW_V2_SCORE_DELTA
+            SHADOW_V2_SCORE_DELTA.observe(v2_conf - production_insight.confidence)
+        except Exception:
+            pass
         logger.debug(
             "Shadow v2 saved for %s: conf %.3f→%.3f",
             production_insight.insight_id, production_insight.confidence, v2_conf,
@@ -2898,6 +2903,98 @@ def capture_fixtures_from_feedback(
         "fixture_file": out_path.name,
         "needs_labeling": sum(1 for c in new_cases if c.get("needs_labeling")),
     }
+
+
+# ---------------------------------------------------------------------------
+# Label audit & flywheel verification
+# ---------------------------------------------------------------------------
+
+@app.get("/v1/labels/audit")
+def labels_audit() -> dict[str, Any]:
+    """Label distribution from FeedbackRecord — verifies the flywheel is generating labels.
+
+    Returns per-source counts (outcome_labeler, null_outcome, human), risk distribution,
+    and the fraction of WARNING/CRITICAL insights that have been labeled.
+    """
+    try:
+        from sqlalchemy import func, select
+        from f1di.storage.database import db_session
+        from f1di.storage.models import FeedbackRecord, InsightRecord
+    except ImportError:
+        raise HTTPException(status_code=503, detail="Persistence layer not installed.")
+
+    with db_session() as session:
+        label_rows = session.execute(
+            select(
+                FeedbackRecord.submitted_by,
+                FeedbackRecord.correct,
+                func.count().label("n"),
+            )
+            .group_by(FeedbackRecord.submitted_by, FeedbackRecord.correct)
+            .order_by(FeedbackRecord.submitted_by)
+        ).all()
+
+        by_source: dict[str, dict] = {}
+        for row in label_rows:
+            src = row.submitted_by or "human"
+            s = by_source.setdefault(src, {"correct": 0, "incorrect": 0, "unlabeled": 0, "total": 0})
+            s["total"] += row.n
+            if row.correct is True:
+                s["correct"] += row.n
+            elif row.correct is False:
+                s["incorrect"] += row.n
+            else:
+                s["unlabeled"] += row.n
+
+        risk_rows = session.execute(
+            select(InsightRecord.risk, func.count().label("n"))
+            .where(InsightRecord.shadow == False)  # noqa: E712
+            .group_by(InsightRecord.risk)
+        ).all()
+
+        total_wc = session.scalar(
+            select(func.count()).where(
+                InsightRecord.risk.in_(["WARNING", "CRITICAL"]),
+                InsightRecord.shadow == False,  # noqa: E712
+            )
+        ) or 0
+
+        labeled_wc = session.scalar(
+            select(func.count(InsightRecord.id)).where(
+                InsightRecord.risk.in_(["WARNING", "CRITICAL"]),
+                InsightRecord.shadow == False,  # noqa: E712
+                InsightRecord.insight_id.in_(
+                    select(FeedbackRecord.insight_id).scalar_subquery()
+                ),
+            )
+        ) or 0
+
+    return {
+        "by_source": by_source,
+        "risk_distribution": {row.risk: row.n for row in risk_rows},
+        "warning_critical_total": total_wc,
+        "warning_critical_labeled": labeled_wc,
+        "label_coverage_rate": round(labeled_wc / total_wc, 4) if total_wc > 0 else 0.0,
+    }
+
+
+@app.get("/v1/labels/verify")
+def labels_verify(year: int = 2024, round: int = 1) -> dict[str, Any]:
+    """Dry-run outcome labeling for one race to confirm flywheel session-id matching.
+
+    Returns an OutcomeReport without writing any FeedbackRecord rows.
+    A non-zero n_insights_examined confirms the session_id prefix matching works.
+    """
+    try:
+        from f1di.data.outcome_labeler import label_race
+    except ImportError:
+        raise HTTPException(status_code=503, detail="fastf1 not installed.")
+    import dataclasses
+    try:
+        report = label_race(year=year, round_num=round, dry_run=True)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+    return dataclasses.asdict(report)
 
 
 # ---------------------------------------------------------------------------

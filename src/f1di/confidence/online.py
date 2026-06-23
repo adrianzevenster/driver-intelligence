@@ -447,6 +447,13 @@ def retrain(
             ece, prev_ece, ece - prev_ece,
         )
 
+    try:
+        from f1di.observability.metrics import CALIBRATION_ECE_GAUGE, CALIBRATION_REGRESSION_BLOCKED
+        CALIBRATION_ECE_GAUGE.set(ece)
+        CALIBRATION_REGRESSION_BLOCKED.set(1 if regression_detected else 0)
+    except Exception:
+        pass
+
     fitted_at = f"{ts[:4]}-{ts[4:6]}-{ts[6:8]}T{ts[9:11]}:{ts[11:13]}:{ts[13:15]}Z"
     quality = {
         "ece": ece,

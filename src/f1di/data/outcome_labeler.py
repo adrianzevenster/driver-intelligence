@@ -362,8 +362,8 @@ def _openf1_get(endpoint: str, **params) -> list[dict]:
     return []
 
 
-def _fetch_openf1_incidents(year: int, round_num: int) -> tuple[str, list[Incident]]:
-    """Return (location, incidents) using the OpenF1 API (works from server IPs)."""
+def _fetch_openf1_incidents(year: int, round_num: int) -> tuple[str, list[Incident], int]:
+    """Return (location, incidents, session_key) using the OpenF1 API (works from server IPs)."""
     sessions = _openf1_get("sessions", year=year, session_name="Race")
     sessions = [s for s in sessions if s.get("date_start")]
     sessions.sort(key=lambda s: s["date_start"])
@@ -427,16 +427,17 @@ def _fetch_openf1_incidents(year: int, round_num: int) -> tuple[str, list[Incide
                 incidents.append(Incident(driver=drv, lap=end,
                                           incident_type="forced_pit", severity=0.80))
 
-    return location, incidents
+    return location, incidents, skey
 
 
 def _label_race_inner(fastf1, canonical_track_id, year: int, round_num: int, *, dry_run: bool) -> OutcomeReport:
     # ── Primary: OpenF1 (accessible from server IPs) ─────────────────────────
+    openf1_session_key: int | None = None
     try:
-        location, incidents = _fetch_openf1_incidents(year, round_num)
+        location, incidents, openf1_session_key = _fetch_openf1_incidents(year, round_num)
         track_id = canonical_track_id(location)
-        logger.info("outcome_labeler openf1 found %d incidents year=%s round=%s track=%s",
-                    len(incidents), year, round_num, track_id)
+        logger.info("outcome_labeler openf1 found %d incidents year=%s round=%s track=%s skey=%s",
+                    len(incidents), year, round_num, track_id, openf1_session_key)
     except Exception as exc:
         logger.warning("openf1_incident_fetch_failed year=%s round=%s: %s — trying FastF1 cache",
                        year, round_num, exc)
@@ -490,6 +491,10 @@ def _label_race_inner(fastf1, canonical_track_id, year: int, round_num: int, *, 
         )
 
     candidate_prefixes = _session_id_for_race(year, round_num, track_id)
+    # Insights generated via the live stream / session replay use the OpenF1
+    # session key directly: session_id = f"openf1_{session_key}".
+    if openf1_session_key:
+        candidate_prefixes.append(f"openf1_{openf1_session_key}")
     n_correct = 0
     n_incorrect = 0
     n_no_match = 0

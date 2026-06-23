@@ -48,6 +48,11 @@ CALIBRATION_REGRESSION_BLOCKED = Gauge(
     "f1di_calibration_regression_blocked",
     "1 if the most recent retrain was blocked due to ECE regression, 0 otherwise",
 )
+SHADOW_V2_SCORE_DELTA = Histogram(
+    "f1di_shadow_v2_score_delta",
+    "v2 challenger minus v1 production confidence score per insight",
+    buckets=(-0.3, -0.2, -0.1, -0.05, 0.0, 0.05, 0.1, 0.2, 0.3),
+)
 
 _LATENCY_LOCK = _threading.Lock()
 _LATENCY_WINDOW: _deque = _deque(maxlen=200)
