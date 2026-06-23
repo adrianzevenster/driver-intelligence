@@ -38,12 +38,19 @@ def _promote_live_model(versioned_path: Path, live_path: Path) -> None:
             pass
 
 
+_INFERENCE_AGENTS = frozenset({
+    "telemetry", "tire_strategy", "weather", "battery", "safety_car", "fuel",
+})
+
+
 def per_agent_accuracy(since: _dt.datetime | None = None) -> dict[str, dict]:
     """Per-agent precision computed from labeled WARNING/CRITICAL insights in the DB.
 
     For each agent, 'precision' is the fraction of WARNING/CRITICAL findings
     that were confirmed correct by human feedback or outcome labels.
-    Returns an empty dict when no labeled data exists yet.
+    All six inference agents are always included; agents with no labeled data
+    at WARNING/CRITICAL level get precision=None so the UI denominator stays
+    stable at 6 rather than collapsing to however many happened to fire.
     """
     import json as _json
     try:
@@ -88,7 +95,7 @@ def per_agent_accuracy(since: _dt.datetime | None = None) -> dict[str, dict]:
         logger.warning("per_agent_accuracy query failed: %s", exc)
         return {}
 
-    return {
+    result = {
         agent: {
             "precision": round(s["n_correct"] / s["n_total"], 4) if s["n_total"] > 0 else None,
             "n_correct": s["n_correct"],
@@ -96,6 +103,11 @@ def per_agent_accuracy(since: _dt.datetime | None = None) -> dict[str, dict]:
         }
         for agent, s in sorted(agent_stats.items())
     }
+    # Pad with null entries for any inference agent not yet seen at WARNING+ level
+    for agent in sorted(_INFERENCE_AGENTS):
+        if agent not in result:
+            result[agent] = {"precision": None, "n_correct": 0, "n_total": 0}
+    return result
 
 
 def rolling_precision_series(days: int = 14) -> list[dict]:
@@ -528,3 +540,5 @@ def retrain(
         "model_path": str(versioned_path),
         "feedback_snapshot": str(snapshot_path),
     }
+
+

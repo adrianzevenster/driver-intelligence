@@ -244,9 +244,10 @@ function ModelHealthBadge() {
   const scoredAgents = agents.filter(([, stats]) => stats.precision != null);
   const healthyAgents = scoredAgents.filter(([, stats]) => stats.precision >= 0.7).length;
   const agentState =
+    agents.length === 0 ? 'unknown' :
     scoredAgents.length === 0 ? 'unknown' :
-    healthyAgents === scoredAgents.length ? 'ok' :
-    healthyAgents >= Math.ceil(scoredAgents.length / 2) ? 'warn' : 'bad';
+    healthyAgents === agents.length ? 'ok' :
+    healthyAgents >= Math.ceil(agents.length / 2) ? 'warn' : 'bad';
   const lat = data?.latency;
   const latencyState = !lat || lat.p95 == null ? 'unknown' : lat.p95 > 500 ? 'bad' : lat.p95 > 200 ? 'warn' : 'ok';
   const driftState = !drift.ready ? 'unknown' : driftAlerted ? 'bad' : 'ok';
@@ -266,7 +267,7 @@ function ModelHealthBadge() {
         <span className={`model-health-chip ${agentState}`}>
           <span className="model-health-dot" />
           <span>Agents</span>
-          <strong>{healthyAgents}/{scoredAgents.length || agents.length}</strong>
+          <strong>{healthyAgents}/{agents.length}</strong>
         </span>
       )}
       <span className={`model-health-chip ${driftState}`}>

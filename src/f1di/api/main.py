@@ -2308,6 +2308,86 @@ def session_insight(
     return insight
 
 
+@app.post("/v1/session/replay/{year}/{round_num}")
+async def session_replay_round(
+    year: int,
+    round_num: int,
+    session_type: str = "R",
+    audience: InsightAudience = InsightAudience.DRIVER,
+    _auth: None = Depends(_require_api_key),
+) -> dict:
+    """Bulk-replay all drivers for one race round through the orchestrator.
+
+    Creates InsightRecords (required for outcome labeling) for every driver at
+    their midrace lap. After insights are persisted, triggers outcome labeling
+    for the round and marks the round ingested in IngestionRecord.
+    Returns a summary of how many insights were generated.
+    """
+    import asyncio
+
+    async def _run() -> dict:
+        from f1di.knowledge.fastf1_session import get_drivers, build_window
+        from f1di.storage.database import db_session
+        from f1di.storage.repository import already_ingested, mark_ingested
+
+        with db_session() as session:
+            if already_ingested(session, source="replay", year=year, round_num=round_num):
+                return {"status": "already_ingested", "year": year, "round_num": round_num, "n_insights": 0}
+
+        try:
+            drivers = get_drivers(year=year, round_num=round_num, session_type=session_type, allow_fallback=True)
+        except Exception as exc:
+            return {"status": "error", "detail": f"Could not fetch drivers: {exc}"}
+
+        orch = get_orchestrator()
+        n_ok = 0
+        errors: list[str] = []
+        for d in drivers:
+            drv = d.get("code") or d.get("abbreviation") or d.get("driver_number") or d.get("driver")
+            if not drv:
+                continue
+            try:
+                window = build_window(
+                    year=year, round_num=round_num, driver=str(drv),
+                    lap_number=None, session_type=session_type,
+                )
+                insight = orch.analyze(window, audience=audience)
+                _persist_insight(insight, window)
+                n_ok += 1
+            except Exception as exc:
+                errors.append(f"{drv}: {exc}")
+                logger.debug("session_replay_round driver=%s error=%s", drv, exc)
+
+        with db_session() as session:
+            mark_ingested(session, source="replay", year=year, round_num=round_num, documents_added=n_ok)
+
+        # Trigger outcome labeling now that InsightRecords exist
+        label_report: dict = {}
+        try:
+            from f1di.data.outcome_labeler import label_race
+            loop = asyncio.get_event_loop()
+            rep = await loop.run_in_executor(None, lambda: label_race(year, round_num))
+            label_report = {
+                "examined": rep.n_examined,
+                "correct": rep.n_labeled_correct,
+                "incorrect": rep.n_labeled_incorrect,
+                "no_match": rep.n_no_match,
+            }
+        except Exception as exc:
+            label_report = {"error": str(exc)}
+
+        return {
+            "status": "ok",
+            "year": year,
+            "round_num": round_num,
+            "n_insights": n_ok,
+            "errors": errors,
+            "outcome_labels": label_report,
+        }
+
+    return await _run()
+
+
 @app.get("/v1/session/strategy/{year}/{round_num}/{driver}")
 def session_strategy(year: int, round_num: int, driver: str, session_type: str = "R") -> dict:
     """Replay every lap of a race through the inference pipeline and compare
