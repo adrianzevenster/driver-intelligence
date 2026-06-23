@@ -112,8 +112,9 @@ class FuelAgent(RaceAgent):
         if risk_str == "INFO" and fuel_pressure > 0.55 and features.laps_remaining > 8:
             risk_str = "WATCH"
             conf = max(conf, 0.60)
-        # Safety ceiling: don't let the classifier fire WARNING unless rules support it
-        if risk_str == "WARNING" and (fuel_pressure <= 0.55 or features.laps_remaining <= 8):
+        # Safety ceiling: WARNING only when the rule threshold is met (pressure > 0.65,
+        # laps > 12); looser conditions warrant at most WATCH.
+        if risk_str == "WARNING" and not (fuel_pressure > 0.65 and features.laps_remaining > 12):
             risk_str = "WATCH"
             conf = min(conf, 0.68)
 

@@ -104,7 +104,10 @@ class InferenceOrchestrator:
         meta = _get_meta_learner()
         if meta is not None and meta.n_real >= 20:
             meta_conf = meta.predict_confidence(findings, confidence)
-            confidence = round(0.6 * meta_conf + 0.4 * confidence, 4)
+            # Weight scales from 0.6 at n_real=20 to 0.9 at n_real=10000+
+            import math
+            meta_w = min(0.9, 0.6 + 0.3 * math.log10(max(1, meta.n_real / 20)))
+            confidence = round(meta_w * meta_conf + (1.0 - meta_w) * confidence, 4)
             uncertainty = round(max(0.0, 1.0 - confidence), 4)
 
         shap_explanation: list[dict] = []

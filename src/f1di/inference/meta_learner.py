@@ -1,22 +1,24 @@
-"""Fusion meta-learner: predicts P(insight correct) from the 4 agent outputs.
+"""Fusion meta-learner: predicts P(insight correct) from all 6 agent outputs.
 
 Replaces the single isotonic-calibrated confidence with a richer estimate that
-can capture agent interaction effects (e.g. single-agent WARNING with others
-on INFO is less reliable than multi-agent agreement).
+captures agent interaction effects (e.g. single-agent WARNING with others on
+INFO is less reliable than multi-agent agreement).
 
-Only activates in inference when n_real >= 20 to avoid degrading the calibration
+Only activates in inference when n_real >= 20 to avoid degrading calibration
 with a synthetic-only model.  Below that threshold the isotonic calibrator is
 used unchanged.
 
 Architecture:
-    Input (10 features):
-        tire_risk, battery_risk, weather_risk, telemetry_risk   (RISK_WEIGHT values)
-        tire_conf, battery_conf, weather_conf, telemetry_conf
-        risk_agreement  (1 - normalised std of risk weights)
-        iso_confidence  (output of the isotonic calibrator)
+    Input (16 features):
+        {agent}_risk × 6       RISK_WEIGHT values for all agents
+        {agent}_conf × 6       per-agent confidence
+        n_high_risk            count of agents at WARNING or CRITICAL
+        risk_agreement         1 - normalised std of risk weights (0=disagree, 1=agree)
+        iso_confidence         isotonic calibrator output
+        max_risk_weight        highest single-agent risk weight
     Target: 1 = insight was correct, 0 = incorrect (from FeedbackRecord)
     Model: HistGradientBoostingClassifier binary — captures non-linear interactions
-           between agent agreement patterns and confidence that a linear model misses.
+           between agent agreement patterns that a linear model misses.
            StandardScaler retained for OOD detection (ood_score uses mean_/scale_).
 """
 from __future__ import annotations
@@ -31,17 +33,21 @@ logger = logging.getLogger("f1di.inference.meta_learner")
 
 _META_PATH = Path("data/calibration/meta_learner.pkl")
 
-_AGENT_ORDER = ["tire_strategy", "battery", "weather", "telemetry"]
+# All 6 inference agents — order is part of the feature contract
+_AGENT_ORDER = ["telemetry", "tire_strategy", "weather", "battery", "safety_car", "fuel"]
 
 FEATURE_NAMES: list[str] = [
-    "tire_risk", "battery_risk", "weather_risk", "telemetry_risk",
-    "tire_conf", "battery_conf", "weather_conf", "telemetry_conf",
+    "telemetry_risk", "tire_risk", "weather_risk", "battery_risk", "safety_car_risk", "fuel_risk",
+    "telemetry_conf", "tire_conf", "weather_conf", "battery_conf", "safety_car_conf", "fuel_conf",
+    "n_high_risk",
     "risk_agreement",
     "iso_confidence",
+    "max_risk_weight",
 ]
 
-# Maximum possible std of 4 risk weights — used for normalisation
-_MAX_RW_STD = 0.5
+# Maximum possible std across 6 risk weights using actual RISK_WEIGHT scale
+# [0.25, 0.45, 0.7, 0.9] — max std at equal split between 0.9 and 0.25: (0.9-0.25)/2 = 0.325
+_MAX_RW_STD = 0.325
 
 
 def _binary_brier(proba: np.ndarray, y_true: np.ndarray, classes: np.ndarray) -> float:
@@ -50,30 +56,43 @@ def _binary_brier(proba: np.ndarray, y_true: np.ndarray, classes: np.ndarray) ->
 
 
 def findings_to_array(findings: list, iso_confidence: float) -> np.ndarray:
-    """Pack 4-agent findings + iso_confidence into the meta-learner feature vector."""
+    """Pack all 6-agent findings + derived features into the meta-learner feature vector."""
     from f1di.confidence.calibration import RISK_WEIGHT
+    from f1di.domain.schemas import RiskLevel
+
+    _HIGH_RISK = {RiskLevel.WARNING, RiskLevel.CRITICAL}
     by_agent = {f.agent if hasattr(f, "agent") else f.get("agent"): f for f in findings}
 
     risk_weights: list[float] = []
     confs: list[float] = []
+    n_high = 0
+    _info_rw = float(RISK_WEIGHT.get(RiskLevel.INFO, 0.25))
     for agent in _AGENT_ORDER:
         f = by_agent.get(agent)
         if f is None:
-            rw, conf = 0.0, 0.5
+            rw, conf = _info_rw, 0.5
         elif hasattr(f, "risk"):
-            rw = float(RISK_WEIGHT.get(f.risk, 0.0))
+            rw = float(RISK_WEIGHT.get(f.risk, _info_rw))
             conf = float(f.confidence)
+            if f.risk in _HIGH_RISK:
+                n_high += 1
         else:
-            from f1di.domain.schemas import RiskLevel
-            rw = float(RISK_WEIGHT.get(RiskLevel[f.get("risk", "INFO")], 0.0))
+            rl = RiskLevel[f.get("risk", "INFO")]
+            rw = float(RISK_WEIGHT.get(rl, _info_rw))
             conf = float(f.get("confidence", 0.5))
+            if rl in _HIGH_RISK:
+                n_high += 1
         risk_weights.append(rw)
         confs.append(conf)
 
     rw_arr = np.array(risk_weights)
     agreement = max(0.0, 1.0 - float(np.std(rw_arr)) / _MAX_RW_STD)
+    max_rw = float(rw_arr.max())
 
-    return np.array(risk_weights + confs + [agreement, iso_confidence], dtype=np.float64)
+    return np.array(
+        risk_weights + confs + [float(n_high), agreement, iso_confidence, max_rw],
+        dtype=np.float64,
+    )
 
 
 MODEL_VERSION = "hgb-v1"
@@ -204,24 +223,44 @@ def _synthetic_label(
     risk_weights: list[float],
     confs: list[float],
     iso_conf: float,
+    rng,
 ) -> int:
-    max_rw = max(risk_weights)
-    mean_rw = float(np.mean(risk_weights))
-    std_rw  = float(np.std(risk_weights))
+    """Synthetic ground truth based on multi-agent agreement patterns.
 
-    # Multi-agent high-risk agreement + high iso_conf → correct
-    if iso_conf > 0.70 and max_rw >= 0.70 and std_rw < 0.20:
-        return 1
-    # Single agent firing with others on INFO + low iso_conf → incorrect
-    if max_rw >= 0.70 and mean_rw < 0.35 and iso_conf < 0.50:
-        return 0
-    # Low confidence → likely incorrect
-    if iso_conf < 0.35:
-        return 0
-    # Medium confidence with reasonable agreement → probably correct
-    if iso_conf > 0.55 and mean_rw > 0.35:
-        return 1
-    return 1 if iso_conf >= 0.50 else 0
+    Designed so iso_confidence is NOT the only signal — agent agreement,
+    number of high-risk agents, and per-agent confidence all matter.
+    This forces the HGB to learn interaction effects, not just iso_conf.
+    """
+    from f1di.domain.schemas import RiskLevel
+    from f1di.confidence.calibration import RISK_WEIGHT
+    _HIGH = float(RISK_WEIGHT[RiskLevel.WARNING])
+
+    rw_arr = np.array(risk_weights)
+    n_high = int((rw_arr >= _HIGH).sum())
+    max_rw = float(rw_arr.max())
+    mean_conf = float(np.mean(confs))
+
+    # Multi-agent agreement (≥3 agents at WARNING+): strong signal → correct
+    if n_high >= 3:
+        return 1 if (mean_conf > 0.55 or iso_conf > 0.60) else int(rng.random() < 0.6)
+
+    # Single high-risk agent, others on INFO: unreliable
+    if n_high == 1 and max_rw >= _HIGH:
+        # Only correct if both iso_conf AND the firing agent's conf are high
+        firing_conf = max(c for c, rw in zip(confs, risk_weights) if rw >= _HIGH)
+        p = 0.3 + 0.4 * firing_conf + 0.2 * iso_conf
+        return int(rng.random() < p)
+
+    # Two agents agree at WARNING+: moderately reliable
+    if n_high == 2:
+        p = 0.5 + 0.3 * iso_conf + 0.15 * mean_conf
+        return int(rng.random() < min(p, 0.95))
+
+    # No agent at WARNING: low-risk scenario, correct (INFO is right to be quiet)
+    if max_rw < _HIGH:
+        return 1 if iso_conf < 0.50 else int(rng.random() < 0.70)
+
+    return int(rng.random() < iso_conf)
 
 
 def generate_synthetic(n: int = 800, seed: int = 42) -> tuple[np.ndarray, np.ndarray]:
@@ -229,16 +268,19 @@ def generate_synthetic(n: int = 800, seed: int = 42) -> tuple[np.ndarray, np.nda
     from f1di.domain.schemas import RiskLevel
     rng = np.random.default_rng(seed)
 
-    _rw_vals = [float(RISK_WEIGHT[r]) for r in RiskLevel]  # e.g. [0, 0.3, 0.7, 1.0]
+    _rw_vals = [float(RISK_WEIGHT[r]) for r in RiskLevel]
+    _high_thresh = float(RISK_WEIGHT[RiskLevel.WARNING])
     X, y = [], []
     while len(X) < n:
         rws   = [float(rng.choice(_rw_vals)) for _ in _AGENT_ORDER]
         confs = [float(rng.uniform(0.45, 0.92)) for _ in _AGENT_ORDER]
         iso   = float(rng.uniform(0.20, 0.95))
-        rw_arr   = np.array(rws)
+        rw_arr    = np.array(rws)
+        n_high    = int((rw_arr >= _high_thresh).sum())
         agreement = max(0.0, 1.0 - float(np.std(rw_arr)) / _MAX_RW_STD)
-        X.append(rws + confs + [agreement, iso])
-        y.append(_synthetic_label(rws, confs, iso))
+        max_rw    = float(rw_arr.max())
+        X.append(rws + confs + [float(n_high), agreement, iso, max_rw])
+        y.append(_synthetic_label(rws, confs, iso, rng))
     return np.array(X, dtype=np.float64), np.array(y, dtype=np.int32)
 
 
@@ -284,16 +326,22 @@ def _load_labeled_from_db() -> tuple[np.ndarray, np.ndarray]:
 
         from f1di.confidence.calibration import RISK_WEIGHT
         from f1di.domain.schemas import RiskLevel
+        _HIGH_RISK = {RiskLevel.WARNING, RiskLevel.CRITICAL}
+        _info_rw = float(RISK_WEIGHT.get(RiskLevel.INFO, 0.25))
         by_agent = {f.get("agent"): f for f in findings_raw}
         risk_weights, confs = [], []
+        n_high = 0
         for agent in _AGENT_ORDER:
             f = by_agent.get(agent)
             if f is None:
-                risk_weights.append(0.0)
+                risk_weights.append(_info_rw)
                 confs.append(0.5)
             else:
                 try:
-                    rw = float(RISK_WEIGHT[RiskLevel[f.get("risk", "INFO")]])
+                    rl = RiskLevel[f.get("risk", "INFO")]
+                    rw = float(RISK_WEIGHT[rl])
+                    if rl in _HIGH_RISK:
+                        n_high += 1
                 except (KeyError, ValueError):
                     rw = 0.0
                 risk_weights.append(rw)
@@ -301,7 +349,8 @@ def _load_labeled_from_db() -> tuple[np.ndarray, np.ndarray]:
 
         rw_arr = np.array(risk_weights)
         agreement = max(0.0, 1.0 - float(np.std(rw_arr)) / _MAX_RW_STD)
-        X.append(risk_weights + confs + [agreement, iso_conf])
+        max_rw = float(rw_arr.max())
+        X.append(risk_weights + confs + [float(n_high), agreement, iso_conf, max_rw])
         y.append(label)
 
     if not X:

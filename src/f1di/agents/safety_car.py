@@ -131,6 +131,14 @@ class SafetyCarAgent(RaceAgent):
         elif risk_str == "INFO" and (features.rain_intensity > 0.35 or features.grip_estimate < 0.72):
             risk_str = "WATCH"
             conf = max(conf, 0.58)
+        # Safety ceiling: cap WARNING when the triggering conditions are not present.
+        # Prevents the classifier from over-predicting WARNING on moderate conditions.
+        elif risk_str == "WARNING":
+            speed_flag = features.mean_speed_kph < 160.0 or features.speed_delta_kph < -60.0
+            rain_flag = features.rain_intensity > 0.5 and features.grip_estimate < 0.65
+            if not (speed_flag or rain_flag):
+                risk_str = "WATCH"
+                conf = min(conf, 0.68)
 
         conf = min(0.92, max(0.48, conf))
         summary, feat_dict = _summary(risk_str, features)

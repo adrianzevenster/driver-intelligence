@@ -70,9 +70,7 @@ class BatteryAgent(RaceAgent):
                 if ood > 4.0:
                     logger.warning("battery: OOD features (max_z=%.1f) — confidence penalised", ood)
                     conf = conf * 0.85
-            # Safety floor: rules act as a hard lower bound. If the classifier predicts
-            # INFO but the threshold rules would fire, promote to the rule's risk level
-            # so safety signals are never silently dropped during cold-start training.
+            # Safety floor: rules act as a hard lower bound — promote INFO up if needed.
             if risk_str == "INFO":
                 if features.battery_soc < t.battery_soc_warning and features.battery_soc_slope < -0.01:
                     risk_str = "WARNING"
@@ -80,6 +78,19 @@ class BatteryAgent(RaceAgent):
                 elif features.battery_soc > 0.72 and features.mean_speed_kph < 220:
                     risk_str = "WATCH"
                     conf = max(conf, 0.58)
+            # Safety ceiling: cap ML predictions to what the rule conditions permit.
+            # WARNING requires active depletion (slope < -0.01); without it the rules
+            # would return INFO, so cap back to INFO rather than warning the driver.
+            # WATCH for over-charge is only valid when speed is low (< 220 km/h).
+            elif risk_str == "WARNING":
+                if not (features.battery_soc < t.battery_soc_warning
+                        and features.battery_soc_slope < -0.01):
+                    risk_str = "INFO"
+                    conf = min(conf, 0.62)
+            elif risk_str == "WATCH":
+                if features.battery_soc > 0.72 and features.mean_speed_kph >= 220:
+                    risk_str = "INFO"
+                    conf = min(conf, 0.60)
             conf = min(0.90, max(0.48, conf))
             summary, feat_dict = _summary(risk_str, features)
             class_probs = {cls: round(float(p), 4) for cls, p in zip(clf.classes_, proba)}

@@ -209,6 +209,12 @@ class TireStrategyAgent(RaceAgent):
                   and features.fl_wear_slope > 0.0):
                 risk_str = "WATCH"
                 conf = max(conf, 0.58)
+            elif (features.fr_wear_slope > features.fl_wear_slope + 0.001
+                  and features.fr_wear > 0.40):
+                # FR degrading significantly faster than FL at moderate wear — flag
+                # asymmetric loading before it becomes a wear-pressure issue.
+                risk_str = "WATCH"
+                conf = max(conf, 0.57)
         elif risk_str == "WATCH":
             if wear_pressure > t.wear_critical and features.grip_estimate < 0.62:
                 risk_str = "WARNING"
