@@ -48,6 +48,77 @@ def _extract_sql(text: str) -> str:
     return clean.split(";")[0].strip() + ";"
 
 
+def _limit_from_question(question: str, default: int = 10) -> int:
+    match = re.search(r"\b(?:top|first|latest|recent|last|list|show)?\s*(\d{1,3})\b", question)
+    if not match:
+        return default
+    return min(100, max(1, int(match.group(1))))
+
+
+def _fallback_sql(question: str) -> tuple[str | None, str | None]:
+    """Return SQL for common analytics questions that should not require an LLM."""
+    q = re.sub(r"\s+", " ", question.strip().lower())
+    limit = _limit_from_question(q)
+
+    risk_match = re.search(r"\b(info|watch|warning|critical)s?\b", q)
+    risk = risk_match.group(1).upper() if risk_match else None
+    mentions_insights = any(term in q for term in ("insight", "signal", "alert", "warning"))
+
+    if (
+        risk
+        and mentions_insights
+        and any(term in q for term in ("recent", "latest", "last", "list"))
+    ):
+        return (
+            "SELECT insight_id, session_id, driver_id, track_id, lap, risk, "
+            "ROUND(confidence, 4) AS confidence, policy, recommendation, created_at "
+            f"FROM insights WHERE risk='{risk}' "
+            f"ORDER BY created_at DESC LIMIT {limit};",
+            "template",
+        )
+
+    if risk and mentions_insights and "per driver" in q:
+        where = f"WHERE risk='{risk}'"
+        if "week" in q:
+            where += " AND created_at >= CAST(CURRENT_DATE - INTERVAL 7 DAY AS TEXT)"
+        return (
+            "SELECT driver_id, COUNT(*) AS insight_count "
+            f"FROM insights {where} "
+            "GROUP BY driver_id ORDER BY insight_count DESC "
+            f"LIMIT {limit};",
+            "template",
+        )
+
+    if "average" in q and "confidence" in q and "risk" in q:
+        return (
+            "SELECT risk, ROUND(AVG(confidence), 4) AS avg_confidence, COUNT(*) AS n "
+            "FROM insights GROUP BY risk ORDER BY avg_confidence DESC LIMIT 100;",
+            "template",
+        )
+
+    if "track" in q and "confidence" in q and ("highest" in q or "average" in q):
+        return (
+            "SELECT track_id, ROUND(AVG(confidence), 4) AS avg_confidence, COUNT(*) AS n "
+            "FROM insights GROUP BY track_id ORDER BY avg_confidence DESC "
+            f"LIMIT {limit};",
+            "template",
+        )
+
+    if "tire wear" in q and "compound" in q:
+        return (
+            "SELECT compound, "
+            "ROUND(AVG(tire_wear_fl), 4) AS avg_wear_fl, "
+            "ROUND(AVG(tire_wear_fr), 4) AS avg_wear_fr, "
+            "ROUND(AVG(tire_wear_rl), 4) AS avg_wear_rl, "
+            "ROUND(AVG(tire_wear_rr), 4) AS avg_wear_rr, "
+            "COUNT(*) AS samples "
+            "FROM telemetry GROUP BY compound ORDER BY samples DESC LIMIT 100;",
+            "template",
+        )
+
+    return None, None
+
+
 class SQLAgent:
     def __init__(self, warehouse: TelemetryWarehouse | None = None) -> None:
         self.warehouse = warehouse or TelemetryWarehouse()
@@ -58,10 +129,18 @@ class SQLAgent:
         sql: str | None = None
         results: list[dict] = []
         error: str | None = None
+        model: str | None
 
-        if settings.llm_backend in {"openai_compatible", "anthropic"}:
+        sql, model = _fallback_sql(question)
+
+        if sql is None and settings.llm_backend in {"openai_compatible", "anthropic"}:
             try:
                 sql = self._generate_sql(question, schema)
+                model = (
+                    settings.llm_open_source_model
+                    if settings.llm_backend == "openai_compatible"
+                    else settings.llm_advice_model
+                )
             except Exception as exc:
                 logger.warning("SQL generation failed: %s", exc)
 
@@ -88,7 +167,7 @@ class SQLAgent:
         return {
             "question": question,
             "sql": sql,
-            "model": settings.llm_open_source_model if settings.llm_backend == "openai_compatible" else settings.llm_advice_model,
+            "model": model,
             "results": results,
             "row_count": len(results),
             "error": error,

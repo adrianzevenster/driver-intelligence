@@ -2144,7 +2144,10 @@ async def live_stream_sse(
 
     orchestrator = get_orchestrator()
     _executor = ThreadPoolExecutor(max_workers=2)
-    loop = _asyncio.get_event_loop()
+    loop = _asyncio.get_running_loop()
+
+    def _event(payload: dict) -> str:
+        return f"data: {_json.dumps(payload)}\n\n"
 
     def _probe_lap() -> int | None:
         """Fetch only the laps endpoint to get the current lap number quickly."""
@@ -2154,93 +2157,145 @@ async def live_stream_sse(
             return int(rows[-1].get("lap_number", 1))
         return None
 
-    def _poll():
-        """Run blocking I/O + inference in a thread so the event loop stays free."""
+    def _build_window():
+        """Run blocking OpenF1 I/O in a thread so the event loop stays free."""
         window = build_window(session_key=session_key, driver_number=driver_number)
+        return window
+
+    def _analyze(window):
+        """Run blocking inference in a thread so slow backends do not block SSE."""
         insight = orchestrator.analyze(window, audience=audience)
         _persist_insight(insight, window)
-        return window, insight
+        return insight
+
+    async def _run_threaded(fn, timeout_s: float, *args):
+        task = loop.run_in_executor(_executor, fn, *args)
+        try:
+            return await _asyncio.wait_for(task, timeout=timeout_s)
+        except _asyncio.TimeoutError:
+            task.cancel()
+            raise TimeoutError from None
 
     async def _generate():
         # Tell the client the TCP connection is alive before we touch OpenF1.
-        yield f"data: {_json.dumps({'type': 'connected'})}\n\n"
+        yield _event({"type": "connected"})
 
         last_lap: int | None = None
         errors = 0
 
-        _PROBE_TIMEOUT = 10.0    # laps-only fetch (1-3 s normally)
-        _POLL_TIMEOUT  = 300.0   # full telemetry + Ollama inference budget
+        _PROBE_TIMEOUT = 12.0    # laps-only fetch (1-3 s normally)
+        _WINDOW_TIMEOUT = 45.0   # OpenF1 telemetry fetch budget
+        _INSIGHT_TIMEOUT = 45.0  # local rules/LLM inference budget
 
-        while True:
-            # ── 1. Quick laps probe → early heartbeat so the UI shows lap N
-            #    immediately rather than waiting for the full Ollama cycle.
-            probe_task = _asyncio.ensure_future(loop.run_in_executor(_executor, _probe_lap))
-            probe_start = loop.time()
-            while not probe_task.done():
-                if loop.time() - probe_start > _PROBE_TIMEOUT:
-                    probe_task.cancel()
-                    break
-                yield ": ping\n\n"
+        try:
+            while True:
                 try:
-                    await _asyncio.wait_for(_asyncio.shield(probe_task), timeout=2.0)
-                except _asyncio.TimeoutError:
-                    pass
-            if not probe_task.cancelled():
-                try:
-                    quick_lap = probe_task.result()
-                    if quick_lap is not None:
-                        yield f"data: {_json.dumps({'type': 'heartbeat', 'lap': quick_lap})}\n\n"
-                except Exception:
-                    pass
-
-            # ── 2. Full poll: car_data + Ollama inference ─────────────────────
-            poll_task = _asyncio.ensure_future(loop.run_in_executor(_executor, _poll))
-            poll_start = loop.time()
-            timed_out = False
-            while not poll_task.done():
-                if loop.time() - poll_start > _POLL_TIMEOUT:
-                    poll_task.cancel()
-                    timed_out = True
+                    yield _event({
+                        "type": "status",
+                        "detail": "Fetching latest lap from OpenF1...",
+                    })
+                    quick_lap = await _run_threaded(_probe_lap, _PROBE_TIMEOUT)
+                except TimeoutError:
                     errors += 1
-                    yield f"data: {_json.dumps({'type': 'error', 'detail': f'OpenF1 fetch timed out after {_POLL_TIMEOUT:.0f}s'})}\n\n"
+                    yield _event({
+                        "type": "error",
+                        "detail": f"OpenF1 lap fetch timed out after {_PROBE_TIMEOUT:.0f}s",
+                    })
                     if errors >= 5:
-                        yield f"data: {_json.dumps({'type': 'done'})}\n\n"
+                        yield _event({"type": "done"})
                         return
-                    break
-                yield ": ping\n\n"
+                    await _asyncio.sleep(min(2, poll_interval))
+                    continue
+                except Exception as exc:
+                    errors += 1
+                    yield _event({"type": "error", "detail": str(exc)})
+                    if errors >= 5:
+                        yield _event({"type": "done"})
+                        return
+                    await _asyncio.sleep(min(2, poll_interval))
+                    continue
+
+                if quick_lap is None:
+                    errors = 0
+                    yield _event({
+                        "type": "status",
+                        "detail": "Connected - waiting for completed laps from OpenF1...",
+                    })
+                    await _asyncio.sleep(poll_interval)
+                    continue
+
+                yield _event({"type": "heartbeat", "lap": quick_lap})
+                if quick_lap == last_lap:
+                    errors = 0
+                    await _asyncio.sleep(poll_interval)
+                    continue
+
                 try:
-                    await _asyncio.wait_for(_asyncio.shield(poll_task), timeout=2.0)
-                except _asyncio.TimeoutError:
-                    pass
+                    yield _event({
+                        "type": "status",
+                        "detail": "Building telemetry window from OpenF1...",
+                    })
+                    window = await _run_threaded(_build_window, _WINDOW_TIMEOUT)
+                except TimeoutError:
+                    errors += 1
+                    yield _event({
+                        "type": "error",
+                        "detail": (
+                            "OpenF1 telemetry fetch timed out "
+                            f"after {_WINDOW_TIMEOUT:.0f}s"
+                        ),
+                    })
+                    if errors >= 5:
+                        yield _event({"type": "done"})
+                        return
+                    await _asyncio.sleep(min(2, poll_interval))
+                    continue
 
-            if timed_out:
-                await _asyncio.sleep(min(2, poll_interval))
-                continue
-
-            try:
-                window, insight = poll_task.result()
                 current_lap = window.samples[-1].lap if window.samples else None
-                if current_lap != last_lap:
+                if current_lap == last_lap:
+                    yield _event({"type": "heartbeat", "lap": current_lap})
+                    errors = 0
+                    await _asyncio.sleep(poll_interval)
+                    continue
+
+                try:
+                    yield _event({
+                        "type": "status",
+                        "detail": f"Generating insight for lap {current_lap}...",
+                    })
+                    insight = await _run_threaded(_analyze, _INSIGHT_TIMEOUT, window)
                     last_lap = current_lap
                     payload_dict = _json_ready(insight.model_dump())
                     payload_dict["lap_number"] = current_lap
-                    yield f"data: {_json.dumps(payload_dict)}\n\n"
-                else:
-                    yield f"data: {_json.dumps({'type': 'heartbeat', 'lap': current_lap})}\n\n"
-                errors = 0
-            except Exception as exc:
-                errors += 1
-                yield f"data: {_json.dumps({'type': 'error', 'detail': str(exc)})}\n\n"
-                if errors >= 5:
-                    yield f"data: {_json.dumps({'type': 'done'})}\n\n"
-                    return
+                    yield _event(payload_dict)
+                    errors = 0
+                except TimeoutError:
+                    errors += 1
+                    yield _event({
+                        "type": "error",
+                        "detail": (
+                            "Insight generation timed out "
+                            f"after {_INSIGHT_TIMEOUT:.0f}s"
+                        ),
+                    })
+                    if errors >= 5:
+                        yield _event({"type": "done"})
+                        return
+                except Exception as exc:
+                    errors += 1
+                    yield _event({"type": "error", "detail": str(exc)})
+                    if errors >= 5:
+                        yield _event({"type": "done"})
+                        return
 
-            # Sleep between polls, pinging every 2 s to keep the connection alive.
-            remaining = poll_interval
-            while remaining > 0:
-                yield ": ping\n\n"
-                await _asyncio.sleep(min(2, remaining))
-                remaining -= 2
+                # Sleep between polls, pinging every 2 s to keep the connection alive.
+                remaining = poll_interval
+                while remaining > 0:
+                    yield ": ping\n\n"
+                    await _asyncio.sleep(min(2, remaining))
+                    remaining -= 2
+        finally:
+            _executor.shutdown(wait=False, cancel_futures=True)
 
     return StreamingResponse(
         _generate(),

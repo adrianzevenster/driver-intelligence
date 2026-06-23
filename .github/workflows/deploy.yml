@@ -28,7 +28,7 @@ jobs:
           rsync -az --delete \
             --exclude '.git/' \
             --exclude '.env' \
-            --exclude 'data/' \
+            --exclude '/data/' \
             --exclude '*.db' \
             --exclude '*.db-shm' \
             --exclude '*.db-wal' \

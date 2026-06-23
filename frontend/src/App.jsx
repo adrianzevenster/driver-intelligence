@@ -2179,8 +2179,10 @@ function StreamPanel({ version }) {
   const [insight, setInsight]         = useState(null);
   const [lastLap, setLastLap]         = useState(null);
   const [heartbeatLap, setHeartbeat]  = useState(null);
+  const [streamStatus, setStreamStatus] = useState('');
   const [error, setError]             = useState('');
   const esRef                          = useRef(null);
+  const connectedRef                   = useRef(false);
 
   useEffect(() => {
     setSessions([]); setSessionKey('');
@@ -2207,7 +2209,8 @@ function StreamPanel({ version }) {
   function startStream() {
     if (!sessionKey || !driverNum) return;
     esRef.current?.close();
-    setError(''); setInsight(null); setLastLap(null); setHeartbeat(null); setConnected(false);
+    connectedRef.current = false;
+    setError(''); setInsight(null); setLastLap(null); setHeartbeat(null); setConnected(false); setStreamStatus('');
     const url = `/api/v1/live/stream/${sessionKey}/${driverNum}?audience=${audience}`;
     const es = new EventSource(url);
     esRef.current = es;
@@ -2216,25 +2219,28 @@ function StreamPanel({ version }) {
       try {
         const d = JSON.parse(e.data);
         if (d.type === 'done') { stopStream(); return; }
-        if (d.type === 'connected') { setConnected(true); return; }
+        if (d.type === 'connected') { connectedRef.current = true; setConnected(true); return; }
+        if (d.type === 'status') { setStreamStatus(d.detail ?? ''); return; }
         if (d.type === 'error') { setError(d.detail); return; }
-        if (d.type === 'heartbeat') { setHeartbeat(d.lap); return; }
+        if (d.type === 'heartbeat') { setHeartbeat(d.lap); setStreamStatus(''); return; }
         setInsight(d);
         setLastLap(d.lap_number ?? null);
         setHeartbeat(null);
+        setStreamStatus('');
         setError('');
       } catch {}
     };
     es.onerror = () => {
       // Only hard-stop if we never received the initial 'connected' event —
       // that means the TCP connection itself was refused or the route 404'd.
-      if (!connected) { setError('Could not reach stream endpoint. Is the API running?'); stopStream(); }
+      if (!connectedRef.current) { setError('Could not reach stream endpoint. Is the API running?'); stopStream(); }
     };
   }
 
   function stopStream() {
     esRef.current?.close();
     esRef.current = null;
+    connectedRef.current = false;
     setStreaming(false);
   }
 
@@ -2316,7 +2322,9 @@ function StreamPanel({ version }) {
             <span style={{ width: 6, height: 6, borderRadius: '50%', background: error ? '#ef4444' : '#22c55e', flexShrink: 0, display: 'inline-block' }} />
             {!connected
               ? 'Connecting to API…'
-              : lastLap != null
+              : streamStatus
+                ? streamStatus
+                : lastLap != null
                 ? `Polling OpenF1 · last insight lap ${lastLap}`
                 : heartbeatLap != null
                   ? `Polling OpenF1 · current lap ${heartbeatLap}`
