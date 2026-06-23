@@ -206,6 +206,26 @@ def _extract_incidents(session) -> list[Incident]:
                     severity=0.65,
                 ))
 
+    # ── Wet-tyre switch: any driver moves to INTERMEDIATE or WET compound ──
+    # This confirms weather-agent WARNINGs: if anyone boxed for rain tyres,
+    # the rain was real. Indexed globally ("*") so all drivers' weather
+    # insights see the confirmation.
+    if "Compound" in valid.columns and "Stint" in valid.columns:
+        wet_compounds = {"INTERMEDIATE", "WET"}
+        seen_wet_laps: set[int] = set()
+        for (drv, stint_n), grp in valid.groupby(["Driver", "Stint"]):
+            compound = str(grp["Compound"].iloc[0]).upper() if not grp.empty else ""
+            if compound in wet_compounds:
+                switch_lap = int(grp["LapNumber"].min())
+                if switch_lap not in seen_wet_laps:
+                    seen_wet_laps.add(switch_lap)
+                    incidents.append(Incident(
+                        driver="*",
+                        lap=switch_lap,
+                        incident_type="wet_tyre_switch",
+                        severity=0.85,
+                    ))
+
     return incidents
 
 
@@ -426,6 +446,20 @@ def _fetch_openf1_incidents(year: int, round_num: int) -> tuple[str, list[Incide
             if 0 < life < expected * 0.30 and life >= 3:
                 incidents.append(Incident(driver=drv, lap=end,
                                           incident_type="forced_pit", severity=0.80))
+
+    # ── Wet-tyre switch: any driver moves to INTERMEDIATE or WET ─────────────
+    # Confirms weather-agent WARNINGs globally — indexed as "*" so all drivers
+    # share the signal.
+    _WET_COMPOUNDS = {"INTERMEDIATE", "WET"}
+    seen_wet_laps: set[int] = set()
+    for s in stints:
+        compound = (s.get("compound") or "").upper()
+        if compound in _WET_COMPOUNDS:
+            start_lap = s.get("lap_start") or 0
+            if start_lap > 0 and start_lap not in seen_wet_laps:
+                seen_wet_laps.add(start_lap)
+                incidents.append(Incident(driver="*", lap=start_lap,
+                                          incident_type="wet_tyre_switch", severity=0.85))
 
     return location, incidents, skey
 

@@ -242,12 +242,13 @@ function ModelHealthBadge() {
     return `${AGENT_SHORT[agent] ?? agent}: ${pct != null ? pct.toFixed(0) + '%' : 'no data'} (n=${stats.n_total})`;
   });
   const scoredAgents = agents.filter(([, stats]) => stats.precision != null);
-  const healthyAgents = scoredAgents.filter(([, stats]) => stats.precision >= 0.7).length;
+  // null precision = no high-risk predictions yet (not broken); only count as unhealthy if precision < 0.7 AND data exists
+  const unhealthyAgents = scoredAgents.filter(([, stats]) => stats.precision < 0.7).length;
+  const healthyAgents = agents.length - unhealthyAgents;
   const agentState =
     agents.length === 0 ? 'unknown' :
-    scoredAgents.length === 0 ? 'unknown' :
-    healthyAgents === agents.length ? 'ok' :
-    healthyAgents >= Math.ceil(agents.length / 2) ? 'warn' : 'bad';
+    unhealthyAgents === 0 ? 'ok' :
+    unhealthyAgents <= Math.floor(agents.length / 3) ? 'warn' : 'bad';
   const lat = data?.latency;
   const latencyState = !lat || lat.p95 == null ? 'unknown' : lat.p95 > 500 ? 'bad' : lat.p95 > 200 ? 'warn' : 'ok';
   const driftState = !drift.ready ? 'unknown' : driftAlerted ? 'bad' : 'ok';
@@ -2188,7 +2189,12 @@ function StreamPanel({ version }) {
     setSessions([]); setSessionKey('');
     fetch(`/api/v1/live/sessions?year=${year}&session_type=Race`)
       .then(r => r.ok ? r.json() : [])
-      .then(setSessions)
+      .then(list => {
+        setSessions(list);
+        const now = new Date().toISOString();
+        const past = list.filter(s => s.date_start <= now);
+        if (past.length) setSessionKey(String(past[past.length - 1].session_key));
+      })
       .catch(() => {});
   }, [year]);
 

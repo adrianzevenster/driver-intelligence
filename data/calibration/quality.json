@@ -1,15 +1,48 @@
 {
-  "ece": 0.0138,
-  "brier_score": 0.0068,
-  "fitted_at": "2026-06-10T15:54:23Z",
-  "model_path": "data/calibration/isotonic_20260610T155423Z.pkl",
-  "previous_ece": 0.0138,
-  "previous_model_path": null,
-  "feedback_snapshot": "data/calibration/feedback_snapshot_20260610T155423Z.jsonl",
+  "ece": 0.3304,
+  "brier_score": 0.1821,
+  "fitted_at": "2026-06-23T15:02:33Z",
+  "model_path": "data/calibration/isotonic_20260623T150233Z.pkl",
+  "previous_ece": 0.36,
+  "previous_model_path": "data/calibration/isotonic_20260623T080809Z.pkl",
+  "feedback_snapshot": "data/calibration/feedback_snapshot_20260623T150233Z.jsonl",
+  "regression_detected": false,
   "calibration_dataset": {
     "generator": "synthetic+feedback",
     "n_synthetic": 1830,
-    "n_feedback": 20,
+    "n_feedback": 20624,
     "feedback_weight": 3
+  },
+  "per_agent_accuracy": {
+    "fuel": {
+      "precision": 0.245,
+      "n_correct": 804,
+      "n_total": 3282
+    },
+    "safety_car": {
+      "precision": 0.2812,
+      "n_correct": 4011,
+      "n_total": 14265
+    },
+    "tire_strategy": {
+      "precision": 0.2882,
+      "n_correct": 2752,
+      "n_total": 9548
+    },
+    "weather": {
+      "precision": 0.3266,
+      "n_correct": 2280,
+      "n_total": 6982
+    },
+    "battery": {
+      "precision": null,
+      "n_correct": 0,
+      "n_total": 0
+    },
+    "telemetry": {
+      "precision": null,
+      "n_correct": 0,
+      "n_total": 0
+    }
   }
 }

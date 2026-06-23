@@ -1,0 +1,94 @@
+{
+  "generated_at": "2026-06-23T14:56:10Z",
+  "overall_precision": 0.2802,
+  "previous_precision": 0.276,
+  "trend": "stable",
+  "alert": false,
+  "alert_threshold": 0.2,
+  "n_total": 10220,
+  "n_correct": 2864,
+  "n_incorrect": 7356,
+  "n_sessions": 10,
+  "sessions": [
+    {
+      "session_id": "fastf1_2023_6",
+      "track_id": "monaco",
+      "n_correct": 501,
+      "n_incorrect": 945,
+      "precision": 0.3465,
+      "n_total": 1446
+    },
+    {
+      "session_id": "fastf1_2024_11",
+      "track_id": "spielberg",
+      "n_correct": 205,
+      "n_incorrect": 1140,
+      "precision": 0.1524,
+      "n_total": 1345
+    },
+    {
+      "session_id": "fastf1_2024_10",
+      "track_id": "barcelona",
+      "n_correct": 110,
+      "n_incorrect": 1140,
+      "precision": 0.088,
+      "n_total": 1250
+    },
+    {
+      "session_id": "fastf1_2024_9",
+      "track_id": "montreal",
+      "n_correct": 684,
+      "n_incorrect": 426,
+      "precision": 0.6162,
+      "n_total": 1110
+    },
+    {
+      "session_id": "fastf1_2024_8",
+      "track_id": "monaco",
+      "n_correct": 95,
+      "n_incorrect": 917,
+      "precision": 0.0939,
+      "n_total": 1012
+    },
+    {
+      "session_id": "fastf1_2024_21",
+      "track_id": "interlagos",
+      "n_correct": 413,
+      "n_incorrect": 585,
+      "precision": 0.4138,
+      "n_total": 998
+    },
+    {
+      "session_id": "fastf1_2024_12",
+      "track_id": "silverstone",
+      "n_correct": 365,
+      "n_incorrect": 465,
+      "precision": 0.4398,
+      "n_total": 830
+    },
+    {
+      "session_id": "fastf1_2024_18",
+      "track_id": "singapore",
+      "n_correct": 92,
+      "n_incorrect": 666,
+      "precision": 0.1214,
+      "n_total": 758
+    },
+    {
+      "session_id": "fastf1_2024_20",
+      "track_id": "mexico_city",
+      "n_correct": 88,
+      "n_incorrect": 649,
+      "precision": 0.1194,
+      "n_total": 737
+    },
+    {
+      "session_id": "fastf1_2024_5",
+      "track_id": "shanghai",
+      "n_correct": 311,
+      "n_incorrect": 423,
+      "precision": 0.4237,
+      "n_total": 734
+    }
+  ]
+}
