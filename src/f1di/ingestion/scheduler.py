@@ -165,6 +165,12 @@ class IngestionScheduler:
                     )
                 except Exception as exc:
                     logger.warning("Data freshness check failed: %s", exc)
+                try:
+                    await asyncio.get_event_loop().run_in_executor(
+                        None, self._run_race_backtest
+                    )
+                except Exception as exc:
+                    logger.warning("Race backtest failed: %s", exc)
 
             cycle += 1
             try:
@@ -527,6 +533,27 @@ class IngestionScheduler:
             )
         except Exception:
             pass
+
+    @staticmethod
+    def _run_race_backtest() -> None:
+        """Compute per-round precision/recall from stored insight+feedback pairs."""
+        try:
+            from f1di.evaluation.race_backtest import run_backtest
+            result = run_backtest()
+            if result.get("alert"):
+                msg = (
+                    f"F1DI — Precision alert: overall precision {result['overall_precision']:.1%} "
+                    f"is below threshold {result['alert_threshold']:.1%} "
+                    f"(n={result['n_total']}  trend={result['trend']})"
+                )
+                logger.warning("race_backtest_alert: %s", msg)
+                try:
+                    from f1di.delivery.notifier import send_system_alert
+                    send_system_alert("[F1DI] Backtest precision alert", msg)
+                except Exception:
+                    pass
+        except Exception as exc:
+            logger.warning("_run_race_backtest failed: %s", exc)
 
     def _run_pull(self) -> bool:
         """Pull new knowledge docs. Returns True when at least one new round was ingested."""

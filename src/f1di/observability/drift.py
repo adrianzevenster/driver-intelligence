@@ -15,6 +15,9 @@ _MIN_BASELINE = 50
 _BUFFER_SIZE = 200
 _DRIFT_RETRAIN_COOLDOWN_S = 3600
 _DRIFT_RETRAIN_STAMP = Path("data/calibration/.last_drift_retrain")
+_DRIFT_RETRAIN_HISTORY = Path("data/calibration/.drift_retrain_history")
+_CONCEPT_DRIFT_THRESHOLD = 3  # retrains within 24h without clearing = concept drift
+_CONCEPT_DRIFT_WINDOW_S = 86400
 
 _TRACKED = frozenset({
     "fl_wear", "fr_wear", "rear_wear_mean",
@@ -50,6 +53,7 @@ class FeatureDriftTracker:
         self._track_buffers: dict[str, deque[dict[str, float]]] = {}
         self._track_baselines: dict[str, dict[str, tuple[float, float]]] = {}
         self._last_track: str | None = None
+        self._prev_alert: bool = False
 
     def update(self, features: dict[str, float], track_id: str | None = None) -> dict[str, float]:
         """Record one observation. Returns Z-scores or {} during warmup."""
@@ -92,18 +96,62 @@ class FeatureDriftTracker:
         DRIFT_ALERT_ACTIVE.set(1.0 if any_alert else 0.0)
         if any_alert:
             self._maybe_trigger_retrain()
+        elif self._prev_alert:
+            self._on_drift_cleared()
+        self._prev_alert = any_alert
         self._last_zscores = zscores
         import datetime
         self._last_updated = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
         return zscores
 
     def _maybe_trigger_retrain(self) -> None:
+        import json as _json
         try:
             if (
                 _DRIFT_RETRAIN_STAMP.exists()
                 and time.time() - _DRIFT_RETRAIN_STAMP.stat().st_mtime < _DRIFT_RETRAIN_COOLDOWN_S
             ):
                 return
+        except OSError:
+            pass
+
+        # Read 24h retrain history to detect concept drift before triggering another retrain.
+        now = time.time()
+        history: list[float] = []
+        if _DRIFT_RETRAIN_HISTORY.exists():
+            try:
+                history = _json.loads(_DRIFT_RETRAIN_HISTORY.read_text())
+            except Exception:
+                pass
+        recent = [ts for ts in history if ts > now - _CONCEPT_DRIFT_WINDOW_S]
+
+        if len(recent) >= _CONCEPT_DRIFT_THRESHOLD:
+            try:
+                from f1di.observability.metrics import CONCEPT_DRIFT_SUSPECTED
+                CONCEPT_DRIFT_SUSPECTED.set(1)
+            except Exception:
+                pass
+            logger.warning(
+                "concept_drift_suspected: %d drift-triggered retrains in 24h without clearing — "
+                "feature baseline has likely shifted (new circuit, compound gen, regulation change). "
+                "Reseeding drift baseline. Investigate before the next retrain cycle.",
+                len(recent),
+            )
+            # Force-reseed baseline from the current buffer so the tracker adapts
+            # to the new distribution rather than continuing to alarm against the old one.
+            self._recompute_baseline()
+            try:
+                _DRIFT_RETRAIN_STAMP.parent.mkdir(parents=True, exist_ok=True)
+                _DRIFT_RETRAIN_STAMP.touch()
+            except OSError:
+                pass
+            return
+
+        # Record this retrain in the history, then trigger.
+        recent.append(now)
+        try:
+            _DRIFT_RETRAIN_HISTORY.parent.mkdir(parents=True, exist_ok=True)
+            _DRIFT_RETRAIN_HISTORY.write_text(_json.dumps(recent))
         except OSError:
             pass
 
@@ -123,6 +171,20 @@ class FeatureDriftTracker:
 
         threading.Thread(target=_retrain, daemon=True).start()
         logger.info("drift_alert_triggered_retrain: launching background calibration retrain")
+
+    def _on_drift_cleared(self) -> None:
+        """Called when drift alert transitions from active to clear. Resets concept drift state."""
+        import json as _json
+        try:
+            from f1di.observability.metrics import CONCEPT_DRIFT_SUSPECTED
+            CONCEPT_DRIFT_SUSPECTED.set(0)
+        except Exception:
+            pass
+        try:
+            _DRIFT_RETRAIN_HISTORY.write_text(_json.dumps([]))
+        except OSError:
+            pass
+        logger.info("drift_cleared: concept drift history reset")
 
     def _recompute_baseline(self) -> None:
         if len(self._buffer) < 2:

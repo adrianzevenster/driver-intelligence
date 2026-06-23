@@ -691,6 +691,26 @@ def insight_latency_percentiles() -> dict[str, Any]:
     return latency_percentiles()
 
 
+@app.get("/v1/ml/backtest")
+def ml_backtest(refresh: bool = False) -> dict[str, Any]:
+    """Per-round precision from outcome-labeled WARNING/CRITICAL insights.
+
+    Returns the cached backtest_report.json unless refresh=true, which re-runs
+    the query against the live DB. Use this to track whether precision is improving
+    as the calibrator retrains on real labels.
+    """
+    from f1di.evaluation.race_backtest import load_last_report, run_backtest
+    if refresh:
+        return run_backtest()
+    report = load_last_report()
+    if report is None:
+        try:
+            return run_backtest()
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail=f"Backtest failed: {exc}")
+    return report
+
+
 @app.get("/v1/ml/quality")
 def ml_quality() -> dict[str, Any]:
     """Current calibrator quality metrics (ECE, Brier score, fit timestamp)."""

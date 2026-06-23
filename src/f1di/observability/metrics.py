@@ -53,6 +53,10 @@ SHADOW_V2_SCORE_DELTA = Histogram(
     "v2 challenger minus v1 production confidence score per insight",
     buckets=(-0.3, -0.2, -0.1, -0.05, 0.0, 0.05, 0.1, 0.2, 0.3),
 )
+CONCEPT_DRIFT_SUSPECTED = Gauge(
+    "f1di_concept_drift_suspected",
+    "1 if drift has persisted through multiple retrains, indicating a baseline shift",
+)
 
 _LATENCY_LOCK = _threading.Lock()
 _LATENCY_WINDOW: _deque = _deque(maxlen=200)
