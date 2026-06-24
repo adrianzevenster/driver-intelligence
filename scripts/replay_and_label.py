@@ -67,6 +67,35 @@ def _build_with_backoff(year: int, round_num: int, drv: str, build_fn) -> dict |
             return None
 
 
+def _check_cache_complete(year: int, round_num: int) -> str | None:
+    """Return an error string if the FastF1 cache is missing telemetry files, else None."""
+    import fastf1
+    cache_dir = Path(__file__).parents[1] / "data" / "fastf1_cache"
+    fastf1.Cache.enable_cache(str(cache_dir))
+    try:
+        sess = fastf1.get_session(year, round_num, "R")
+        api_path = getattr(sess, "api_path", None)
+    except Exception:
+        return None  # let the real load fail with a better message
+    if not api_path:
+        return None
+    # api_path is like /static/2026/2026-03-08_Australian.../2026-03-08_Race/
+    # FastF1 stores cache at {cache_dir}/{api_path_without_static_prefix}/
+    rel = api_path.lstrip("/").removeprefix("static/")
+    session_dir = cache_dir / rel
+    required = ["car_data.ff1pkl", "position_data.ff1pkl"]
+    missing = [f for f in required if not (session_dir / f).exists()]
+    if missing:
+        return (
+            f"FastF1 cache incomplete for {year} R{round_num} — missing: {', '.join(missing)}. "
+            f"Run locally first:\n"
+            f"  python -c \"import fastf1; fastf1.Cache.enable_cache('data/fastf1_cache'); "
+            f"s = fastf1.get_session({year}, {round_num}, 'R'); "
+            f"s.load(telemetry=True, weather=True, messages=True)\""
+        )
+    return None
+
+
 def _get_race_drivers(year: int, round_num: int) -> list[str]:
     """Return list of driver codes that completed at least one timed lap."""
     import fastf1
@@ -102,6 +131,11 @@ def replay_race(
         if already_ingested(sess, source=source, year=year, round_num=round_num):
             _log(f"  {_DIM}already replayed — skipping{_RESET}")
             return {"skipped": True}
+
+    cache_err = _check_cache_complete(year, round_num)
+    if cache_err:
+        _log(f"  {_RED}cache check failed:{_RESET} {cache_err}")
+        return {"error": cache_err}
 
     try:
         drivers = _get_race_drivers(year, round_num)
@@ -268,7 +302,7 @@ def main() -> None:
             label_result = label_race_outcomes(year, round_num, dry_run=args.dry_run)
             elapsed = time.perf_counter() - t0
 
-            if "error" not in label_result:
+            if label_result.get("error") is None:
                 n_correct   = label_result.get("n_labeled_correct",   0)
                 n_incorrect = label_result.get("n_labeled_incorrect",  0)
                 n_examined  = label_result.get("n_insights_examined",  0)
@@ -282,7 +316,7 @@ def main() -> None:
                     + (" (dry run)" if args.dry_run else "")
                 )
             else:
-                _log(f"  {_YELLOW}outcome labeler: {label_result['error']}{_RESET}")
+                _log(f"  {_YELLOW}outcome labeler failed: {label_result['error']}{_RESET}")
 
     # ── Final summary ──────────────────────────────────────────────────────
     _log(f"\n{_BOLD}Done.{_RESET}")

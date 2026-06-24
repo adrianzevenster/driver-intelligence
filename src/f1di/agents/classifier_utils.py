@@ -260,7 +260,7 @@ def per_class_report(cv: dict | None, label_map: dict[int, str]) -> dict:
 # by the time n_real reaches REAL_WEIGHT_SATURATION, instead of jumping
 # straight to a fixed multiplier regardless of whether n_real is 10 or 500.
 REAL_WEIGHT_FLOOR = 10
-REAL_WEIGHT_SATURATION = 50
+REAL_WEIGHT_SATURATION = 500
 
 
 def real_sample_weight(

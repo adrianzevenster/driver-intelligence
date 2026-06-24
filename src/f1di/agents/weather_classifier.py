@@ -208,7 +208,7 @@ def _load_labeled_from_db() -> tuple[np.ndarray, np.ndarray]:
 
 def train_from_labels(
     output_path: Path = _CLASSIFIER_PATH,
-    real_oversample: int = 5,
+    real_oversample: int = 20,
     synthetic_n: int = 600,
     model_type: str = DEFAULT_MODEL_TYPE,
 ) -> dict:

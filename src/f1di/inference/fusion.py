@@ -104,11 +104,27 @@ class InferenceOrchestrator:
         meta = _get_meta_learner()
         if meta is not None and meta.n_real >= 20:
             meta_conf = meta.predict_confidence(findings, confidence)
-            # Weight scales from 0.6 at n_real=20 to 0.9 at n_real=10000+
+            # Weight scales from 0.4 at n_real=20 to 0.85 at n_real=10000+.
+            # Denominator of 2000 (was 20) requires ~2000 real fusion labels
+            # before the meta-learner dominates — prevents an undertrained
+            # meta-learner from overriding well-calibrated agent signals.
             import math
-            meta_w = min(0.9, 0.6 + 0.3 * math.log10(max(1, meta.n_real / 20)))
+            meta_w = min(0.85, 0.4 + 0.45 * math.log10(max(1, meta.n_real / 20)) / math.log10(500))
             confidence = round(meta_w * meta_conf + (1.0 - meta_w) * confidence, 4)
             uncertainty = round(max(0.0, 1.0 - confidence), 4)
+
+        # Confidence gate: a single overconfident agent should not promote to
+        # WARNING/CRITICAL when overall fused confidence is low. Require at
+        # least 2 agents at WARNING+ OR a high blended confidence to keep the
+        # elevated risk level — otherwise downgrade one step.
+        risk = highest.risk
+        n_warning_plus = sum(
+            1 for f in findings if f.risk in {RiskLevel.WARNING, RiskLevel.CRITICAL}
+        )
+        if risk == RiskLevel.CRITICAL and confidence < 0.70 and n_warning_plus < 2:
+            risk = RiskLevel.WARNING
+        if risk == RiskLevel.WARNING and confidence < 0.72 and n_warning_plus < 2:
+            risk = RiskLevel.WATCH
 
         shap_explanation: list[dict] = []
         try:
@@ -117,7 +133,7 @@ class InferenceOrchestrator:
         except Exception:
             pass
 
-        recommendation = self._rules_recommendation(highest.risk, findings, calibration_features)
+        recommendation = self._rules_recommendation(risk, findings, calibration_features)
         if not skip_llm and settings.llm_backend != "rules" and not settings.deterministic:
             recommendation = self._llm_recommendation(
                 window, findings, highest, audience, confidence, recommendation
@@ -134,13 +150,13 @@ class InferenceOrchestrator:
                     evidence.append(item)
                     seen.add(item.source_id)
 
-        policy = self._policy(audience, confidence, highest.risk)
+        policy = self._policy(audience, confidence, risk)
         return DriverInsight(
             insight_id=str(uuid.uuid4()),
             session_id=window.session_id,
             driver_id=window.driver_id,
             audience=audience,
-            risk=highest.risk,
+            risk=risk,
             recommendation=recommendation,
             confidence=confidence,
             uncertainty=uncertainty,
