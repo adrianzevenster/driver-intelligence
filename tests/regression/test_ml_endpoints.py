@@ -273,7 +273,9 @@ def test_model_snapshots_endpoint_surfaces_transfer_lift(tmp_path, monkeypatch):
 
     assert len(result) == 1
     snap = result[0]
-    assert snap["real_sample_weight"] == 5.0
+    from f1di.agents.classifier_utils import real_sample_weight, REAL_WEIGHT_FLOOR, REAL_WEIGHT_SATURATION
+    expected_w = round(real_sample_weight(60, cap=5.0, floor=REAL_WEIGHT_FLOOR, saturation=REAL_WEIGHT_SATURATION), 4)
+    assert snap["real_sample_weight"] == pytest.approx(expected_w, abs=5e-5)
     assert snap["transfer_lift"] is not None
     assert snap["cv_fold_accuracies"] is not None
     assert snap["n_real"] == 60
