@@ -154,26 +154,35 @@ def replay_race(
             _log(f"    {drv}: {len(driver_insights)} windows {'(dry run)' if dry_run else ''}")
             continue
 
-        try:
-            with db_session() as sess:
-                for window, insight in driver_insights:
+        drv_saved = 0
+        for window, insight in driver_insights:
+            try:
+                with db_session() as sess:
                     save_insight(sess, insight, window)
-                total_saved += len(driver_insights)
-            _log(f"    {_GREEN}{drv}: {len(driver_insights)} insights saved{_RESET}")
-        except Exception as exc:
-            _log(f"    {_RED}{drv}: DB write failed — {exc}{_RESET}")
+                drv_saved += 1
+            except Exception:
+                pass  # duplicate or constraint violation — skip
+        if drv_saved:
+            total_saved += drv_saved
+            _log(f"    {_GREEN}{drv}: {drv_saved} insights saved{_RESET}")
+        else:
+            _log(f"    {_DIM}{drv}: 0 new insights (already ingested?){_RESET}")
 
     all_drivers_failed = (total_windows == 0 and total_saved == 0)
 
     if not dry_run and total_saved > 0 and not all_drivers_failed:
-        with db_session() as sess:
-            mark_ingested(
-                sess,
-                source=source,
-                year=year,
-                round_num=round_num,
-                documents_added=total_saved,
-            )
+        try:
+            with db_session() as sess:
+                mark_ingested(
+                    sess,
+                    source=source,
+                    year=year,
+                    round_num=round_num,
+                    documents_added=total_saved,
+                )
+        except Exception:
+            # Another concurrent run may have already marked this race; ignore.
+            pass
     elif not dry_run and all_drivers_failed:
         _log(f"  {_YELLOW}No insights saved — race will be retried on next run{_RESET}")
 
