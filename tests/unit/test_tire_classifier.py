@@ -206,11 +206,12 @@ def test_train_from_labels_with_real_data(tmp_path):
     # n_total is just synthetic + real, one row each.
     assert report["n_total"] == 200 + 15
     # Weight ramps from 1.0 at the n_real=10 floor toward the real_oversample
-    # cap (3) as n_real grows toward the saturation point (50).
+    # cap (3) as n_real grows toward the saturation point.
     from f1di.agents.classifier_utils import REAL_WEIGHT_FLOOR, REAL_WEIGHT_SATURATION
     growth = min(1.0, (15 - REAL_WEIGHT_FLOOR) / (REAL_WEIGHT_SATURATION - REAL_WEIGHT_FLOOR))
     expected_weight = 1.0 + (3 - 1.0) * growth
-    assert report["real_sample_weight"] == pytest.approx(expected_weight, abs=1e-6)
+    # report rounds to 4 decimal places, so allow up to half a ULP at that precision
+    assert report["real_sample_weight"] == pytest.approx(expected_weight, abs=5e-5)
     assert report["prior_accuracy"] is not None
     assert report["transfer_lift"] is not None
 
