@@ -113,18 +113,7 @@ class InferenceOrchestrator:
             confidence = round(meta_w * meta_conf + (1.0 - meta_w) * confidence, 4)
             uncertainty = round(max(0.0, 1.0 - confidence), 4)
 
-        # Confidence gate: a single overconfident agent should not promote to
-        # WARNING/CRITICAL when overall fused confidence is low. Require at
-        # least 2 agents at WARNING+ OR a high blended confidence to keep the
-        # elevated risk level — otherwise downgrade one step.
         risk = highest.risk
-        n_warning_plus = sum(
-            1 for f in findings if f.risk in {RiskLevel.WARNING, RiskLevel.CRITICAL}
-        )
-        if risk == RiskLevel.CRITICAL and confidence < 0.70 and n_warning_plus < 2:
-            risk = RiskLevel.WARNING
-        if risk == RiskLevel.WARNING and confidence < 0.72 and n_warning_plus < 2:
-            risk = RiskLevel.WATCH
 
         shap_explanation: list[dict] = []
         try:
