@@ -4795,6 +4795,17 @@ function OutcomeLabelingCard() {
             <span style={{ color: '#f87171' }}>{result.n_labeled_incorrect} incorrect</span>
             <span style={{ color: '#475569' }}>{result.n_no_match} no match</span>
           </div>
+          {result.error && (
+            <p style={{ fontSize: 10, color: '#ef4444', margin: '0 0 6px', fontFamily: 'monospace' }}>
+              DB error: {result.error}
+            </p>
+          )}
+          {!result.error && result.n_insights_examined === 0 && incidentCounts.length > 0 && (
+            <p style={{ fontSize: 10, color: '#f59e0b', margin: '0 0 6px' }}>
+              No stored insights found for this session — ingest race data first
+              (<code style={{ fontFamily: 'monospace' }}>replay_and_label.py --years {result.year} --rounds {result.round_num}</code>).
+            </p>
+          )}
           {incidentCounts.length > 0 ? (
             <div>
               <p style={{ fontSize: 9, color: 'var(--muted)', margin: '0 0 4px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Incidents found</p>
@@ -5715,7 +5726,9 @@ function FlywheelStatusCard() {
               const exists = m?.exists;
               const active = m?.active_in_inference;
               const real = m?.n_real ?? 0;
+              const acc   = m?.accuracy  != null ? m.accuracy.toFixed(3)   : null;
               const brier = m?.brier_score != null ? m.brier_score.toFixed(3) : null;
+              const metaMetrics = [acc ? `cv acc ${acc}` : null, brier ? `cv brier ${brier}` : null].filter(Boolean).join('  ');
               return (
                 <div style={{
                   display: 'flex', justifyContent: 'space-between', alignItems: 'center',
@@ -5729,8 +5742,8 @@ function FlywheelStatusCard() {
                   <span style={{ fontSize: 10, color: '#64748b', fontFamily: 'monospace' }}>
                     {exists
                       ? (active
-                          ? `active · real ${real}${brier ? '  cv brier ' + brier : ''}`
-                          : `inactive · need ${Math.max(0, 20 - real)} more labels${brier ? '  cv brier ' + brier : ''}`)
+                          ? `active · real ${real}${metaMetrics ? '  ' + metaMetrics : ''}`
+                          : `inactive · need ${Math.max(0, 20 - real)} more labels${metaMetrics ? '  ' + metaMetrics : ''}`)
                       : 'run make fit-meta'}
                   </span>
                 </div>

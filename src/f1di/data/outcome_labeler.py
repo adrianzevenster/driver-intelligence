@@ -59,6 +59,7 @@ class OutcomeReport:
     n_labeled_incorrect: int
     n_no_match: int
     incidents_found: list[dict]
+    error: str | None = None
 
 
 def _session_time_to_lap(laps_df, t) -> int:
@@ -602,6 +603,9 @@ def _label_race_inner(fastf1, canonical_track_id, year: int, round_num: int, *, 
                     db.rollback()
     except Exception as exc:
         logger.error("outcome_labeler_db_error year=%s round=%s: %s", year, round_num, exc)
+        _db_error = str(exc)
+    else:
+        _db_error = None
 
     logger.info(
         "outcome_labeler complete  examined=%d correct=%d incorrect=%d no_match=%d",
@@ -619,4 +623,5 @@ def _label_race_inner(fastf1, canonical_track_id, year: int, round_num: int, *, 
             {"driver": i.driver, "lap": i.lap, "type": i.incident_type, "severity": i.severity}
             for i in incidents
         ],
+        error=_db_error,
     )
