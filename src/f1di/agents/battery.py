@@ -72,19 +72,19 @@ class BatteryAgent(RaceAgent):
                     conf = conf * 0.85
             # Safety floor: rules act as a hard lower bound — promote INFO up if needed.
             if risk_str == "INFO":
-                if features.battery_soc < t.battery_soc_warning and features.battery_soc_slope < -0.01:
+                if features.battery_soc < t.battery_soc_warning and features.battery_soc_slope < -0.0005:
                     risk_str = "WARNING"
                     conf = max(conf, 0.72)
                 elif features.battery_soc > 0.72 and features.mean_speed_kph < 220:
                     risk_str = "WATCH"
                     conf = max(conf, 0.58)
             # Safety ceiling: cap ML predictions to what the rule conditions permit.
-            # WARNING requires active depletion (slope < -0.01); without it the rules
-            # would return INFO, so cap back to INFO rather than warning the driver.
+            # WARNING requires active depletion (slope < -0.0005 per sample, ~-0.01 per lap);
+            # without it the rules would return INFO, so cap back to INFO instead of warning.
             # WATCH for over-charge is only valid when speed is low (< 220 km/h).
             elif risk_str == "WARNING":
                 if not (features.battery_soc < t.battery_soc_warning
-                        and features.battery_soc_slope < -0.01):
+                        and features.battery_soc_slope < -0.0005):
                     risk_str = "INFO"
                     conf = min(conf, 0.62)
             elif risk_str == "WATCH":
@@ -109,9 +109,9 @@ class BatteryAgent(RaceAgent):
         t = _thresh.get(window.track_id)
         base = _base_features(features)
 
-        if features.battery_soc < t.battery_soc_warning and features.battery_soc_slope < -0.01:
+        if features.battery_soc < t.battery_soc_warning and features.battery_soc_slope < -0.0005:
             conf = 0.79
-            conf += 0.04 if features.battery_soc_slope < -0.015 else 0.0
+            conf += 0.04 if features.battery_soc_slope < -0.0007 else 0.0
             conf += 0.02 if features.mean_speed_kph > 220 else 0.0
             return AgentFinding(
                 agent=self.name, risk=RiskLevel.WARNING,

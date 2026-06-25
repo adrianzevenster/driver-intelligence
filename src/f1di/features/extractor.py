@@ -112,7 +112,7 @@ def extract_features(window: TelemetryWindow) -> RaceFeatures:
         fr_wear_slope=slope(fr_wear),
         rear_wear_slope=slope(rear_wear),
         axle_imbalance_fl_rl=latest.tire_wear_fl - latest.tire_wear_rl,
-        brake_temp_front_max=max(latest.brake_temp_fl_c, latest.brake_temp_fr_c),
+        brake_temp_front_max=max(max(s.brake_temp_fl_c, s.brake_temp_fr_c) for s in samples),
         brake_fade_risk=max(0.0, slope(brake_temp_front)),
         fl_degradation_pressure=(latest.tire_wear_fl * 0.65) + max(latest.tire_temp_fl_c - 105, 0) / 90,
         battery_soc=latest.battery_soc,

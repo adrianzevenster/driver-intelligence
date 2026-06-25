@@ -258,14 +258,18 @@ def _build_lap_samples(
         prev_speed = speeds[max(0, i - 1)]
         accel_g = (speed - prev_speed) / 3.6 / 9.81 if i > 0 else 0.0
         brake_bar = 90.0 if brake else 0.0
+        # ERS depletes ~1.4% per stint lap under aggressive deployment; this reaches
+        # the battery_soc_warning threshold (~0.35) in long stints (lap 28+).
         soc = (
-            max(0.25, 0.70 - stint_lap * 0.003)
+            max(0.12, 0.75 - stint_lap * 0.014)
             if (drs >= 8 or throttle > 90)
-            else min(0.95, 0.65 + (100 - throttle) * 0.001)
+            else min(0.92, 0.55 + (100 - throttle) * 0.002)
         )
         base_tire = _BASE_TIRE_TEMP.get(compound.value, 88.0)
         tire_temp = base_tire + (track_temp - 30) * 0.5 + throttle * 0.08
-        brake_temp = (350.0 + speed * 0.6) if brake else 320.0
+        # Real F1 brake temps reach 900–1100 °C at high-speed braking zones;
+        # 300 + speed*2.0 hits the 950 °C critical threshold above ~325 kph.
+        brake_temp = (300.0 + speed * 2.0) if brake else 280.0
         sample_wear = max(0.0, min(0.98, wear + (i - len(rows)) * circuit_wear_rate * 0.05))
 
         samples.append(TelemetrySample(

@@ -9,11 +9,11 @@ from pathlib import Path
 class CircuitThresholds:
     wear_critical: float = 0.78
     wear_warning: float = 0.66
-    brake_temp_critical_c: float = 950.0
+    brake_temp_critical_c: float = 910.0
     fl_degradation_pressure_critical: float = 0.72
     fl_degradation_pressure_warning: float = 0.60
     rain_warning: float = 0.35
-    battery_soc_warning: float = 0.22
+    battery_soc_warning: float = 0.35
     crosswind_watch: float = 12.0
     # Pit-lane time loss (entry deceleration + pit lane traversal + box stop + exit
     # acceleration). Measured per-circuit from FastF1 PitInTime → PitOutTime;

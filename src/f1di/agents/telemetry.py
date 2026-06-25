@@ -75,14 +75,14 @@ class TelemetryAnalysisAgent(RaceAgent):
                 conf = conf * 0.85
         # Safety floor: CRITICAL and WARNING rules must not be suppressed to INFO.
         if label == "INFO":
-            if features.brake_temp_front_max > t.brake_temp_critical_c or features.lockup_count >= 2:
+            if features.brake_temp_front_max > t.brake_temp_critical_c or features.lockup_count >= 5:
                 label = "WARNING"
                 conf = max(conf, 0.65)
             elif features.fl_degradation_pressure > t.fl_degradation_pressure_critical or features.fl_wear_slope > 0.008:
                 label = "WATCH"
                 conf = max(conf, 0.58)
         elif label == "WATCH":
-            if features.brake_temp_front_max > t.brake_temp_critical_c or features.lockup_count >= 2:
+            if features.brake_temp_front_max > t.brake_temp_critical_c or features.lockup_count >= 5:
                 label = "WARNING"
                 conf = max(conf, 0.65)
         risk = RiskLevel[label]
