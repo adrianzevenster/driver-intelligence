@@ -135,8 +135,8 @@ class TestBatteryAgent:
         assert result.risk in (RiskLevel.WATCH, RiskLevel.WARNING)
 
     def test_warning_requires_negative_slope(self):
-        # SOC below warning but slope is near-zero — should not trigger WARNING
-        f = _features(battery_soc=0.18, battery_soc_slope=-0.002, mean_speed_kph=200.0)
+        # SOC below warning but per-sample slope is near-zero (above -0.0005 gate) — should not trigger WARNING
+        f = _features(battery_soc=0.18, battery_soc_slope=-0.0002, mean_speed_kph=200.0)
         result = self.agent.analyze(_window(), f, _mock_retriever())
         assert result.risk == RiskLevel.INFO
 
