@@ -162,8 +162,10 @@ def _synthetic_label(
 ) -> int:
     from f1di.agents.thresholds import CircuitThresholds
     t = CircuitThresholds()
-    if brake_temp > t.brake_temp_critical_c or lockups >= 2:
+    if lockups >= 5:
         return 3  # CRITICAL
+    if brake_temp > t.brake_temp_critical_c or lockups >= 3:
+        return 2  # WARNING — matches agent safety floor
     if fl_dp > t.fl_degradation_pressure_critical or fl_slope > 0.008:
         return 2  # WARNING
     if brake_fade > 12.0 or crosswind > t.crosswind_watch * 0.85:
@@ -175,8 +177,13 @@ def generate_synthetic(n: int = 800, seed: int = 42) -> tuple[np.ndarray, np.nda
     rng = np.random.default_rng(seed)
     X, y = [], []
     while len(X) < n:
-        brake_temp = float(rng.uniform(200.0, 1100.0))
-        lockups    = float(rng.integers(0, 5))
+        # Stratify 1-in-5 samples as "brake_temp-only WARNING" so LR learns this path
+        if len(X) % 5 == 0:
+            brake_temp = float(rng.uniform(920.0, 1100.0))
+            lockups    = float(rng.integers(0, 3))  # low lockup, brake_temp is the trigger
+        else:
+            brake_temp = float(rng.uniform(200.0, 1100.0))
+            lockups    = float(rng.integers(0, 7))
         brake_fade = float(rng.uniform(0.0, 20.0))
         fl_dp      = float(rng.uniform(0.20, 0.95))
         fl_slope   = float(rng.uniform(0.0, 0.020))

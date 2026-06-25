@@ -54,10 +54,10 @@ def test_features_to_array_grip_second():
     assert arr[1] == pytest.approx(0.62)
 
 
-def test_features_to_array_race_phase_last():
+def test_features_to_array_race_phase_position():
     f = _features(race_phase=0.73)
     arr = features_to_array(f, 0.5)
-    assert arr[-1] == pytest.approx(0.73)
+    assert arr[FEATURE_NAMES.index("race_phase")] == pytest.approx(0.73)
 
 
 # ── _synthetic_label ───────────────────────────────────────────────────────
