@@ -5,6 +5,29 @@ from dataclasses import dataclass
 
 from f1di.domain.schemas import TelemetryWindow
 
+_CIRCUIT_AVG_SPEED: dict[str, float] = {
+    "bahrain": 205.0, "jeddah": 250.0,
+    "melbourne": 215.0, "albert_park": 215.0,
+    "suzuka": 235.0, "shanghai": 215.0, "miami": 220.0,
+    "imola": 200.0, "monaco": 140.0,
+    "montreal": 210.0, "circuit_gilles_villeneuve": 210.0,
+    "barcelona": 210.0, "catalonia": 210.0,
+    "red_bull_ring": 215.0, "silverstone": 235.0,
+    "hungaroring": 190.0, "spa": 235.0, "zandvoort": 200.0,
+    "monza": 250.0, "baku": 215.0, "baku_city_circuit": 215.0,
+    "marina_bay": 175.0, "singapore": 175.0, "cota": 195.0,
+    "mexico_city": 195.0, "interlagos": 205.0, "las_vegas": 235.0,
+    "losail": 225.0, "yas_marina": 210.0, "abu_dhabi": 210.0,
+}
+
+# 0.0 = street/temporary circuit, 1.0 = permanent track
+_CIRCUIT_TYPE: dict[str, float] = {
+    "monaco": 0.0, "baku": 0.0, "baku_city_circuit": 0.0,
+    "jeddah": 0.0, "melbourne": 0.0, "albert_park": 0.0,
+    "miami": 0.0, "montreal": 0.0, "circuit_gilles_villeneuve": 0.0,
+    "marina_bay": 0.0, "singapore": 0.0, "las_vegas": 0.0,
+}
+
 # Per-compound typical stint length (laps) — used for stint_fraction.
 _TYPICAL_STINT_LAPS: dict[str, float] = {
     "SOFT": 18.0,
@@ -50,6 +73,9 @@ class RaceFeatures:
     # Defaulting to 0.0 keeps existing RaceFeatures constructors valid.
     fl_wear_slope_ema: float = 0.0
     fr_wear_slope_ema: float = 0.0
+    circuit_avg_speed_kph: float = 210.0
+    circuit_type_enc: float = 1.0  # 0.0=street, 1.0=permanent
+    race_laps_total: float = 57.0
 
 
 def slope(values: list[float]) -> float:
@@ -97,6 +123,7 @@ def extract_features(window: TelemetryWindow) -> RaceFeatures:
     total_laps = max(1, window.race_total_laps)
     compound = latest.compound.value
     typical_stint = _TYPICAL_STINT_LAPS.get(compound, 24.0)
+    track = (window.track_id or "").lower().replace("-", "_").replace(" ", "_")
 
     ers_net = [s.ers_deploy_kw - s.ers_regen_kw for s in samples]
 
@@ -129,4 +156,7 @@ def extract_features(window: TelemetryWindow) -> RaceFeatures:
         ers_net_deploy_kw=statistics.fmean(ers_net),
         fl_wear_slope_ema=slope_ema(fl_wear),
         fr_wear_slope_ema=slope_ema(fr_wear),
+        circuit_avg_speed_kph=_CIRCUIT_AVG_SPEED.get(track, 210.0),
+        circuit_type_enc=_CIRCUIT_TYPE.get(track, 1.0),
+        race_laps_total=float(total_laps),
     )

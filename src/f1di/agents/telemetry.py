@@ -39,6 +39,9 @@ def _base_features(features: RaceFeatures) -> dict[str, float]:
         "crosswind_proxy": features.crosswind_proxy,
         "race_phase": features.race_phase,
         "laps_remaining": features.laps_remaining,
+        "circuit_avg_speed_kph": features.circuit_avg_speed_kph,
+        "circuit_type_enc": features.circuit_type_enc,
+        "race_laps_total": features.race_laps_total,
     }
 
 

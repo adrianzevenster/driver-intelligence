@@ -26,6 +26,9 @@ FEATURE_NAMES: list[str] = [
     "crosswind_proxy",
     "race_phase",
     "laps_remaining",
+    "circuit_avg_speed_kph",
+    "circuit_type_enc",
+    "race_laps_total",
 ]
 
 _LABEL_MAP: dict[int, str] = {0: "INFO", 1: "WATCH", 2: "WARNING", 3: "CRITICAL"}
@@ -56,6 +59,9 @@ def features_to_array(features) -> np.ndarray:
         features.crosswind_proxy,
         features.race_phase,
         features.laps_remaining,
+        features.circuit_avg_speed_kph,
+        features.circuit_type_enc,
+        features.race_laps_total,
     ], dtype=np.float64)
 
 
@@ -178,8 +184,11 @@ def generate_synthetic(n: int = 800, seed: int = 42) -> tuple[np.ndarray, np.nda
         crosswind  = float(rng.uniform(0.0, 30.0))
         phase      = float(rng.uniform(0.0, 1.0))
         laps_r     = float(rng.uniform(0.0, 45.0))
+        circuit_speed = float(rng.choice([140.0, 175.0, 190.0, 200.0, 205.0, 210.0, 215.0, 220.0, 225.0, 235.0, 250.0]))
+        circuit_type  = float(rng.choice([0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]))
+        race_laps     = float(rng.integers(50, 79))
         label = _synthetic_label(brake_temp, lockups, brake_fade, fl_dp, fl_slope, crosswind)
-        X.append([brake_temp, lockups, brake_fade, fl_dp, fl_slope, fr_slope, crosswind, phase, laps_r])
+        X.append([brake_temp, lockups, brake_fade, fl_dp, fl_slope, fr_slope, crosswind, phase, laps_r, circuit_speed, circuit_type, race_laps])
         y.append(label)
     return np.array(X, dtype=np.float64), np.array(y, dtype=np.int32)
 
@@ -235,6 +244,9 @@ def _load_labeled_from_db() -> tuple[np.ndarray, np.ndarray]:
             float(feats.get("crosswind_proxy", 5.0)),
             float(feats.get("race_phase", 0.5)),
             float(feats.get("laps_remaining", 20.0)),
+            float(feats.get("circuit_avg_speed_kph", 210.0)),
+            float(feats.get("circuit_type_enc", 1.0)),
+            float(feats.get("race_laps_total", 57.0)),
         ])
         y.append(true_label)
 

@@ -27,6 +27,9 @@ FEATURE_NAMES: list[str] = [
     "throttle_smoothness",
     "race_phase",
     "brake_temp_front_max",
+    "circuit_avg_speed_kph",
+    "circuit_type_enc",
+    "race_laps_total",
 ]
 
 _LABEL_MAP: dict[int, str] = {0: "INFO", 1: "WATCH", 2: "WARNING", 3: "CRITICAL"}
@@ -56,6 +59,9 @@ def features_to_array(features) -> np.ndarray:
         features.throttle_smoothness,
         features.race_phase,
         features.brake_temp_front_max,
+        features.circuit_avg_speed_kph,
+        features.circuit_type_enc,
+        features.race_laps_total,
     ], dtype=np.float64)
 
 
@@ -184,7 +190,10 @@ def generate_synthetic(n: int = 800, seed: int = 42) -> tuple[np.ndarray, np.nda
         smooth = float(rng.uniform(0.3, 1.0))
         phase  = float(rng.uniform(0.0, 1.0))
         brake  = float(rng.uniform(100.0, 700.0))
-        X.append([speed, delta, rain, grip, float(lockup), smooth, phase, brake])
+        circuit_speed = float(rng.choice([140.0, 175.0, 190.0, 200.0, 205.0, 210.0, 215.0, 220.0, 225.0, 235.0, 250.0]))
+        circuit_type  = float(rng.choice([0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]))
+        race_laps     = float(rng.integers(50, 79))
+        X.append([speed, delta, rain, grip, float(lockup), smooth, phase, brake, circuit_speed, circuit_type, race_laps])
         y.append(_synthetic_label(speed, delta, rain, grip, lockup, brake))
     return np.array(X, dtype=np.float64), np.array(y, dtype=np.int32)
 
@@ -237,6 +246,9 @@ def _load_labeled_from_db() -> tuple[np.ndarray, np.ndarray]:
             float(feats.get("throttle_smoothness", 0.8)),
             float(feats.get("race_phase", 0.5)),
             float(feats.get("brake_temp_front_max", 300.0)),
+            float(feats.get("circuit_avg_speed_kph", 210.0)),
+            float(feats.get("circuit_type_enc", 1.0)),
+            float(feats.get("race_laps_total", 57.0)),
         ])
         y.append(true_label)
 

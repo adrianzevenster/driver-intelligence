@@ -32,6 +32,9 @@ FEATURE_NAMES: list[str] = [
     "laps_remaining",
     "stint_fraction",
     "race_phase",
+    "circuit_avg_speed_kph",
+    "circuit_type_enc",
+    "race_laps_total",
 ]
 
 _LABEL_MAP: dict[int, str] = {0: "INFO", 1: "WATCH", 2: "WARNING", 3: "CRITICAL"}
@@ -64,6 +67,9 @@ def features_to_array(features, wear_pressure: float) -> np.ndarray:
         features.laps_remaining,
         features.stint_fraction,
         features.race_phase,
+        features.circuit_avg_speed_kph,
+        features.circuit_type_enc,
+        features.race_laps_total,
     ], dtype=np.float64)
 
 
@@ -210,8 +216,11 @@ def generate_synthetic(n: int = 800, seed: int = 42) -> tuple[np.ndarray, np.nda
         laps_r  = float(rng.uniform(0.0, 45.0))
         stint_f = float(rng.uniform(0.0, 1.3))
         race_ph = float(rng.uniform(0.0, 1.0))
+        circuit_speed = float(rng.choice([140.0, 175.0, 190.0, 200.0, 205.0, 210.0, 215.0, 220.0, 225.0, 235.0, 250.0]))
+        circuit_type  = float(rng.choice([0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]))
+        race_laps     = float(rng.integers(50, 79))
         label   = _synthetic_label(wp, grip, fl_sl, fr_sl, rr_sl, axle)
-        X_rows.append([wp, grip, fl_sl, fr_sl, rr_sl, axle, laps_r, stint_f, race_ph])
+        X_rows.append([wp, grip, fl_sl, fr_sl, rr_sl, axle, laps_r, stint_f, race_ph, circuit_speed, circuit_type, race_laps])
         y_rows.append(label)
 
     return np.array(X_rows, dtype=np.float64), np.array(y_rows, dtype=np.int32)
@@ -277,6 +286,9 @@ def _load_labeled_from_db() -> tuple[np.ndarray, np.ndarray]:
             float(feats.get("laps_remaining", 20.0)),
             float(feats.get("stint_fraction", 0.5)),
             float(feats.get("race_phase", 0.5)),
+            float(feats.get("circuit_avg_speed_kph", 210.0)),
+            float(feats.get("circuit_type_enc", 1.0)),
+            float(feats.get("race_laps_total", 57.0)),
         ])
         y_rows.append(true_label)
 

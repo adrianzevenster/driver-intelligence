@@ -55,6 +55,9 @@ def _clf_features(features: RaceFeatures, wear_pressure: float) -> dict[str, flo
         "laps_remaining": features.laps_remaining,
         "stint_fraction": features.stint_fraction,
         "race_phase": features.race_phase,
+        "circuit_avg_speed_kph": features.circuit_avg_speed_kph,
+        "circuit_type_enc": features.circuit_type_enc,
+        "race_laps_total": features.race_laps_total,
     }
 
 

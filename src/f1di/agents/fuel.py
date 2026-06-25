@@ -48,6 +48,9 @@ def _base_features(features: RaceFeatures) -> dict[str, float]:
         "race_phase":         features.race_phase,
         "stint_fraction":     features.stint_fraction,
         "throttle_smoothness": features.throttle_smoothness,
+        "circuit_avg_speed_kph": features.circuit_avg_speed_kph,
+        "circuit_type_enc": features.circuit_type_enc,
+        "race_laps_total": features.race_laps_total,
     }
 
 
