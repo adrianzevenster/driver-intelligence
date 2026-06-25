@@ -32,9 +32,14 @@ logger = logging.getLogger("f1di.data.outcome_labeler")
 
 _CACHE_DIR = str(Path(__file__).parents[3] / "data" / "fastf1_cache")
 
-# How many laps ahead an incident must occur for a WARNING/CRITICAL prediction
-# to be considered "correct".
+# Default look-ahead window (laps) for a WARNING/CRITICAL to be considered correct.
 _CORRECT_WINDOW_LAPS = 5
+
+# Per-incident-type overrides — some events have inherently longer lead times.
+_CORRECT_WINDOW_BY_TYPE: dict[str, int] = {
+    "safety_car": 10,     # SC can be preceded by several slow/chaotic laps
+    "lockup_proxy": 10,   # Lockup degradation builds over multiple laps
+}
 
 # How many laps must pass WITHOUT an incident before a WARNING/CRITICAL prediction
 # is labeled "incorrect" (false alarm).
@@ -553,7 +558,7 @@ def _label_race_inner(fastf1, canonical_track_id, year: int, round_num: int, *, 
                     matching = [
                         (inc_lap, inc_type, sev)
                         for inc_lap, inc_type, sev in driver_incidents
-                        if 0 <= inc_lap - lap <= _CORRECT_WINDOW_LAPS
+                        if 0 <= inc_lap - lap <= _CORRECT_WINDOW_BY_TYPE.get(inc_type, _CORRECT_WINDOW_LAPS)
                     ]
 
                     if matching:
