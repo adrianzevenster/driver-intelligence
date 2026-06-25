@@ -320,7 +320,11 @@ def train_from_labels(
         )
 
     from f1di.agents.classifier_utils import class_balance_weights
-    sample_weight = class_balance_weights(y, sample_weight)
+    # Only class-balance during cold-start (synthetic only). Once real data is
+    # blended the true class distribution is informative — forcing balance would
+    # up-weight WARNING/CRITICAL and increase false positives.
+    if n_real < 10:
+        sample_weight = class_balance_weights(y, sample_weight)
 
     unique, counts = np.unique(y, return_counts=True)
     class_dist = {_LABEL_MAP[int(k)]: int(v) for k, v in zip(unique, counts)}

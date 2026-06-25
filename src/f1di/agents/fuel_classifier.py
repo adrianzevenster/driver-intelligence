@@ -254,7 +254,8 @@ def train_from_labels(
     X, y, sample_weight = blend["X"], blend["y"], blend["sample_weight"]
 
     from f1di.agents.classifier_utils import class_balance_weights
-    sample_weight = class_balance_weights(y, sample_weight)
+    if n_real < 10:
+        sample_weight = class_balance_weights(y, sample_weight)
 
     unique, counts = np.unique(y, return_counts=True)
     clf = FuelClassifier(model_type=model_type).fit(X, y, n_real=n_real, sample_weight=sample_weight)
