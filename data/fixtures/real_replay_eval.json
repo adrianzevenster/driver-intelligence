@@ -13649,7 +13649,7 @@
       "outcome": "no_action"
     },
     "expected_sources": [
-      "bahrain_track"
+      "circuit_guides_bahrain_guide"
     ],
     "window": {
       "session_id": "fastf1_2024_1",
@@ -18769,7 +18769,7 @@
       "outcome": "no_action"
     },
     "expected_sources": [
-      "bahrain_track"
+      "circuit_guides_bahrain_guide"
     ],
     "window": {
       "session_id": "fastf1_2024_1",
@@ -54017,7 +54017,7 @@
       "outcome": "lockup_warning"
     },
     "expected_sources": [
-      "bahrain_track"
+      "circuit_guides_bahrain_guide"
     ],
     "expected_min_risk": "CRITICAL",
     "expected_agents": [
