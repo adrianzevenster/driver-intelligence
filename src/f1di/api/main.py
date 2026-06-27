@@ -23,6 +23,7 @@ from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pydantic import BaseModel
 
+from f1di.agents.classifier_utils import _CALIBRATION_DIR
 from f1di.config.settings import settings
 from f1di.domain.schemas import (
     DriverInsight,
@@ -56,6 +57,10 @@ configure_logging(settings.log_level)
 logger = logging.getLogger("f1di.api")
 
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+import threading as _threading
+import uuid as _uuid
+_TUNE_JOBS: dict[str, dict] = {}  # job_id -> {status, agent, result, error}
 
 
 def _json_ready(value: Any) -> Any:
@@ -108,7 +113,7 @@ async def lifespan(app: FastAPI):
     try:
         import json as _json
         from f1di.observability.metrics import CALIBRATION_ECE_GAUGE, CALIBRATION_REGRESSION_BLOCKED
-        _q = Path("data/calibration/quality.json")
+        _q = _CALIBRATION_DIR / "quality.json"
         if _q.exists():
             _qdata = _json.loads(_q.read_text())
             CALIBRATION_ECE_GAUGE.set(_qdata.get("ece") or 0)
@@ -221,7 +226,7 @@ def health() -> dict[str, str]:
 def ready() -> dict[str, object]:
     import json as _json
     calibration_quality: object = None
-    _q = Path("data/calibration/quality.json")
+    _q = _CALIBRATION_DIR / "quality.json"
     if _q.exists():
         try:
             calibration_quality = _json.loads(_q.read_text())
@@ -667,7 +672,7 @@ def synthetic_audit_result() -> dict:
 @app.get("/v1/ml/meta-weights")
 def meta_learner_weights() -> dict[str, Any]:
     """Return the meta-learner feature importances and model metadata."""
-    meta_path = Path("data/calibration/meta_learner.pkl")
+    meta_path = _CALIBRATION_DIR / "meta_learner.pkl"
     if not meta_path.exists():
         raise HTTPException(status_code=404, detail="Meta-learner not yet trained — need ≥20 real labels.")
     try:
@@ -715,7 +720,7 @@ def ml_backtest(refresh: bool = False) -> dict[str, Any]:
 def ml_quality() -> dict[str, Any]:
     """Current calibrator quality metrics (ECE, Brier score, fit timestamp)."""
     import json as _json
-    q = Path("data/calibration/quality.json")
+    q = _CALIBRATION_DIR / "quality.json"
     if not q.exists():
         raise HTTPException(status_code=404, detail="Calibrator not yet fitted — run scripts/fit_calibrator.py")
     try:
@@ -1073,8 +1078,8 @@ def flywheel_status() -> dict:
         pass
 
     # Isotonic calibration artifact
-    cal_path = Path("data/calibration/isotonic.pkl")
-    quality_path = Path("data/calibration/quality.json")
+    cal_path = _CALIBRATION_DIR / "isotonic.pkl"
+    quality_path = _CALIBRATION_DIR / "quality.json"
     cal_exists = cal_path.exists()
     ece: float | None = None
     ece_ok = False
@@ -1089,7 +1094,7 @@ def flywheel_status() -> dict:
             pass
 
     # Outcome-labeled cache
-    labeled_path = Path("data/calibration/outcome_labeled.json")
+    labeled_path = _CALIBRATION_DIR / "outcome_labeled.json"
     rounds_labeled = 0
     outcome_cache_exists = labeled_path.exists()
     if outcome_cache_exists:
@@ -1122,13 +1127,13 @@ def flywheel_status() -> dict:
             return {"exists": True, "accuracy": None, "brier_score": None, "cv_n_splits": None, "cv_accuracy_std": None, "real_sample_weight": None, "prior_cv_accuracy": None, "transfer_lift": None, "n_real": None, "n_train": None, "model_version": None, "model_type": None, "per_class": {}}
 
     classifiers = {
-        "tire":        _clf_info(Path("data/calibration/tire_classifier.pkl")),
-        "battery":     _clf_info(Path("data/calibration/battery_classifier.pkl")),
-        "weather":     _clf_info(Path("data/calibration/weather_classifier.pkl")),
-        "telemetry":   _clf_info(Path("data/calibration/telemetry_classifier.pkl")),
-        "safety_car":  _clf_info(Path("data/calibration/safety_car_classifier.pkl")),
-        "fuel":        _clf_info(Path("data/calibration/fuel_classifier.pkl")),
-        "meta":        _clf_info(Path("data/calibration/meta_learner.pkl")),
+        "tire":        _clf_info(_CALIBRATION_DIR / "tire_classifier.pkl"),
+        "battery":     _clf_info(_CALIBRATION_DIR / "battery_classifier.pkl"),
+        "weather":     _clf_info(_CALIBRATION_DIR / "weather_classifier.pkl"),
+        "telemetry":   _clf_info(_CALIBRATION_DIR / "telemetry_classifier.pkl"),
+        "safety_car":  _clf_info(_CALIBRATION_DIR / "safety_car_classifier.pkl"),
+        "fuel":        _clf_info(_CALIBRATION_DIR / "fuel_classifier.pkl"),
+        "meta":        _clf_info(_CALIBRATION_DIR / "meta_learner.pkl"),
     }
     meta_active = (
         classifiers["meta"]["exists"]
@@ -1169,16 +1174,16 @@ def _auto_retrain_status() -> dict:
 # ---------------------------------------------------------------------------
 
 _CLASSIFIER_AGENTS = {
-    "tire":       Path("data/calibration/tire_classifier.pkl"),
-    "battery":    Path("data/calibration/battery_classifier.pkl"),
-    "weather":    Path("data/calibration/weather_classifier.pkl"),
-    "telemetry":  Path("data/calibration/telemetry_classifier.pkl"),
-    "safety_car": Path("data/calibration/safety_car_classifier.pkl"),
-    "fuel":       Path("data/calibration/fuel_classifier.pkl"),
-    "meta":       Path("data/calibration/meta_learner.pkl"),
+    "tire":       _CALIBRATION_DIR / "tire_classifier.pkl",
+    "battery":    _CALIBRATION_DIR / "battery_classifier.pkl",
+    "weather":    _CALIBRATION_DIR / "weather_classifier.pkl",
+    "telemetry":  _CALIBRATION_DIR / "telemetry_classifier.pkl",
+    "safety_car": _CALIBRATION_DIR / "safety_car_classifier.pkl",
+    "fuel":       _CALIBRATION_DIR / "fuel_classifier.pkl",
+    "meta":       _CALIBRATION_DIR / "meta_learner.pkl",
 }
 
-_HISTORY_PATH = Path("data/calibration/model_history.json")
+_HISTORY_PATH = _CALIBRATION_DIR / "model_history.json"
 
 
 def _read_classifier_history() -> list[dict]:
@@ -1205,7 +1210,7 @@ def model_snapshots(agent: str) -> list[dict]:
     if agent not in _CLASSIFIER_AGENTS:
         raise HTTPException(status_code=404, detail=f"Unknown agent: {agent}")
     import hashlib
-    cal_dir = Path("data/calibration")
+    cal_dir = _CALIBRATION_DIR
     prefix = "meta_learner_" if agent == "meta" else f"{agent}_classifier_"
     snaps = sorted(cal_dir.glob(f"{prefix}*.pkl"), reverse=True)
     live_path = _CLASSIFIER_AGENTS[agent]
@@ -1251,7 +1256,7 @@ def model_test(body: dict) -> dict:
     if agent not in _CLASSIFIER_AGENTS:
         raise HTTPException(status_code=400, detail=f"Unknown agent: {agent}")
     p = Path(snapshot_path)
-    if not p.exists() or not p.is_relative_to(Path("data/calibration")):
+    if not p.exists() or not p.is_relative_to(_CALIBRATION_DIR):
         raise HTTPException(status_code=400, detail="Invalid snapshot path")
     try:
         obj = pickle.loads(p.read_bytes())
@@ -1340,7 +1345,7 @@ def model_promote(body: dict) -> dict:
     if agent not in _CLASSIFIER_AGENTS:
         raise HTTPException(status_code=400, detail=f"Unknown agent: {agent}")
     src = Path(snapshot_path)
-    if not src.exists() or not src.is_relative_to(Path("data/calibration")):
+    if not src.exists() or not src.is_relative_to(_CALIBRATION_DIR):
         raise HTTPException(status_code=400, detail="Invalid snapshot path")
     dst = _CLASSIFIER_AGENTS[agent]
     try:
@@ -1381,8 +1386,8 @@ def model_types() -> dict:
         "labels": _MODEL_DISPLAY,
         "defaults": {
             "tire": "hgbc", "meta": "hgbc",
-            "battery": "logistic", "weather": "logistic",
-            "telemetry": "logistic", "safety_car": "logistic", "fuel": "logistic",
+            "battery": "logistic", "weather": "logistic", "telemetry": "logistic",
+            "safety_car": "hgbc", "fuel": "hgbc",
         },
     }
 
@@ -1426,15 +1431,38 @@ def model_retrain(body: dict) -> dict:
 
 @app.post("/v1/model/tune")
 def model_tune(body: dict) -> dict:
-    """Run Optuna hyperparameter search for one HGBC classifier agent.
+    """Run Optuna hyperparameter search for one agent.
 
-    Saves best params to data/calibration/{agent}_best_params.json.
-    Subsequent retrains pick them up automatically.
+    If body includes {"async": true}, the tune is run in a background thread and a
+    job_id is returned immediately. Poll GET /v1/model/tune/status/{job_id} for results.
+
+    Without async (default), the request blocks until the tune completes and returns the
+    full result. Use async=true for Tune-All workflows to avoid long browser waits.
     """
     agent    = body.get("agent", "")
     n_trials = min(int(body.get("n_trials", 30)), 150)
+    run_async = bool(body.get("async", False))
     if agent not in _CLASSIFIER_AGENTS:
         raise HTTPException(status_code=400, detail=f"Unknown agent: {agent}")
+
+    if run_async:
+        job_id = _uuid.uuid4().hex[:12]
+        _TUNE_JOBS[job_id] = {"status": "running", "agent": agent, "result": None, "error": None}
+
+        def _run_tune():
+            try:
+                from f1di.agents.tuner import tune_agent
+                result = tune_agent(agent, n_trials=n_trials)
+                _TUNE_JOBS[job_id].update({"status": "done", "result": result})
+            except RuntimeError as exc:
+                _TUNE_JOBS[job_id].update({"status": "error", "error": str(exc)})
+            except Exception as exc:
+                logger.exception("async model_tune failed for agent=%s", agent)
+                _TUNE_JOBS[job_id].update({"status": "error", "error": f"Tune failed: {exc}"})
+
+        _threading.Thread(target=_run_tune, daemon=True).start()
+        return {"job_id": job_id, "agent": agent, "status": "running"}
+
     try:
         from f1di.agents.tuner import tune_agent
         return tune_agent(agent, n_trials=n_trials)
@@ -1445,12 +1473,21 @@ def model_tune(body: dict) -> dict:
         raise HTTPException(status_code=500, detail=f"Tune failed: {exc}")
 
 
+@app.get("/v1/model/tune/status/{job_id}")
+def model_tune_status(job_id: str) -> dict:
+    """Poll status of an async tune job started with async=true."""
+    job = _TUNE_JOBS.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail=f"Unknown job_id: {job_id}")
+    return {"job_id": job_id, **job}
+
+
 @app.get("/v1/model/best-params/{agent}")
 def model_best_params(agent: str) -> dict:
     """Return saved Optuna best-params for one agent, or {} if not yet tuned."""
     if agent not in _CLASSIFIER_AGENTS:
         raise HTTPException(status_code=404, detail=f"Unknown agent: {agent}")
-    path = Path("data/calibration") / f"{agent}_best_params.json"
+    path = _CALIBRATION_DIR / f"{agent}_best_params.json"
     if not path.exists():
         return {"agent": agent, "tuned": False}
     try:
@@ -1603,7 +1640,7 @@ def shadow_promote(
     import json as _json
     from datetime import datetime, timezone
 
-    promotions_path = Path("data/calibration/promotions.json")
+    promotions_path = _CALIBRATION_DIR / "promotions.json"
     promotions_path.parent.mkdir(parents=True, exist_ok=True)
     try:
         existing = _json.loads(promotions_path.read_text()) if promotions_path.exists() else []
@@ -1627,7 +1664,7 @@ def shadow_promote(
 def shadow_promotion_history() -> list[dict[str, Any]]:
     """Return the log of past shadow challenger promotions (manual and auto)."""
     import json as _json
-    promotions_path = Path("data/calibration/promotions.json")
+    promotions_path = _CALIBRATION_DIR / "promotions.json"
     if not promotions_path.exists():
         return []
     try:
@@ -1885,7 +1922,7 @@ def feedback_stats() -> dict:
     except Exception as exc:
         logger.debug("feedback_stats DB query failed: %s", exc)
 
-    quality_path = Path("data/calibration/quality.json")
+    quality_path = _CALIBRATION_DIR / "quality.json"
     if quality_path.exists():
         try:
             q = _json.loads(quality_path.read_text())
@@ -2613,9 +2650,9 @@ def retrieval_eval(save: bool = False) -> dict:
 # Quality history
 # ---------------------------------------------------------------------------
 
-_QUALITY_HISTORY_PATH = Path("data/calibration/quality_history.json")
-_RETRIEVAL_EVAL_PATH  = Path("data/calibration/retrieval_eval.json")
-_QUALITY_PATH         = Path("data/calibration/quality.json")
+_QUALITY_HISTORY_PATH = _CALIBRATION_DIR / "quality_history.json"
+_RETRIEVAL_EVAL_PATH  = _CALIBRATION_DIR / "retrieval_eval.json"
+_QUALITY_PATH         = _CALIBRATION_DIR / "quality.json"
 
 
 @app.post("/v1/quality/record")

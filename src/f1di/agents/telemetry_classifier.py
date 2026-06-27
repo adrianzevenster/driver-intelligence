@@ -14,7 +14,8 @@ import numpy as np
 
 logger = logging.getLogger("f1di.agents.telemetry_classifier")
 
-_CLASSIFIER_PATH = Path("data/calibration/telemetry_classifier.pkl")
+from f1di.agents.classifier_utils import _CALIBRATION_DIR
+_CLASSIFIER_PATH = _CALIBRATION_DIR / "telemetry_classifier.pkl"
 
 FEATURE_NAMES: list[str] = [
     "brake_temp_front_max",
@@ -313,7 +314,7 @@ def train_from_labels(
     }
 
 
-_INCREMENTAL_PATH = Path("data/calibration/telemetry_incremental.pkl")
+_INCREMENTAL_PATH = _CALIBRATION_DIR / "telemetry_incremental.pkl"
 
 
 def partial_fit_from_labels(output_path: Path = _INCREMENTAL_PATH) -> dict:

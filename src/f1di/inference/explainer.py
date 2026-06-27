@@ -11,7 +11,8 @@ from pathlib import Path
 
 logger = logging.getLogger("f1di.inference.explainer")
 
-_META_PATH = Path("data/calibration/meta_learner.pkl")
+from f1di.agents.classifier_utils import _CALIBRATION_DIR
+_META_PATH = _CALIBRATION_DIR / "meta_learner.pkl"
 
 
 def explain_findings(findings: list, iso_confidence: float) -> list[dict]:

@@ -10,7 +10,8 @@ from f1di.rag.store import HybridMemoryRetriever
 
 logger = logging.getLogger("f1di.agents.safety_car")
 
-_CLASSIFIER_PATH = Path("data/calibration/safety_car_classifier.pkl")
+from f1di.agents.classifier_utils import _CALIBRATION_DIR
+_CLASSIFIER_PATH = _CALIBRATION_DIR / "safety_car_classifier.pkl"
 _clf_cache: object = None
 _clf_mtime: float = 0.0
 

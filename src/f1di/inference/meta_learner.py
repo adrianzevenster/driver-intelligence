@@ -31,7 +31,8 @@ import numpy as np
 
 logger = logging.getLogger("f1di.inference.meta_learner")
 
-_META_PATH = Path("data/calibration/meta_learner.pkl")
+from f1di.agents.classifier_utils import _CALIBRATION_DIR
+_META_PATH = _CALIBRATION_DIR / "meta_learner.pkl"
 
 # All 6 inference agents — order is part of the feature contract
 _AGENT_ORDER = ["telemetry", "tire_strategy", "weather", "battery", "safety_car", "fuel"]
@@ -222,14 +223,21 @@ class MetaLearner:
 def _synthetic_label(
     risk_weights: list[float],
     confs: list[float],
-    iso_conf: float,
     rng,
 ) -> int:
-    """Synthetic ground truth based on multi-agent agreement patterns.
+    """Synthetic ground truth: 1 = insight was correct, 0 = incorrect.
 
-    Designed so iso_confidence is NOT the only signal — agent agreement,
-    number of high-risk agents, and per-agent confidence all matter.
-    This forces the HGB to learn interaction effects, not just iso_conf.
+    Labels are based on n_high (agent consensus count) and firing agent
+    confidence. iso_conf is intentionally excluded so the HGBC must learn
+    agent interaction effects directly rather than echoing the isotonic
+    calibrator.
+
+    Decision rule:
+      n_high >= 4 : almost always correct (5% noise)
+      n_high == 3 : reliable when firing agents are confident (mean >= 0.62)
+      n_high == 2 : reliable only when both are clearly confident (mean >= 0.70)
+      n_high == 1 : solo false-alarm risk; correct only with high confidence (>= 0.79)
+      n_high == 0 : INFO prediction — reliable by default (consensus silence)
     """
     from f1di.domain.schemas import RiskLevel
     from f1di.confidence.calibration import RISK_WEIGHT
@@ -237,40 +245,77 @@ def _synthetic_label(
 
     rw_arr = np.array(risk_weights)
     n_high = int((rw_arr >= _HIGH).sum())
-    max_rw = float(rw_arr.max())
-    mean_conf = float(np.mean(confs))
 
-    # Multi-agent agreement (≥3 agents at WARNING+): strong signal → correct
-    if n_high >= 3:
-        return 1 if (mean_conf > 0.55 or iso_conf > 0.60) else int(rng.random() < 0.6)
+    if n_high >= 4:
+        return 0 if rng.random() < 0.05 else 1
 
-    # Single high-risk agent, others on INFO: unreliable
-    if n_high == 1 and max_rw >= _HIGH:
-        # Only correct if both iso_conf AND the firing agent's conf are high
-        firing_conf = max(c for c, rw in zip(confs, risk_weights) if rw >= _HIGH)
-        p = 0.3 + 0.4 * firing_conf + 0.2 * iso_conf
-        return int(rng.random() < p)
+    if n_high == 3:
+        firing_confs = [c for c, rw in zip(confs, risk_weights) if rw >= _HIGH]
+        return 1 if float(np.mean(firing_confs)) >= 0.62 else 0
 
-    # Two agents agree at WARNING+: moderately reliable
     if n_high == 2:
-        p = 0.5 + 0.3 * iso_conf + 0.15 * mean_conf
-        return int(rng.random() < min(p, 0.95))
+        firing_confs = [c for c, rw in zip(confs, risk_weights) if rw >= _HIGH]
+        return 1 if float(np.mean(firing_confs)) >= 0.70 else 0
 
-    # No agent at WARNING: low-risk scenario, correct (INFO is right to be quiet)
-    if max_rw < _HIGH:
-        return 1 if iso_conf < 0.50 else int(rng.random() < 0.70)
+    if n_high == 1:
+        firing_conf = max((c for c, rw in zip(confs, risk_weights) if rw >= _HIGH), default=0.5)
+        return 1 if firing_conf >= 0.79 else 0
 
-    return int(rng.random() < iso_conf)
+    # n_high == 0: agents agree nothing is wrong → correct by default
+    return 1
 
 
-def generate_synthetic(n: int = 800, seed: int = 42) -> tuple[np.ndarray, np.ndarray]:
+def generate_synthetic(n: int = 1000, seed: int = 42) -> tuple[np.ndarray, np.ndarray]:
     from f1di.confidence.calibration import RISK_WEIGHT
     from f1di.domain.schemas import RiskLevel
     rng = np.random.default_rng(seed)
 
     _rw_vals = [float(RISK_WEIGHT[r]) for r in RiskLevel]
     _high_thresh = float(RISK_WEIGHT[RiskLevel.WARNING])
+
     X, y = [], []
+    # Structured scenario batches ensure coverage of adversarial cases
+    n_each = max(1, n // 7)
+
+    scenarios = [
+        # Strong consensus (4-6 agents agree) — iso can be anything
+        {"n_high_range": (4, 6), "iso_range": (0.20, 0.95)},
+        # 3-agent consensus with LOW iso (tests iso can be overridden)
+        {"n_high_range": (3, 3), "iso_range": (0.10, 0.50)},
+        # 3-agent consensus with HIGH iso (agreement + iso → strong)
+        {"n_high_range": (3, 3), "iso_range": (0.55, 0.95)},
+        # Solo agent with HIGH agent confidence, LOW iso (specialist fires alone)
+        {"n_high_range": (1, 1), "iso_range": (0.20, 0.55)},
+        # No agents firing but HIGH iso (iso over-confident, agents disagree)
+        {"n_high_range": (0, 0), "iso_range": (0.60, 0.95)},
+        # All quiet, iso also quiet (straightforward no-risk)
+        {"n_high_range": (0, 0), "iso_range": (0.05, 0.40)},
+        # Mixed / random remainder
+        {"n_high_range": (0, 6), "iso_range": (0.10, 0.95)},
+    ]
+
+    for sc in scenarios:
+        lo_h, hi_h = sc["n_high_range"]
+        lo_i, hi_i = sc["iso_range"]
+        for _ in range(n_each):
+            n_h_target = int(rng.integers(lo_h, hi_h + 1))
+            indices = list(range(6))
+            rng.shuffle(indices)
+            rws = [float(_rw_vals[0])] * 6
+            for i in range(min(n_h_target, 6)):
+                rws[indices[i]] = float(rng.choice([_rw_vals[2], _rw_vals[3]]))
+            for i in range(min(n_h_target, 6), 6):
+                rws[indices[i]] = float(rng.choice([_rw_vals[0], _rw_vals[1]]))
+            confs = [float(rng.uniform(0.45, 0.92)) for _ in range(6)]
+            iso = float(rng.uniform(lo_i, hi_i))
+            rw_arr = np.array(rws)
+            n_high = int((rw_arr >= _high_thresh).sum())
+            agreement = max(0.0, 1.0 - float(np.std(rw_arr)) / _MAX_RW_STD)
+            max_rw = float(rw_arr.max())
+            X.append(rws + confs + [float(n_high), agreement, iso, max_rw])
+            y.append(_synthetic_label(rws, confs, rng))
+
+    # Fill remainder with random samples
     while len(X) < n:
         rws   = [float(rng.choice(_rw_vals)) for _ in _AGENT_ORDER]
         confs = [float(rng.uniform(0.45, 0.92)) for _ in _AGENT_ORDER]
@@ -280,8 +325,9 @@ def generate_synthetic(n: int = 800, seed: int = 42) -> tuple[np.ndarray, np.nda
         agreement = max(0.0, 1.0 - float(np.std(rw_arr)) / _MAX_RW_STD)
         max_rw    = float(rw_arr.max())
         X.append(rws + confs + [float(n_high), agreement, iso, max_rw])
-        y.append(_synthetic_label(rws, confs, iso, rng))
-    return np.array(X, dtype=np.float64), np.array(y, dtype=np.int32)
+        y.append(_synthetic_label(rws, confs, rng))
+
+    return np.array(X[:n], dtype=np.float64), np.array(y[:n], dtype=np.int32)
 
 
 # ── Real data from DB ──────────────────────────────────────────────────────
@@ -409,7 +455,7 @@ def train_from_labels(
     return {
         "n_synthetic": len(y_s), "n_real": n_real, "n_total": len(y),
         "accuracy": round(meta.accuracy, 4),
-        "active_in_inference": n_real >= 20,
+        "active_in_inference": n_real >= 100,
         "class_distribution": {str(int(k)): int(v) for k, v in zip(unique, counts)},
         "output_path": str(output_path),
         "snapshot_blocked": snap["blocked"],

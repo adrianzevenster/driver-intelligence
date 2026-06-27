@@ -13,7 +13,8 @@ import numpy as np
 
 logger = logging.getLogger("f1di.agents.weather_classifier")
 
-_CLASSIFIER_PATH = Path("data/calibration/weather_classifier.pkl")
+from f1di.agents.classifier_utils import _CALIBRATION_DIR
+_CLASSIFIER_PATH = _CALIBRATION_DIR / "weather_classifier.pkl"
 
 FEATURE_NAMES: list[str] = [
     "rain_intensity",
@@ -262,7 +263,7 @@ def train_from_labels(
     }
 
 
-_INCREMENTAL_PATH = Path("data/calibration/weather_incremental.pkl")
+_INCREMENTAL_PATH = _CALIBRATION_DIR / "weather_incremental.pkl"
 
 
 def partial_fit_from_labels(output_path: Path = _INCREMENTAL_PATH) -> dict:

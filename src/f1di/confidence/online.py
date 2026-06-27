@@ -10,9 +10,10 @@ from typing import Callable
 
 logger = logging.getLogger("f1di.confidence.online")
 
-_CALIBRATOR_PATH = Path("data/calibration/isotonic.pkl")
-_QUALITY_PATH = Path("data/calibration/quality.json")
-_HISTORY_PATH = Path("data/calibration/model_history.json")
+from f1di.agents.classifier_utils import _CALIBRATION_DIR
+_CALIBRATOR_PATH = _CALIBRATION_DIR / "isotonic.pkl"
+_QUALITY_PATH = _CALIBRATION_DIR / "quality.json"
+_HISTORY_PATH = _CALIBRATION_DIR / "model_history.json"
 
 
 def _file_op(action: str, path: Path, fn: Callable[[], object]) -> object:

@@ -13,7 +13,8 @@ RISK_WEIGHT = {RiskLevel.INFO: 0.25, RiskLevel.WATCH: 0.45, RiskLevel.WARNING: 0
 # WARNING threshold — used to decide which side of the agent-signal split applies.
 _WARNING_THRESHOLD = RISK_WEIGHT[RiskLevel.WARNING]
 
-_CALIBRATOR_PATH = Path("data/calibration/isotonic.pkl")
+from f1di.agents.classifier_utils import _CALIBRATION_DIR
+_CALIBRATOR_PATH = _CALIBRATION_DIR / "isotonic.pkl"
 
 
 def _shared_intermediates(findings: list[AgentFinding]) -> tuple[float, float, float, float, float]:

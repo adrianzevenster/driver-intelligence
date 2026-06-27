@@ -11,7 +11,8 @@ from f1di.rag.store import HybridMemoryRetriever
 
 logger = logging.getLogger("f1di.agents.tire")
 
-_CLASSIFIER_PATH = Path("data/calibration/tire_classifier.pkl")
+from f1di.agents.classifier_utils import _CALIBRATION_DIR
+_CLASSIFIER_PATH = _CALIBRATION_DIR / "tire_classifier.pkl"
 
 # Module-level cache with mtime tracking — reloads automatically when the pkl
 # is updated by the flywheel scheduler without requiring a process restart.

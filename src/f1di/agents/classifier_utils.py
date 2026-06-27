@@ -38,8 +38,12 @@ import numpy as np
 
 logger = logging.getLogger("f1di.agents.classifier_utils")
 
-_HISTORY_PATH = Path("data/calibration/model_history.json")
-_BEST_PARAMS_DIR = Path("data/calibration")
+# Absolute path so the calibration directory resolves correctly regardless of
+# the process working directory (e.g. API started from frontend/ in PyCharm).
+# src/f1di/agents/ → src/f1di/ → src/ → project root
+_CALIBRATION_DIR = Path(__file__).resolve().parent.parent.parent.parent / "data" / "calibration"
+_HISTORY_PATH = _CALIBRATION_DIR / "model_history.json"
+_BEST_PARAMS_DIR = _CALIBRATION_DIR
 
 MODEL_TYPES = ["logistic", "hgbc"]
 _MODEL_DISPLAY = {"logistic": "LogisticRegression", "hgbc": "HistGradientBoosting"}

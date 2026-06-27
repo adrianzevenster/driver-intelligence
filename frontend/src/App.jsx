@@ -2182,20 +2182,31 @@ function StreamPanel({ version }) {
   const [heartbeatLap, setHeartbeat]  = useState(null);
   const [streamStatus, setStreamStatus] = useState('');
   const [error, setError]             = useState('');
+  const [sessionError, setSessionError] = useState('');
   const esRef                          = useRef(null);
   const connectedRef                   = useRef(false);
 
   useEffect(() => {
-    setSessions([]); setSessionKey('');
+    setSessions([]); setSessionKey(''); setSessionError('');
     fetch(`/api/v1/live/sessions?year=${year}&session_type=Race`)
-      .then(r => r.ok ? r.json() : [])
+      .then(async r => {
+        if (!r.ok) {
+          const body = await r.json().catch(() => ({}));
+          throw new Error(body.detail ?? `HTTP ${r.status}`);
+        }
+        return r.json();
+      })
       .then(list => {
         setSessions(list);
+        if (!list.length) {
+          setSessionError(`No sessions found for ${year}. OpenF1 may not have data for this year yet.`);
+          return;
+        }
         const now = new Date().toISOString();
         const past = list.filter(s => s.date_start <= now);
         if (past.length) setSessionKey(String(past[past.length - 1].session_key));
       })
-      .catch(() => {});
+      .catch(e => setSessionError(`Could not load sessions: ${e.message}. Check that the server can reach api.openf1.org.`));
   }, [year]);
 
   useEffect(() => {
@@ -2284,6 +2295,9 @@ function StreamPanel({ version }) {
                 </select>
               </label>
             </div>
+            {sessionError && (
+              <p style={{ fontSize: '0.72rem', marginTop: 4, color: '#f87171' }}>{sessionError}</p>
+            )}
             {selectedSession && (
               <p className="muted" style={{ fontSize: '0.72rem', marginTop: 4 }}>
                 session_key {selectedSession.session_key}
@@ -3633,23 +3647,50 @@ function ClassifierModelsPanel({ clfHistory }) {
 
   async function runTuneAll(nTrials = 30) {
     setTuningAll(true); setTuneAllDone(false); setError('');
-    const initial = _ALL_AGENTS.map(a => ({ agent: a, status: 'pending', result: null }));
+    const initial = _ALL_AGENTS.map(a => ({ agent: a, status: 'pending', result: null, jobId: null }));
     setTuneAllProgress(initial);
-    for (let i = 0; i < _ALL_AGENTS.length; i++) {
-      const agent = _ALL_AGENTS[i];
-      setTuneAllProgress(prev => prev.map(r => r.agent === agent ? { ...r, status: 'running' } : r));
+
+    // Fire all agents simultaneously using async mode (returns job_id immediately)
+    const jobs = {};
+    for (const agent of _ALL_AGENTS) {
+      setTuneAllProgress(prev => prev.map(r => r.agent === agent ? { ...r, status: 'starting' } : r));
       const resp = await fetch('/api/v1/model/tune', {
         method: 'POST',
         headers: { 'content-type': 'application/json', ...authHeaders() },
-        body: JSON.stringify({ agent, n_trials: nTrials }),
+        body: JSON.stringify({ agent, n_trials: nTrials, async: true }),
       }).catch(() => null);
-      const ok = resp?.ok;
-      const data = ok ? await resp.json() : null;
-      setTuneAllProgress(prev => prev.map(r =>
-        r.agent === agent ? { ...r, status: ok ? 'done' : 'error', result: data } : r
-      ));
-      // If this is the currently-viewed agent, update its bestParams badge too
-      if (agent === selectedAgent && ok) setBestParams({ tuned: true, ...data });
+      if (resp?.ok) {
+        const data = await resp.json().catch(() => null);
+        if (data?.job_id) {
+          jobs[agent] = data.job_id;
+          setTuneAllProgress(prev => prev.map(r => r.agent === agent ? { ...r, status: 'running', jobId: data.job_id } : r));
+        } else {
+          setTuneAllProgress(prev => prev.map(r => r.agent === agent ? { ...r, status: 'error' } : r));
+        }
+      } else {
+        setTuneAllProgress(prev => prev.map(r => r.agent === agent ? { ...r, status: 'error' } : r));
+      }
+    }
+
+    // Poll all running jobs until all complete
+    const pending = new Set(Object.keys(jobs));
+    while (pending.size > 0) {
+      await new Promise(res => setTimeout(res, 2500));
+      for (const agent of [...pending]) {
+        const jobId = jobs[agent];
+        const resp = await fetch(`/api/v1/model/tune/status/${jobId}`, { headers: authHeaders() }).catch(() => null);
+        if (!resp?.ok) continue;
+        const data = await resp.json().catch(() => null);
+        if (!data) continue;
+        if (data.status === 'done') {
+          setTuneAllProgress(prev => prev.map(r => r.agent === agent ? { ...r, status: 'done', result: data.result } : r));
+          if (agent === selectedAgent && data.result) setBestParams({ tuned: true, ...data.result });
+          pending.delete(agent);
+        } else if (data.status === 'error') {
+          setTuneAllProgress(prev => prev.map(r => r.agent === agent ? { ...r, status: 'error', result: data } : r));
+          pending.delete(agent);
+        }
+      }
     }
     setTuningAll(false); setTuneAllDone(true);
   }
@@ -3812,8 +3853,8 @@ function ClassifierModelsPanel({ clfHistory }) {
               <tbody>
                 {tuneAllProgress.map(({ agent, status, result }) => {
                   const imp = result?.improvement_pp ?? null;
-                  const statusColor = { pending: '#334155', running: '#a78bfa', done: '#4ade80', error: '#ef4444' }[status];
-                  const statusIcon  = { pending: '·', running: '⟳', done: '✓', error: '✗' }[status];
+                  const statusColor = { pending: '#334155', starting: '#a78bfa', running: '#a78bfa', done: '#4ade80', error: '#ef4444' }[status] ?? '#334155';
+                  const statusIcon  = { pending: '·', starting: '→', running: '⟳', done: '✓', error: '✗' }[status] ?? '·';
                   return (
                     <tr key={agent} style={{ borderBottom: '1px solid #0f172a', background: agent === selectedAgent ? '#0d1b2e' : 'transparent' }}>
                       <td style={{ padding: '3px 5px', color: agent === selectedAgent ? '#93c5fd' : '#94a3b8', fontFamily: 'monospace' }}>{agent}</td>
@@ -3831,7 +3872,7 @@ function ClassifierModelsPanel({ clfHistory }) {
                         {result?.n_complete ?? '—'}
                       </td>
                       <td style={{ padding: '3px 5px', textAlign: 'center', color: statusColor, fontWeight: 700 }}>
-                        {status === 'running' ? <Activity size={9} className="spin" /> : statusIcon}
+                        {(status === 'running' || status === 'starting') ? <Activity size={9} className="spin" /> : statusIcon}
                       </td>
                     </tr>
                   );

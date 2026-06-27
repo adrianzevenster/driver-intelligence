@@ -24,7 +24,8 @@ class CircuitThresholds:
 _DEFAULTS = CircuitThresholds()
 _REGISTRY: dict[str, CircuitThresholds] = {}
 _LOADED = False
-_PATH = Path("data/calibration/thresholds.json")
+from f1di.agents.classifier_utils import _CALIBRATION_DIR
+_PATH = _CALIBRATION_DIR / "thresholds.json"
 
 
 def _load() -> None:

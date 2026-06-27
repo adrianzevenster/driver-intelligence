@@ -16,7 +16,8 @@ import numpy as np
 
 logger = logging.getLogger("f1di.agents.safety_car_classifier")
 
-_CLASSIFIER_PATH = Path("data/calibration/safety_car_classifier.pkl")
+from f1di.agents.classifier_utils import _CALIBRATION_DIR
+_CLASSIFIER_PATH = _CALIBRATION_DIR / "safety_car_classifier.pkl"
 
 FEATURE_NAMES: list[str] = [
     "mean_speed_kph",
@@ -35,9 +36,9 @@ FEATURE_NAMES: list[str] = [
 _LABEL_MAP: dict[int, str] = {0: "INFO", 1: "WATCH", 2: "WARNING", 3: "CRITICAL"}
 _LABEL_INV: dict[str, int] = {v: k for k, v in _LABEL_MAP.items()}
 
-MODEL_VERSION = "lr-v1"
-MODEL_TYPE = "LogisticRegression"
-DEFAULT_MODEL_TYPE = "logistic"
+MODEL_VERSION = "hgb-v1"
+MODEL_TYPE = "HistGradientBoosting"
+DEFAULT_MODEL_TYPE = "hgbc"
 
 
 def _multiclass_brier(proba: np.ndarray, y: np.ndarray, classes: np.ndarray) -> float:
@@ -154,48 +155,121 @@ def _synthetic_label(
     grip: float,
     lockups: int,
     brake_temp: float,
+    throttle_smooth: float,
+    race_phase: float,
 ) -> int:
-    # SC/VSC deployed — massive speed reduction is the clearest signal
+    # CRITICAL: SC/VSC actively deployed — massive speed reduction or extreme conditions
     if mean_speed < 80.0:
-        return 3  # CRITICAL
-    if rain > 0.7 and grip < 0.55:
-        return 3  # CRITICAL — extremely wet, likely red flag / SC
+        return 3
+    if rain > 0.75 and grip < 0.50:
+        return 3  # Red-flag / SC in extreme rain
+    if mean_speed < 120.0 and speed_delta < -50.0:
+        return 3  # Multi-car incident, cars bunching up behind SC
 
-    # High probability of SC within next few laps
-    if mean_speed < 160.0 or speed_delta < -60.0:
-        return 2  # WARNING
-    if rain > 0.5 and grip < 0.65:
-        return 2  # WARNING
+    # WARNING: High SC probability, non-linear danger combinations
+    if mean_speed < 155.0 or speed_delta < -65.0:
+        return 2
+    if rain > 0.55 and grip < 0.62:
+        return 2
+    if lockups >= 3 and brake_temp > 580.0 and rain > 0.3:
+        return 2  # Multiple drivers locking up in wet = incident imminent
+    if speed_delta < -45.0 and throttle_smooth < 0.45:
+        return 2  # Erratic braking across the field = incident
+    if race_phase < 0.05 and (rain > 0.3 or lockups >= 2):
+        return 2  # Formation/lap-1 incidents have elevated SC risk
 
-    # Elevated but manageable risk
-    if rain > 0.35 or grip < 0.72:
-        return 1  # WATCH
-    if lockups >= 2 and brake_temp > 500.0:
-        return 1  # WATCH — reactive emergency braking
-    if speed_delta < -35.0 and rain > 0.2:
-        return 1  # WATCH
+    # WATCH: Elevated but manageable; multiple contributing factors
+    if rain > 0.35 or grip < 0.68:
+        return 1
+    if lockups >= 2 and brake_temp > 480.0:
+        return 1  # Reactive emergency braking
+    if speed_delta < -35.0 and rain > 0.18:
+        return 1
+    if throttle_smooth < 0.40 and lockups >= 1:
+        return 1  # Driver fighting the car
+    if race_phase < 0.08 and mean_speed > 200.0:
+        return 1  # First few laps — elevated incident risk even without obvious signals
 
     return 0  # INFO
 
 
-def generate_synthetic(n: int = 800, seed: int = 42) -> tuple[np.ndarray, np.ndarray]:
+def generate_synthetic(n: int = 1200, seed: int = 42) -> tuple[np.ndarray, np.ndarray]:
     rng = np.random.default_rng(seed)
     X, y = [], []
+
+    # Structured scenario batches to ensure class coverage
+    n_each = max(1, n // 8)
+
+    def _make_row(speed, delta, rain, grip, lockup, smooth, phase, brake, c_speed, c_type, laps):
+        return [speed, delta, rain, float(lockup), smooth, phase, brake, c_speed, c_type, float(laps)]
+
+    scenarios = [
+        # SC deployed: very low speed
+        lambda: (
+            float(rng.uniform(40.0, 90.0)),   float(rng.uniform(-90.0, -20.0)),
+            float(rng.uniform(0.0, 0.9)),     float(rng.uniform(0.40, 0.85)),
+            int(rng.integers(0, 4)),           float(rng.uniform(0.3, 0.7)),
+            float(rng.uniform(0.0, 1.0)),     float(rng.uniform(150.0, 650.0)),
+        ),
+        # WARNING: heavy rain + low grip
+        lambda: (
+            float(rng.uniform(100.0, 200.0)), float(rng.uniform(-70.0, 0.0)),
+            float(rng.uniform(0.55, 1.0)),    float(rng.uniform(0.40, 0.62)),
+            int(rng.integers(0, 5)),           float(rng.uniform(0.3, 0.7)),
+            float(rng.uniform(0.0, 1.0)),     float(rng.uniform(200.0, 650.0)),
+        ),
+        # WARNING: multi-lockup braking incident
+        lambda: (
+            float(rng.uniform(130.0, 220.0)), float(rng.uniform(-80.0, -30.0)),
+            float(rng.uniform(0.25, 0.6)),    float(rng.uniform(0.45, 0.72)),
+            int(rng.integers(3, 6)),           float(rng.uniform(0.3, 0.5)),
+            float(rng.uniform(0.0, 1.0)),     float(rng.uniform(500.0, 700.0)),
+        ),
+        # WATCH: moderate rain
+        lambda: (
+            float(rng.uniform(180.0, 270.0)), float(rng.uniform(-40.0, 10.0)),
+            float(rng.uniform(0.30, 0.55)),   float(rng.uniform(0.60, 0.80)),
+            int(rng.integers(0, 3)),           float(rng.uniform(0.4, 0.8)),
+            float(rng.uniform(0.0, 1.0)),     float(rng.uniform(200.0, 500.0)),
+        ),
+        # INFO: normal dry racing
+        lambda: (
+            float(rng.uniform(200.0, 320.0)), float(rng.uniform(-15.0, 25.0)),
+            float(rng.uniform(0.0, 0.15)),    float(rng.uniform(0.75, 1.0)),
+            int(rng.integers(0, 2)),           float(rng.uniform(0.65, 1.0)),
+            float(rng.uniform(0.1, 0.9)),     float(rng.uniform(150.0, 450.0)),
+        ),
+    ]
+
+    _circuit_speeds = [140.0, 175.0, 190.0, 200.0, 205.0, 210.0, 215.0, 220.0, 225.0, 235.0, 250.0]
+    _circuit_types  = [0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+
+    for sc_fn in scenarios:
+        for _ in range(n_each):
+            speed, delta, rain, grip, lockup, smooth, phase, brake = sc_fn()
+            c_speed = float(rng.choice(_circuit_speeds))
+            c_type  = float(rng.choice(_circuit_types))
+            laps    = float(rng.integers(50, 79))
+            X.append([speed, delta, rain, grip, float(lockup), smooth, phase, brake, c_speed, c_type, laps])
+            y.append(_synthetic_label(speed, delta, rain, grip, lockup, smooth, phase, brake))
+
+    # Fill remaining with uniform random
     while len(X) < n:
         speed  = float(rng.uniform(50.0, 320.0))
         delta  = float(rng.uniform(-100.0, 40.0))
         rain   = float(rng.uniform(0.0, 1.0))
         grip   = float(rng.uniform(0.40, 1.0))
-        lockup = int(rng.integers(0, 5))
+        lockup = int(rng.integers(0, 6))
         smooth = float(rng.uniform(0.3, 1.0))
         phase  = float(rng.uniform(0.0, 1.0))
         brake  = float(rng.uniform(100.0, 700.0))
-        circuit_speed = float(rng.choice([140.0, 175.0, 190.0, 200.0, 205.0, 210.0, 215.0, 220.0, 225.0, 235.0, 250.0]))
-        circuit_type  = float(rng.choice([0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]))
-        race_laps     = float(rng.integers(50, 79))
-        X.append([speed, delta, rain, grip, float(lockup), smooth, phase, brake, circuit_speed, circuit_type, race_laps])
-        y.append(_synthetic_label(speed, delta, rain, grip, lockup, brake))
-    return np.array(X, dtype=np.float64), np.array(y, dtype=np.int32)
+        c_speed = float(rng.choice(_circuit_speeds))
+        c_type  = float(rng.choice(_circuit_types))
+        laps    = float(rng.integers(50, 79))
+        X.append([speed, delta, rain, grip, float(lockup), smooth, phase, brake, c_speed, c_type, laps])
+        y.append(_synthetic_label(speed, delta, rain, grip, lockup, smooth, phase, brake))
+
+    return np.array(X[:n], dtype=np.float64), np.array(y[:n], dtype=np.int32)
 
 
 def _load_labeled_from_db() -> tuple[np.ndarray, np.ndarray]:

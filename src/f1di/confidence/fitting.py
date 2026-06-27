@@ -226,10 +226,13 @@ def calibration_brier(
 
 
 def fit_and_save(
-    output_path: Path = Path("data/calibration/isotonic.pkl"),
+    output_path: Path | None = None,
     n_races: int = 30,
     seed: int = 42,
 ) -> ConfidenceCalibrator:
+    from f1di.agents.classifier_utils import _CALIBRATION_DIR
+    if output_path is None:
+        output_path = _CALIBRATION_DIR / "isotonic.pkl"
     X, y = generate_calibration_dataset(n_races=n_races, seed=seed)
     calibrator = ConfidenceCalibrator.fit(X, y)
     calibrator.save(output_path)

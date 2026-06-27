@@ -11,7 +11,8 @@ logger = logging.getLogger("f1di.ingestion.scheduler")
 
 _DEFAULT_INTERVAL_HOURS = 6
 _CURRENT_YEAR = date.today().year
-_OUTCOME_LABELED_PATH = Path("data/calibration/outcome_labeled.json")
+from f1di.agents.classifier_utils import _CALIBRATION_DIR
+_OUTCOME_LABELED_PATH = _CALIBRATION_DIR / "outcome_labeled.json"
 _OUTCOME_ROUNDS_PER_CYCLE = 4   # process at most this many new rounds per cycle
 _FASTF1_REQUEST_DELAY_S = 3.0   # seconds between FastF1 API calls to avoid rate limits
 
@@ -468,7 +469,7 @@ class IngestionScheduler:
             return
 
         challenger_version = "weights-v2"
-        promotions_path = _Path("data/calibration/promotions.json")
+        promotions_path = _CALIBRATION_DIR / "promotions.json"
 
         try:
             with db_session() as session:

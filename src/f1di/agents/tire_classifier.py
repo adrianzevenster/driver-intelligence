@@ -20,7 +20,8 @@ import numpy as np
 
 logger = logging.getLogger("f1di.agents.tire_classifier")
 
-_CLASSIFIER_PATH = Path("data/calibration/tire_classifier.pkl")
+from f1di.agents.classifier_utils import _CALIBRATION_DIR
+_CLASSIFIER_PATH = _CALIBRATION_DIR / "tire_classifier.pkl"
 
 FEATURE_NAMES: list[str] = [
     "wear_pressure",       # max(fl_wear, fr_wear, rear_wear_mean)
@@ -370,7 +371,7 @@ def train_from_labels(
     }
 
 
-_INCREMENTAL_PATH = Path("data/calibration/tire_incremental.pkl")
+_INCREMENTAL_PATH = _CALIBRATION_DIR / "tire_incremental.pkl"
 
 
 def partial_fit_from_labels(output_path: Path = _INCREMENTAL_PATH) -> dict:

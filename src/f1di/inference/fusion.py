@@ -22,8 +22,9 @@ logger = logging.getLogger(__name__)
 
 RISK_ORDER = [RiskLevel.INFO, RiskLevel.WATCH, RiskLevel.WARNING, RiskLevel.CRITICAL]
 
-_CALIBRATOR_PATH = Path("data/calibration/isotonic.pkl")
-_META_PATH = Path("data/calibration/meta_learner.pkl")
+from f1di.agents.classifier_utils import _CALIBRATION_DIR
+_CALIBRATOR_PATH = _CALIBRATION_DIR / "isotonic.pkl"
+_META_PATH = _CALIBRATION_DIR / "meta_learner.pkl"
 
 _meta_cache: object = None
 _meta_mtime: float = 0.0
@@ -102,14 +103,13 @@ class InferenceOrchestrator:
         confidence, uncertainty, calibration_features, raw_score = self.calibrator.calibrate(findings)
 
         meta = _get_meta_learner()
-        if meta is not None and meta.n_real >= 20:
+        if meta is not None and meta.n_real >= 100:
             meta_conf = meta.predict_confidence(findings, confidence)
-            # Weight scales from 0.4 at n_real=20 to 0.85 at n_real=10000+.
-            # Denominator of 2000 (was 20) requires ~2000 real fusion labels
-            # before the meta-learner dominates — prevents an undertrained
-            # meta-learner from overriding well-calibrated agent signals.
+            # Weight scales from 0.4 at n_real=100 to 0.85 at n_real=10000+.
+            # Threshold of 100 ensures the meta-learner has enough real feedback
+            # to be more reliable than the synthetic-only cold-start model.
             import math
-            meta_w = min(0.85, 0.4 + 0.45 * math.log10(max(1, meta.n_real / 20)) / math.log10(500))
+            meta_w = min(0.85, 0.4 + 0.45 * math.log10(max(1, meta.n_real / 100)) / math.log10(100))
             confidence = round(meta_w * meta_conf + (1.0 - meta_w) * confidence, 4)
             uncertainty = round(max(0.0, 1.0 - confidence), 4)
 

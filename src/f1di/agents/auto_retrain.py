@@ -24,13 +24,14 @@ logger = logging.getLogger("f1di.agents.auto_retrain")
 
 RETRAIN_THRESHOLD = 5
 
+from f1di.agents.classifier_utils import _CALIBRATION_DIR
 _AGENT_PATHS: dict[str, Path] = {
-    "tire":        Path("data/calibration/tire_classifier.pkl"),
-    "battery":     Path("data/calibration/battery_classifier.pkl"),
-    "weather":     Path("data/calibration/weather_classifier.pkl"),
-    "telemetry":   Path("data/calibration/telemetry_classifier.pkl"),
-    "safety_car":  Path("data/calibration/safety_car_classifier.pkl"),
-    "fuel":        Path("data/calibration/fuel_classifier.pkl"),
+    "tire":        _CALIBRATION_DIR / "tire_classifier.pkl",
+    "battery":     _CALIBRATION_DIR / "battery_classifier.pkl",
+    "weather":     _CALIBRATION_DIR / "weather_classifier.pkl",
+    "telemetry":   _CALIBRATION_DIR / "telemetry_classifier.pkl",
+    "safety_car":  _CALIBRATION_DIR / "safety_car_classifier.pkl",
+    "fuel":        _CALIBRATION_DIR / "fuel_classifier.pkl",
 }
 
 _lock = threading.Lock()

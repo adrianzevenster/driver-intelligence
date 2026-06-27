@@ -14,8 +14,9 @@ _ALERT_THRESHOLD = 3.5
 _MIN_BASELINE = 50
 _BUFFER_SIZE = 200
 _DRIFT_RETRAIN_COOLDOWN_S = 3600
-_DRIFT_RETRAIN_STAMP = Path("data/calibration/.last_drift_retrain")
-_DRIFT_RETRAIN_HISTORY = Path("data/calibration/.drift_retrain_history")
+from f1di.agents.classifier_utils import _CALIBRATION_DIR
+_DRIFT_RETRAIN_STAMP = _CALIBRATION_DIR / ".last_drift_retrain"
+_DRIFT_RETRAIN_HISTORY = _CALIBRATION_DIR / ".drift_retrain_history"
 _CONCEPT_DRIFT_THRESHOLD = 3  # retrains within 24h without clearing = concept drift
 _CONCEPT_DRIFT_WINDOW_S = 86400
 

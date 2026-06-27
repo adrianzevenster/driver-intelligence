@@ -19,7 +19,8 @@ import numpy as np
 
 logger = logging.getLogger("f1di.agents.fuel_classifier")
 
-_CLASSIFIER_PATH = Path("data/calibration/fuel_classifier.pkl")
+from f1di.agents.classifier_utils import _CALIBRATION_DIR
+_CLASSIFIER_PATH = _CALIBRATION_DIR / "fuel_classifier.pkl"
 
 FEATURE_NAMES: list[str] = [
     "throttle_mean",
@@ -37,9 +38,9 @@ FEATURE_NAMES: list[str] = [
 _LABEL_MAP: dict[int, str] = {0: "INFO", 1: "WATCH", 2: "WARNING"}
 _LABEL_INV: dict[str, int] = {v: k for k, v in _LABEL_MAP.items()}
 
-MODEL_VERSION = "lr-v1"
-MODEL_TYPE = "LogisticRegression"
-DEFAULT_MODEL_TYPE = "logistic"
+MODEL_VERSION = "hgb-v1"
+MODEL_TYPE = "HistGradientBoosting"
+DEFAULT_MODEL_TYPE = "hgbc"
 
 
 def _multiclass_brier(proba: np.ndarray, y: np.ndarray, classes: np.ndarray) -> float:
@@ -155,23 +156,35 @@ def _synthetic_label(
     laps_remaining: float,
     race_phase: float,
     smoothness: float,
+    circuit_avg_speed: float,
+    stint_fraction: float,
 ) -> int:
     # Composite fuel pressure: high throttle − ERS offset − SOC buffer.
     # Higher = burning faster than the ERS + battery can compensate.
     fuel_pressure = (throttle_mean / 100.0) - (ers_net_kw / 500.0) - (battery_soc * 0.15)
 
-    if fuel_pressure > 0.65 and laps_remaining > 12 and smoothness < 0.60:
-        return 2  # WARNING — meaningful fuel save required
-    if fuel_pressure > 0.55 and laps_remaining > 8:
+    # High-speed circuits burn more fuel — amplify pressure proportionally
+    speed_factor = 1.0 + (circuit_avg_speed - 210.0) / 400.0  # +/- 10% for 40 kph spread
+    effective_pressure = fuel_pressure * speed_factor
+
+    # Long stint with high consumption + ERS deficit
+    ers_deficit = max(0.0, -ers_net_kw / 100.0)  # negative ERS = driver is harvesting, not deploying
+    if effective_pressure > 0.62 and laps_remaining > 12 and smoothness < 0.62:
+        return 2  # WARNING — fuel save required
+    if effective_pressure > 0.52 and laps_remaining > 10:
         return 2  # WARNING
-    if fuel_pressure > 0.40 and laps_remaining > 6:
+    if effective_pressure > 0.48 and laps_remaining > 8 and ers_deficit > 0.2:
+        return 2  # WARNING — ERS deficit compounds fuel issue
+    if effective_pressure > 0.38 and laps_remaining > 6:
         return 1  # WATCH
-    if race_phase < 0.25 and throttle_mean > 83:
-        return 1  # WATCH — opening laps, full fuel load, high throttle
+    if race_phase < 0.22 and throttle_mean > 82 and battery_soc < 0.60:
+        return 1  # WATCH — opening laps, full fuel load, already draining battery
+    if stint_fraction > 0.85 and effective_pressure > 0.32:
+        return 1  # WATCH — deep into stint, fuel model approaching margin
     return 0  # INFO
 
 
-def generate_synthetic(n: int = 600, seed: int = 42) -> tuple[np.ndarray, np.ndarray]:
+def generate_synthetic(n: int = 900, seed: int = 42) -> tuple[np.ndarray, np.ndarray]:
     rng = np.random.default_rng(seed)
     X, y = [], []
     while len(X) < n:
@@ -186,7 +199,7 @@ def generate_synthetic(n: int = 600, seed: int = 42) -> tuple[np.ndarray, np.nda
         circuit_type  = float(rng.choice([0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]))
         race_laps     = float(rng.integers(50, 79))
         X.append([throttle, ers_net, soc, laps_rem, phase, stint_fr, smoothness, circuit_speed, circuit_type, race_laps])
-        y.append(_synthetic_label(throttle, ers_net, soc, laps_rem, phase, smoothness))
+        y.append(_synthetic_label(throttle, ers_net, soc, laps_rem, phase, smoothness, circuit_speed, stint_fr))
     return np.array(X, dtype=np.float64), np.array(y, dtype=np.int32)
 
 
