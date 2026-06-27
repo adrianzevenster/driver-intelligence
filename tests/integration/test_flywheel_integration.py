@@ -149,7 +149,7 @@ class TestBatteryFlywheelLoop:
 
 class TestMetaLearnerFlywheelLoop:
     def test_not_active_below_threshold(self, sqlite_session, tmp_path):
-        # Write 15 insights (below the 20-label inference threshold)
+        # Write 15 insights (below the 100-label inference threshold)
         for i in range(15):
             iid = str(uuid.uuid4())
             findings = [
@@ -175,10 +175,10 @@ class TestMetaLearnerFlywheelLoop:
 
         assert out.exists()
         assert result["n_real"] == 15
-        assert result["active_in_inference"] is False  # still below 20
+        assert result["active_in_inference"] is False  # still below 100
 
     def test_active_at_threshold(self, sqlite_session, tmp_path):
-        for i in range(22):
+        for i in range(100):
             iid = str(uuid.uuid4())
             findings = [
                 {"agent": "tire_strategy", "risk": "CRITICAL", "confidence": 0.88, "features": {}},
@@ -201,7 +201,7 @@ class TestMetaLearnerFlywheelLoop:
         from f1di.inference.meta_learner import train_from_labels
         result = train_from_labels(output_path=out, synthetic_n=400)
 
-        assert result["n_real"] == 22
+        assert result["n_real"] == 100
         assert result["active_in_inference"] is True
         import pickle
         ml = pickle.loads(out.read_bytes())
@@ -315,7 +315,7 @@ class TestRegressionGuardWithRealNoise:
         result = train_from_labels(output_path=out, synthetic_n=400)
 
         assert result["n_real"] == REAL_WEIGHT_SATURATION + 10
-        assert result["real_sample_weight"] == 5.0  # default weight_cap
+        assert result["real_sample_weight"] == 20.0  # default real_oversample cap in safety_car
 
     def test_stable_real_data_does_not_spuriously_block_retrain(self, sqlite_session, tmp_path):
         from f1di.agents.safety_car_classifier import train_from_labels
@@ -361,6 +361,9 @@ class TestOodScore:
             race_phase = 0.45
             laps_remaining = 20.0
             stint_fraction = 0.50
+            circuit_avg_speed_kph = 210.0
+            circuit_type_enc = 0.5
+            race_laps_total = 57.0
         ood = clf.ood_score(F())
         assert ood < 4.0, f"Nominal features should be in-distribution (got ood={ood:.1f})"
 
@@ -376,5 +379,8 @@ class TestOodScore:
             race_phase = 0.45
             laps_remaining = 20.0
             stint_fraction = 0.50
+            circuit_avg_speed_kph = 210.0
+            circuit_type_enc = 0.5
+            race_laps_total = 57.0
         ood = clf.ood_score(F())
         assert ood > 4.0, f"Extreme features should be OOD (got ood={ood:.1f})"

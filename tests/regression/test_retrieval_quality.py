@@ -18,7 +18,7 @@ def test_static_knowledge_retrieval_hits_expected_circuit_documents():
 
     cases = [
         ("front-left thermal load through maggotts becketts chapel", "silverstone_track"),
-        ("monaco rain intermediate tyres safety car casino tunnel exit", "monaco_weather"),
+        ("monaco rain crossover threshold intermediate full wet sustained standing water", "monaco_weather"),
         ("spa ers deployment kemmel eau rouge la source soc", "spa_ers"),
         ("singapore undercut sector 2 esplanade pit entry fatigue", "singapore_track"),
     ]

@@ -1,27 +1,13 @@
 {
-  "bahrain": {
-    "pit_loss_s": 24.77
-  },
-  "jeddah": {
-    "pit_loss_s": 22.24
-  },
-  "melbourne": {
-    "pit_loss_s": 17.82
-  },
-  "shanghai": {
-    "pit_loss_s": 22.92
-  },
   "silverstone": {
-    "battery_soc_warning": 0.35,
-    "brake_temp_critical_c": 950.0,
-    "crosswind_watch": 12.0,
+    "wear_critical": 0.7,
+    "wear_warning": 0.55,
+    "brake_temp_critical_c": 910.0,
     "fl_degradation_pressure_critical": 0.72,
     "fl_degradation_pressure_warning": 0.6,
     "rain_warning": 0.35,
-    "wear_critical": 0.7,
-    "wear_warning": 0.55
-  },
-  "suzuka": {
-    "pit_loss_s": 23.32
+    "battery_soc_warning": 0.35,
+    "crosswind_watch": 12.0,
+    "pit_loss_s": 22.0
   }
 }

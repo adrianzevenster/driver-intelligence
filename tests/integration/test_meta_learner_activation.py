@@ -102,13 +102,14 @@ class TestMetaLearnerActivation:
         meta.predict_confidence = tracked_predict
         _run_insight(meta)
         assert not calls, (
-            f"predict_confidence must not be called when n_real={meta.n_real} < 20; "
+            f"predict_confidence must not be called when n_real={meta.n_real} < 100; "
             f"was called {len(calls)} times"
         )
 
     def test_meta_learner_active_at_threshold(self):
-        meta = _make_meta(n_real=20)
-        assert meta.n_real == 20
+        import math
+        meta = _make_meta(n_real=100)
+        assert meta.n_real == 100
 
         captured: list = []
 
@@ -119,12 +120,13 @@ class TestMetaLearnerActivation:
         meta.predict_confidence = sentinel_predict
         insight = _run_insight(meta)
 
-        assert captured, "predict_confidence must be called when n_real >= 20"
+        assert captured, "predict_confidence must be called when n_real >= 100"
         iso_conf = captured[0]
-        expected = round(0.6 * 0.88 + 0.4 * iso_conf, 4)
+        meta_w = min(0.85, 0.4 + 0.45 * math.log10(max(1, 100 / 100)) / math.log10(100))
+        expected = round(meta_w * 0.88 + (1.0 - meta_w) * iso_conf, 4)
         assert insight.confidence == expected, (
             f"Expected blended confidence {expected} "
-            f"(0.6 * 0.88 + 0.4 * {iso_conf:.4f}); got {insight.confidence}"
+            f"(meta_w={meta_w:.2f} * 0.88 + {1-meta_w:.2f} * {iso_conf:.4f}); got {insight.confidence}"
         )
 
     def test_meta_learner_confidence_in_valid_range(self):

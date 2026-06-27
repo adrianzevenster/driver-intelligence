@@ -244,13 +244,13 @@ def test_retrain_regression_guard_passes_when_ece_improves(tmp_path):
 
 
 def test_model_snapshots_endpoint_surfaces_transfer_lift(tmp_path, monkeypatch):
-    """model_snapshots() reads data/calibration relative to cwd, so chdir into a
-    tmp dir shaped like the real one rather than touching the repo's actual
-    classifier pkls.
+    """model_snapshots() uses _CALIBRATION_DIR; monkeypatch it to a tmp dir so
+    the test is hermetic and does not touch the repo's actual classifier pkls.
     """
-    monkeypatch.chdir(tmp_path)
     cal_dir = tmp_path / "data" / "calibration"
     cal_dir.mkdir(parents=True)
+    import f1di.api.main as _main_mod
+    monkeypatch.setattr(_main_mod, "_CALIBRATION_DIR", cal_dir)
 
     from f1di.agents.safety_car_classifier import SafetyCarClassifier, generate_synthetic
     from f1di.agents.classifier_utils import blend_with_transfer

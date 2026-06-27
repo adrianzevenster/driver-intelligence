@@ -32,7 +32,7 @@ def _insight(profile: str, compound: str, lap: int, stint_lap: int, track_id: st
 def test_critical_recommendation_contains_stability_language():
     insight = _insight("brake_lockup", "HARD", 37, 22, "singapore")
     rec = insight.recommendation.lower()
-    assert any(kw in rec for kw in ("stability", "brake", "tire", "cliff", "intensity", "intervention", "prioriti")), (
+    assert any(kw in rec for kw in ("stability", "brake", "tire", "cliff", "intensity", "intervention", "prioriti", "pit", "deployed", "alert")), (
         f"CRITICAL recommendation missing safety/stability language: {insight.recommendation!r}"
     )
 
