@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 
 from f1di.agents.base import RaceAgent, multi_source_evidence
 from f1di.agents import thresholds as _thresh
@@ -9,9 +8,9 @@ from f1di.domain.schemas import AgentFinding, RiskLevel, TelemetryWindow
 from f1di.features.extractor import RaceFeatures
 from f1di.rag.store import HybridMemoryRetriever
 
-logger = logging.getLogger("f1di.agents.tire")
-
 from f1di.agents.classifier_utils import _CALIBRATION_DIR
+
+logger = logging.getLogger("f1di.agents.tire")
 _CLASSIFIER_PATH = _CALIBRATION_DIR / "tire_classifier.pkl"
 
 # Module-level cache with mtime tracking — reloads automatically when the pkl

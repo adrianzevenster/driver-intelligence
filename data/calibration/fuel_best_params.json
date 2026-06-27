@@ -1,15 +1,15 @@
 {
   "agent": "fuel",
   "params": {
-    "max_iter": 250,
-    "max_depth": 8,
-    "learning_rate": 0.1205712628744377,
-    "min_samples_leaf": 50,
-    "l2_regularization": 0.00042079886696066364
+    "max_iter": 126,
+    "max_depth": 6,
+    "learning_rate": 0.09227812348321858,
+    "min_samples_leaf": 61,
+    "l2_regularization": 0.00025996262052871086
   },
-  "cv_accuracy": 0.9333,
-  "baseline_cv_accuracy": 0.9122,
-  "improvement_pp": 2.11,
-  "n_trials": 1,
-  "tuned_at": "2026-06-19T15:50:31Z"
+  "cv_accuracy": 0.9044,
+  "baseline_cv_accuracy": 0.8878,
+  "improvement_pp": 1.67,
+  "n_trials": 50,
+  "tuned_at": "2026-06-27T11:30:48Z"
 }

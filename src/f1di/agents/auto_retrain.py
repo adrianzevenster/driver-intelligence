@@ -20,11 +20,11 @@ import pickle
 import threading
 from pathlib import Path
 
+from f1di.agents.classifier_utils import _CALIBRATION_DIR
+
 logger = logging.getLogger("f1di.agents.auto_retrain")
 
 RETRAIN_THRESHOLD = 5
-
-from f1di.agents.classifier_utils import _CALIBRATION_DIR
 _AGENT_PATHS: dict[str, Path] = {
     "tire":        _CALIBRATION_DIR / "tire_classifier.pkl",
     "battery":     _CALIBRATION_DIR / "battery_classifier.pkl",

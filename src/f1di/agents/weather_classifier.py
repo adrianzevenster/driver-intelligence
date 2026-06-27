@@ -11,9 +11,9 @@ from pathlib import Path
 
 import numpy as np
 
-logger = logging.getLogger("f1di.agents.weather_classifier")
-
 from f1di.agents.classifier_utils import _CALIBRATION_DIR
+
+logger = logging.getLogger("f1di.agents.weather_classifier")
 _CLASSIFIER_PATH = _CALIBRATION_DIR / "weather_classifier.pkl"
 
 FEATURE_NAMES: list[str] = [

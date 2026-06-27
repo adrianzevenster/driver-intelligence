@@ -7,11 +7,10 @@ Gracefully no-ops if shap is not installed or the meta-learner is not yet active
 from __future__ import annotations
 
 import logging
-from pathlib import Path
-
-logger = logging.getLogger("f1di.inference.explainer")
 
 from f1di.agents.classifier_utils import _CALIBRATION_DIR
+
+logger = logging.getLogger("f1di.inference.explainer")
 _META_PATH = _CALIBRATION_DIR / "meta_learner.pkl"
 
 

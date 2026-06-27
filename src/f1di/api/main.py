@@ -58,8 +58,6 @@ logger = logging.getLogger("f1di.api")
 
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
-import threading as _threading
-import uuid as _uuid
 _TUNE_JOBS: dict[str, dict] = {}  # job_id -> {status, agent, result, error}
 
 
@@ -1446,7 +1444,7 @@ def model_tune(body: dict) -> dict:
         raise HTTPException(status_code=400, detail=f"Unknown agent: {agent}")
 
     if run_async:
-        job_id = _uuid.uuid4().hex[:12]
+        job_id = uuid.uuid4().hex[:12]
         _TUNE_JOBS[job_id] = {"status": "running", "agent": agent, "result": None, "error": None}
 
         def _run_tune():
@@ -1460,7 +1458,7 @@ def model_tune(body: dict) -> dict:
                 logger.exception("async model_tune failed for agent=%s", agent)
                 _TUNE_JOBS[job_id].update({"status": "error", "error": f"Tune failed: {exc}"})
 
-        _threading.Thread(target=_run_tune, daemon=True).start()
+        threading.Thread(target=_run_tune, daemon=True).start()
         return {"job_id": job_id, "agent": agent, "status": "running"}
 
     try:

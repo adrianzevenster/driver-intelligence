@@ -5,13 +5,13 @@ import json
 import logging
 import time
 from datetime import date
-from pathlib import Path
+
+from f1di.agents.classifier_utils import _CALIBRATION_DIR
 
 logger = logging.getLogger("f1di.ingestion.scheduler")
 
 _DEFAULT_INTERVAL_HOURS = 6
 _CURRENT_YEAR = date.today().year
-from f1di.agents.classifier_utils import _CALIBRATION_DIR
 _OUTCOME_LABELED_PATH = _CALIBRATION_DIR / "outcome_labeled.json"
 _OUTCOME_ROUNDS_PER_CYCLE = 4   # process at most this many new rounds per cycle
 _FASTF1_REQUEST_DELAY_S = 3.0   # seconds between FastF1 API calls to avoid rate limits
@@ -461,7 +461,6 @@ class IngestionScheduler:
         """
         import json as _json
         from datetime import datetime, timezone
-        from pathlib import Path as _Path
         try:
             from f1di.storage.database import db_session
             from f1di.storage.repository import shadow_evaluate as _evaluate

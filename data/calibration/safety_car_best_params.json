@@ -1,15 +1,15 @@
 {
   "agent": "safety_car",
   "params": {
-    "max_iter": 250,
-    "max_depth": 8,
-    "learning_rate": 0.1205712628744377,
-    "min_samples_leaf": 50,
-    "l2_regularization": 0.00042079886696066364
+    "max_iter": 137,
+    "max_depth": 5,
+    "learning_rate": 0.24498141911342577,
+    "min_samples_leaf": 18,
+    "l2_regularization": 0.015932274605008796
   },
-  "cv_accuracy": 0.9808,
-  "baseline_cv_accuracy": 0.985,
-  "improvement_pp": -0.42,
-  "n_trials": 1,
-  "tuned_at": "2026-06-19T15:50:24Z"
+  "cv_accuracy": 0.9867,
+  "baseline_cv_accuracy": 0.9858,
+  "improvement_pp": 0.08,
+  "n_trials": 50,
+  "tuned_at": "2026-06-27T11:30:49Z"
 }

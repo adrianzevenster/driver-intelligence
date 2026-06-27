@@ -7,13 +7,12 @@ from pathlib import Path
 from sklearn.isotonic import IsotonicRegression
 
 from f1di.domain.schemas import AgentFinding, RiskLevel
+from f1di.agents.classifier_utils import _CALIBRATION_DIR
 
 RISK_WEIGHT = {RiskLevel.INFO: 0.25, RiskLevel.WATCH: 0.45, RiskLevel.WARNING: 0.70, RiskLevel.CRITICAL: 0.90}
 
 # WARNING threshold — used to decide which side of the agent-signal split applies.
 _WARNING_THRESHOLD = RISK_WEIGHT[RiskLevel.WARNING]
-
-from f1di.agents.classifier_utils import _CALIBRATION_DIR
 _CALIBRATOR_PATH = _CALIBRATION_DIR / "isotonic.pkl"
 
 

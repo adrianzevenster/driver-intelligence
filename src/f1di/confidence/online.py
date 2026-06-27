@@ -8,9 +8,9 @@ import time
 from pathlib import Path
 from typing import Callable
 
-logger = logging.getLogger("f1di.confidence.online")
-
 from f1di.agents.classifier_utils import _CALIBRATION_DIR
+
+logger = logging.getLogger("f1di.confidence.online")
 _CALIBRATOR_PATH = _CALIBRATION_DIR / "isotonic.pkl"
 _QUALITY_PATH = _CALIBRATION_DIR / "quality.json"
 _HISTORY_PATH = _CALIBRATION_DIR / "model_history.json"

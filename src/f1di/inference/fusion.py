@@ -18,11 +18,11 @@ from f1di.features.extractor import extract_features
 from f1di.rag import make_retriever
 from f1di.rag.store import HybridMemoryRetriever, load_markdown_knowledge
 
+from f1di.agents.classifier_utils import _CALIBRATION_DIR
+
 logger = logging.getLogger(__name__)
 
 RISK_ORDER = [RiskLevel.INFO, RiskLevel.WATCH, RiskLevel.WARNING, RiskLevel.CRITICAL]
-
-from f1di.agents.classifier_utils import _CALIBRATION_DIR
 _CALIBRATOR_PATH = _CALIBRATION_DIR / "isotonic.pkl"
 _META_PATH = _CALIBRATION_DIR / "meta_learner.pkl"
 

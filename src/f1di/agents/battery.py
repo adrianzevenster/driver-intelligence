@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 
 from f1di.agents.base import RaceAgent, multi_source_evidence
 from f1di.agents import thresholds as _thresh
@@ -9,9 +8,9 @@ from f1di.domain.schemas import AgentFinding, RiskLevel, TelemetryWindow
 from f1di.features.extractor import RaceFeatures
 from f1di.rag.store import HybridMemoryRetriever
 
-logger = logging.getLogger("f1di.agents.battery")
-
 from f1di.agents.classifier_utils import _CALIBRATION_DIR
+
+logger = logging.getLogger("f1di.agents.battery")
 _CLASSIFIER_PATH = _CALIBRATION_DIR / "battery_classifier.pkl"
 _clf_cache: object = None
 _clf_mtime: float = 0.0

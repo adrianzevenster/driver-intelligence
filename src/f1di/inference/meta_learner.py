@@ -29,9 +29,9 @@ from pathlib import Path
 
 import numpy as np
 
-logger = logging.getLogger("f1di.inference.meta_learner")
-
 from f1di.agents.classifier_utils import _CALIBRATION_DIR
+
+logger = logging.getLogger("f1di.inference.meta_learner")
 _META_PATH = _CALIBRATION_DIR / "meta_learner.pkl"
 
 # All 6 inference agents — order is part of the feature contract

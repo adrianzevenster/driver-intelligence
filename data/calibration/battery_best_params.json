@@ -1,15 +1,15 @@
 {
   "agent": "battery",
   "params": {
-    "max_iter": 250,
+    "max_iter": 156,
     "max_depth": 8,
     "learning_rate": 0.1205712628744377,
     "min_samples_leaf": 50,
     "l2_regularization": 0.00042079886696066364
   },
-  "cv_accuracy": 0.9978,
-  "baseline_cv_accuracy": 0.9978,
+  "cv_accuracy": 0.9956,
+  "baseline_cv_accuracy": 0.9956,
   "improvement_pp": 0.0,
   "n_trials": 2,
-  "tuned_at": "2026-06-19T15:58:51Z"
+  "tuned_at": "2026-06-26T15:08:54Z"
 }
