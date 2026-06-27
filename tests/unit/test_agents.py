@@ -84,8 +84,8 @@ class TestTireStrategyAgent:
         assert result.risk in (RiskLevel.WARNING, RiskLevel.CRITICAL)
 
     def test_critical_high_wear_low_grip(self):
-        # wear_pressure > 0.78 AND grip < 0.62
-        f = _features(fl_wear=0.82, fr_wear=0.80, grip_estimate=0.55)
+        # wear_pressure > 0.78 AND grip < 0.55
+        f = _features(fl_wear=0.82, fr_wear=0.80, grip_estimate=0.54)
         result = self.agent.analyze(_window(), f, _mock_retriever())
         assert result.risk == RiskLevel.CRITICAL
 

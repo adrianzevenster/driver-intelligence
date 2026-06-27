@@ -4,7 +4,7 @@ Replaces the single isotonic-calibrated confidence with a richer estimate that
 captures agent interaction effects (e.g. single-agent WARNING with others on
 INFO is less reliable than multi-agent agreement).
 
-Only activates in inference when n_real >= 20 to avoid degrading calibration
+Only activates in inference when n_real >= 100 to avoid degrading calibration
 with a synthetic-only model.  Below that threshold the isotonic calibrator is
 used unchanged.
 

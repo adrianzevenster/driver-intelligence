@@ -39,22 +39,23 @@ def _features(**overrides) -> RaceFeatures:
 
 class TestSyntheticLabel:
     def test_sc_deployed_speed(self):
-        assert _synthetic_label(60.0, 0.0, 0.0, 0.9, 0, 300.0) == 3
+        assert _synthetic_label(60.0, 0.0, 0.0, 0.9, 0, 300.0, 0.85, 0.5) == 3
 
     def test_extreme_rain_critical(self):
-        assert _synthetic_label(200.0, 0.0, 0.85, 0.50, 0, 300.0) == 3
+        # rain > 0.75 and grip < 0.50 → CRITICAL
+        assert _synthetic_label(200.0, 0.0, 0.85, 0.49, 0, 300.0, 0.85, 0.5) == 3
 
     def test_low_speed_warning(self):
-        assert _synthetic_label(140.0, 0.0, 0.0, 0.9, 0, 300.0) == 2
+        assert _synthetic_label(140.0, 0.0, 0.0, 0.9, 0, 300.0, 0.85, 0.5) == 2
 
     def test_big_delta_warning(self):
-        assert _synthetic_label(200.0, -70.0, 0.0, 0.9, 0, 300.0) == 2
+        assert _synthetic_label(200.0, -70.0, 0.0, 0.9, 0, 300.0, 0.85, 0.5) == 2
 
     def test_moderate_rain_watch(self):
-        assert _synthetic_label(220.0, 0.0, 0.45, 0.9, 0, 300.0) == 1
+        assert _synthetic_label(220.0, 0.0, 0.45, 0.9, 0, 300.0, 0.85, 0.5) == 1
 
     def test_normal_info(self):
-        assert _synthetic_label(240.0, 5.0, 0.05, 0.92, 0, 300.0) == 0
+        assert _synthetic_label(240.0, 5.0, 0.05, 0.92, 0, 300.0, 0.85, 0.5) == 0
 
 
 class TestGenerateSynthetic:
@@ -149,8 +150,8 @@ class TestSafetyCarClassifier:
 
     def test_model_version_set(self):
         clf = SafetyCarClassifier()
-        assert clf.model_version == "lr-v1"
-        assert clf.model_type == "LogisticRegression"
+        assert clf.model_version == "hgb-v1"
+        assert clf.model_type == "HistGradientBoosting"
 
     def test_brier_score_range(self):
         X, y = generate_synthetic(n=400, seed=0)

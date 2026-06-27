@@ -147,12 +147,12 @@ def test_train_no_db(tmp_path):
 def test_train_activates_with_enough_real(tmp_path):
     out = tmp_path / "meta.pkl"
     rng = np.random.default_rng(0)
-    real_X = rng.uniform(0.0, 1.0, (25, len(FEATURE_NAMES)))
-    real_y = np.array([1] * 15 + [0] * 10, dtype=np.int32)
+    real_X = rng.uniform(0.0, 1.0, (100, len(FEATURE_NAMES)))
+    real_y = np.array([1] * 60 + [0] * 40, dtype=np.int32)
     with patch("f1di.inference.meta_learner._load_labeled_from_db",
                return_value=(real_X, real_y)):
         r = train_from_labels(output_path=out, synthetic_n=200, real_oversample=3)
-    assert r["n_real"] == 25
+    assert r["n_real"] == 100
     assert r["active_in_inference"] is True
 
 

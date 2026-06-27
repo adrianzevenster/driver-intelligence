@@ -78,6 +78,9 @@ class WeatherAgent(RaceAgent):
             if features.rain_intensity >= t.rain_warning and risk_str in ("INFO", "WATCH"):
                 risk_str = "WARNING"
                 conf = max(conf, 0.76 + (0.04 if features.grip_estimate < 0.65 else 0.0))
+            if features.crosswind_proxy > t.crosswind_watch and risk_str == "INFO":
+                risk_str = "WATCH"
+                conf = max(conf, 0.67)
             conf = min(0.88, max(0.48, conf))
             summary, feat_dict = _summary(risk_str, features)
             class_probs = {cls: round(float(p), 4) for cls, p in zip(clf.classes_, proba)}

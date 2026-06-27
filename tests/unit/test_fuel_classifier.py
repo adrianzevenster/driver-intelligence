@@ -40,20 +40,19 @@ def _features(**overrides) -> RaceFeatures:
 class TestSyntheticLabel:
     def test_high_fuel_pressure_warning(self):
         # throttle=90, ers_net=10, soc=0.2, laps=20, smoothness=0.4 → WARNING
-        assert _synthetic_label(90.0, 10.0, 0.20, 20.0, 0.5, 0.40) == 2
+        assert _synthetic_label(90.0, 10.0, 0.20, 20.0, 0.5, 0.40, 210.0, 0.5) == 2
 
     def test_moderate_pressure_watch(self):
         # fp = 0.65 - 0.06 - 0.105 = 0.485; > 0.40 and laps=10 > 6 → WATCH
-        assert _synthetic_label(65.0, 30.0, 0.70, 10.0, 0.5, 0.85) == 1
+        assert _synthetic_label(65.0, 30.0, 0.70, 10.0, 0.5, 0.85, 210.0, 0.5) == 1
 
     def test_early_race_high_throttle_watch(self):
-        # fp = 0.84 - 0.20 - 0.1425 = 0.50; laps=5 not > 6 so WATCH check skips;
-        # phase=0.10 < 0.25 and throttle=84 > 83 → WATCH
-        assert _synthetic_label(84.0, 100.0, 0.95, 5.0, 0.10, 0.90) == 1
+        # race_phase=0.10 < 0.22 and throttle=84 > 82 and soc=0.50 < 0.60 → WATCH
+        assert _synthetic_label(84.0, 100.0, 0.50, 5.0, 0.10, 0.90, 210.0, 0.5) == 1
 
     def test_normal_info(self):
         # low throttle, good ERS, high SOC, few laps → INFO
-        assert _synthetic_label(60.0, 80.0, 0.85, 3.0, 0.8, 0.90) == 0
+        assert _synthetic_label(60.0, 80.0, 0.85, 3.0, 0.8, 0.90, 210.0, 0.5) == 0
 
 
 class TestGenerateSynthetic:
@@ -143,8 +142,8 @@ class TestFuelClassifier:
         assert c1 == pytest.approx(c2)
 
     def test_model_version(self):
-        assert FuelClassifier().model_version == "lr-v1"
-        assert FuelClassifier().model_type == "LogisticRegression"
+        assert FuelClassifier().model_version == "hgb-v1"
+        assert FuelClassifier().model_type == "HistGradientBoosting"
 
     def test_brier_score_range(self):
         X, y = generate_synthetic(n=300, seed=0)
