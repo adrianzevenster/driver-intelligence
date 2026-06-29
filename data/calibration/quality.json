@@ -1,7 +1,7 @@
 {
-  "ece": 0.005,
-  "brier_score": 0.0703,
-  "fitted_at": "2026-06-27T12:52:58Z",
+  "ece": 0.0085,
+  "brier_score": 0.069,
+  "fitted_at": "2026-06-29T14:16:14Z",
   "calibration_dataset": {
     "generator": "synthetic",
     "n_races": 30,

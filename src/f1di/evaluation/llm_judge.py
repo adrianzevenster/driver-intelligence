@@ -23,6 +23,7 @@ from dataclasses import asdict, dataclass
 from typing import Literal
 
 logger = logging.getLogger("f1di.evaluation.llm_judge")
+_warned_unavailable: set[str] = set()
 
 _SYSTEM_PROMPT = """\
 You are an expert Formula 1 race-engineer reviewer evaluating AI-generated recommendations.
@@ -222,7 +223,12 @@ def evaluate_recommendation(
             judge_model=judge_model,
         )
     except Exception as exc:
-        logger.warning("llm_judge_failed backend=%s model=%s: %s", backend, judge_model, exc)
+        key = f"{backend}:{judge_model}"
+        if key not in _warned_unavailable:
+            logger.warning("llm_judge_unavailable backend=%s model=%s: %s — falling back to heuristic for this run", backend, judge_model, exc)
+            _warned_unavailable.add(key)
+        else:
+            logger.debug("llm_judge_failed backend=%s model=%s: %s", backend, judge_model, exc)
         return _rules_judge(recommendation, risk, audience)
 
 

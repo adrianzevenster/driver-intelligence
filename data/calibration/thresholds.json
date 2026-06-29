@@ -2,7 +2,7 @@
   "silverstone": {
     "wear_critical": 0.7,
     "wear_warning": 0.55,
-    "brake_temp_critical_c": 910.0,
+    "brake_temp_critical_c": 1000.0,
     "fl_degradation_pressure_critical": 0.72,
     "fl_degradation_pressure_warning": 0.6,
     "rain_warning": 0.35,
