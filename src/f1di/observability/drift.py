@@ -163,6 +163,14 @@ class FeatureDriftTracker:
                 logger.info("drift_triggered_retrain result=%s", result)
             except Exception as exc:
                 logger.warning("drift_triggered_retrain failed: %s", exc)
+            try:
+                # Also retrain classifiers if new labels have accumulated since
+                # the last fit — safe because maybe_retrain_all checks the delta
+                # threshold internally and is a no-op when nothing is new.
+                from f1di.agents.auto_retrain import maybe_retrain_all
+                maybe_retrain_all()
+            except Exception as exc:
+                logger.warning("drift_triggered_classifier_retrain failed: %s", exc)
             finally:
                 try:
                     _DRIFT_RETRAIN_STAMP.parent.mkdir(parents=True, exist_ok=True)
@@ -171,7 +179,7 @@ class FeatureDriftTracker:
                     pass
 
         threading.Thread(target=_retrain, daemon=True).start()
-        logger.info("drift_alert_triggered_retrain: launching background calibration retrain")
+        logger.info("drift_alert_triggered_retrain: launching background calibration + classifier retrain")
 
     def _on_drift_cleared(self) -> None:
         """Called when drift alert transitions from active to clear. Resets concept drift state."""

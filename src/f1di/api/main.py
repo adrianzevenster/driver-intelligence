@@ -672,16 +672,24 @@ def meta_learner_weights() -> dict[str, Any]:
     """Return the meta-learner feature importances and model metadata."""
     meta_path = _CALIBRATION_DIR / "meta_learner.pkl"
     if not meta_path.exists():
-        raise HTTPException(status_code=404, detail="Meta-learner not yet trained — need ≥20 real labels.")
+        raise HTTPException(status_code=404, detail="Meta-learner not yet trained — need ≥100 real labels.")
     try:
         from f1di.inference.meta_learner import MetaLearner
         meta = MetaLearner.load(meta_path)
+        import math as _math
+        n_real = meta.n_real
+        inference_weight = (
+            round(min(0.85, 0.4 + 0.45 * _math.log10(max(1, n_real / 100)) / _math.log10(100)), 4)
+            if n_real >= 100 else 0.0
+        )
         return {
             "feature_importances": meta.get_feature_importances(),
             "n_train": meta.n_train,
-            "n_real": meta.n_real,
+            "n_real": n_real,
             "accuracy": round(meta.accuracy, 4),
-            "active_in_inference": meta.n_real >= 20,
+            "brier_score": round(getattr(meta, "brier_score", 1.0), 4),
+            "active_in_inference": n_real >= 100,
+            "inference_weight": inference_weight,
             "model_type": getattr(meta, "model_type", "unknown"),
         }
     except Exception as exc:
@@ -1136,7 +1144,7 @@ def flywheel_status() -> dict:
     meta_active = (
         classifiers["meta"]["exists"]
         and classifiers["meta"]["n_real"] is not None
-        and classifiers["meta"]["n_real"] >= 20
+        and classifiers["meta"]["n_real"] >= 100
     )
     classifiers["meta"]["active_in_inference"] = meta_active
 

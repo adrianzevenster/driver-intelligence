@@ -3753,15 +3753,13 @@ function ClassifierModelsPanel({ clfHistory }) {
   return (
     <div>
       {/* Agent tabs */}
-      <div style={{ display: 'flex', gap: 4, marginBottom: 12, flexWrap: 'wrap' }}>
+      <div className="seg" style={{ marginBottom: 12, flexWrap: 'wrap', height: 'auto' }}>
         {AGENTS.map(a => (
-          <button key={a} onClick={() => setSelectedAgent(a)} style={{
-            fontSize: 10, padding: '3px 10px', borderRadius: 10, cursor: 'pointer',
-            background: selectedAgent === a ? '#1e3a5f' : '#0d1b2e',
-            color: selectedAgent === a ? '#93c5fd' : '#64748b',
-            border: `1px solid ${selectedAgent === a ? '#3b82f6' : '#334155'}`,
-            textTransform: 'capitalize',
-          }}>{a}</button>
+          <button key={a} onClick={() => setSelectedAgent(a)}
+            className={`seg-btn${selectedAgent === a ? ' active' : ''}`}
+            style={{ textTransform: 'capitalize' }}>
+            {a}
+          </button>
         ))}
       </div>
 
@@ -3806,22 +3804,24 @@ function ClassifierModelsPanel({ clfHistory }) {
               </span>
             )}
           </p>
-          <div style={{ display: 'flex', gap: 5 }}>
-            <button className="kb-btn" onClick={() => runTuneAll(10)} disabled={tuningAll || tuning || retraining || retrainingAll}
-              style={{ fontSize: 10, padding: '2px 10px', color: tuningAll ? '#64748b' : '#c4b5fd', borderColor: tuningAll ? '#334155' : '#6d28d9' }}>
-              {tuningAll ? <><Activity size={10} className="spin" style={{ marginRight: 3 }} />Tuning all…</> : <><FlaskConical size={10} style={{ marginRight: 3 }} />Tune All</>}
-            </button>
-            <button className="kb-btn" onClick={() => runTune(30)} disabled={tuning || tuningAll || retraining || retrainingAll}
-              style={{ fontSize: 10, padding: '2px 10px', color: tuning ? '#64748b' : '#a78bfa', borderColor: tuning ? '#334155' : '#7c3aed' }}>
-              {tuning ? <><Activity size={10} className="spin" style={{ marginRight: 3 }} />Tuning…</> : <><FlaskConical size={10} style={{ marginRight: 3 }} />Tune</>}
-            </button>
+          <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: 4, paddingRight: 8, borderRight: '1px solid #1e293b' }}>
+              <button className="kb-btn" onClick={() => runTuneAll(10)} disabled={tuningAll || tuning || retraining || retrainingAll}
+                style={{ fontSize: 10, padding: '2px 8px', color: tuningAll ? '#64748b' : '#a78bfa', borderColor: tuningAll ? '#334155' : '#7c3aed55' }}>
+                {tuningAll ? <><Activity size={10} className="spin" style={{ marginRight: 3 }} />Tuning all…</> : <><FlaskConical size={10} style={{ marginRight: 3 }} />Tune All</>}
+              </button>
+              <button className="kb-btn" onClick={() => runTune(30)} disabled={tuning || tuningAll || retraining || retrainingAll}
+                style={{ fontSize: 10, padding: '2px 8px', color: tuning ? '#64748b' : '#a78bfa', borderColor: tuning ? '#334155' : '#7c3aed' }}>
+                {tuning ? <><Activity size={10} className="spin" style={{ marginRight: 3 }} />Tuning…</> : <><FlaskConical size={10} style={{ marginRight: 3 }} />Tune</>}
+              </button>
+            </div>
             <button className="kb-btn" onClick={runRetrainAll} disabled={retrainingAll || retraining || tuning || tuningAll}
-              style={{ fontSize: 10, padding: '2px 10px', color: retrainingAll ? '#64748b' : '#67e8f9', borderColor: retrainingAll ? '#334155' : '#0891b2' }}>
+              style={{ fontSize: 10, padding: '2px 8px', color: retrainingAll ? '#64748b' : '#67e8f9', borderColor: retrainingAll ? '#334155' : '#0891b2' }}>
               {retrainingAll ? <><Activity size={10} className="spin" style={{ marginRight: 3 }} />Retraining all…</> : 'Retrain All'}
             </button>
-            <button className="kb-btn" onClick={runRetrain} disabled={retraining || tuning || tuningAll || retrainingAll}
-              style={{ fontSize: 10, padding: '2px 10px', color: retraining ? '#64748b' : '#93c5fd', borderColor: retraining ? '#334155' : '#3b82f6' }}>
-              {retraining ? <><Activity size={10} className="spin" style={{ marginRight: 3 }} />Retraining…</> : 'Retrain'}
+            <button className="analyze-btn" onClick={runRetrain} disabled={retraining || tuning || tuningAll || retrainingAll}
+              style={{ fontSize: 11, padding: '4px 14px', margin: 0, borderRadius: 7, width: 'auto' }}>
+              {retraining ? <><Activity size={11} className="spin" /> Retraining…</> : 'Retrain'}
             </button>
           </div>
         </div>
@@ -4028,17 +4028,26 @@ function ClassifierModelsPanel({ clfHistory }) {
                   )}
                 </div>
               </div>
-              <div style={{ display: 'flex', gap: 14, marginTop: 4, fontSize: 10, color: '#64748b', fontFamily: 'monospace' }}>
+              <div style={{ marginTop: 5 }}>
                 {snap.accuracy != null && (
-                  <span title={snap.cv_n_splits ? `${snap.cv_n_splits}-fold cross-validated` : 'no CV — single train-set score (too little data to fold)'}>
-                    cv acc {snap.accuracy.toFixed(3)}{snap.cv_accuracy_std != null && <span style={{ color: '#475569' }}> ±{snap.cv_accuracy_std.toFixed(3)}</span>}
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}
+                    title={snap.cv_n_splits ? `${snap.cv_n_splits}-fold cross-validated` : 'no CV — single train-set score (too little data to fold)'}>
+                    <span style={{ fontSize: 19, fontFamily: 'monospace', fontWeight: 700, color: '#e2e8f0', lineHeight: 1 }}>
+                      {(snap.accuracy * 100).toFixed(1)}%
+                    </span>
+                    {snap.cv_accuracy_std != null && (
+                      <span style={{ fontSize: 10, color: '#475569', fontFamily: 'monospace' }}>±{snap.cv_accuracy_std.toFixed(3)}</span>
+                    )}
+                    <span style={{ fontSize: 10, color: '#475569', fontFamily: 'monospace' }}>cv acc</span>
+                  </div>
                 )}
-                {snap.brier_score != null && (
-                  <span>cv brier {snap.brier_score.toFixed(3)}{snap.cv_brier_std != null && <span style={{ color: '#475569' }}> ±{snap.cv_brier_std.toFixed(3)}</span>}</span>
-                )}
-                {snap.n_real != null && <span>real {snap.n_real}</span>}
-                {snap.n_train != null && <span>train {snap.n_train}</span>}
+                <div style={{ display: 'flex', gap: 12, marginTop: 3, fontSize: 10, color: '#64748b', fontFamily: 'monospace', flexWrap: 'wrap' }}>
+                  {snap.brier_score != null && (
+                    <span>brier {snap.brier_score.toFixed(3)}{snap.cv_brier_std != null && <span style={{ color: '#334155' }}> ±{snap.cv_brier_std.toFixed(3)}</span>}</span>
+                  )}
+                  {snap.n_real != null && <span>real {snap.n_real}</span>}
+                  {snap.n_train != null && <span>train {snap.n_train}</span>}
+                </div>
               </div>
               {snap.transfer_lift != null && (
                 <div style={{ marginTop: 3, fontSize: 10, fontFamily: 'monospace', color: snap.transfer_lift >= 0 ? '#4ade80' : '#f59e0b' }}
@@ -4868,6 +4877,7 @@ function OutcomeLabelingCard() {
 }
 
 function ModelLabPanel({ version }) {
+  const [subTab, setSubTab]                 = useState('classifiers');
   const [stats, setStats]                   = useState(DEFAULT_STATS);
   const [challengerVersion, setChallengerVersion] = useState('challenger');
   const [shadowResult, setShadowResult]     = useState(null);
@@ -4988,185 +4998,293 @@ function ModelLabPanel({ version }) {
   const recColor = canPromote ? '#22c55e' : evalRec === 'insufficient_data' ? '#64748b' : '#f59e0b';
 
   return (
-    <div className="grid">
-      {/* Left: shadow analyze form */}
-      <div className="card input-card">
-        <div className="input-header">
-          <h2><Radio size={14} /> Shadow Analyze</h2>
-        </div>
-        <div className="stats-form">
-          <Section title="Challenger">
-            <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <span style={{ fontSize: 11, color: 'var(--muted)' }}>Version tag</span>
-              <input className="text-input" value={challengerVersion}
-                onChange={e => setChallengerVersion(e.target.value)}
-                placeholder="challenger" />
-            </label>
-          </Section>
-        </div>
-        <StatsForm stats={stats} onChange={setStats} />
-        <button className="analyze-btn" onClick={runShadow} disabled={loading}>
-          {loading ? <><Activity size={13} /> Analyzing…</> : 'Run Shadow Analyze'}
-        </button>
-        {error && <pre className="error">{error}</pre>}
-        {shadowResult && (
-          <div style={{ marginTop: 10, padding: '8px 10px', background: '#0a1628', borderRadius: 6, border: '1px solid var(--card-border)', fontSize: 12 }}>
-            <span style={{ color: RISK_META[shadowResult.risk]?.color ?? '#64748b', fontWeight: 700 }}>{shadowResult.risk}</span>
-            <span className="muted" style={{ marginLeft: 8 }}>conf {(shadowResult.confidence * 100).toFixed(0)}% · stored as shadow</span>
-          </div>
-        )}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+      {/* Sub-tab nav */}
+      <div className="mode-tabs" style={{ width: 'fit-content' }}>
+        {([
+          ['classifiers', Activity,   'Classifiers'],
+          ['shadow',      Radio,      'Shadow'],
+          ['performance', TrendingUp, 'Performance'],
+          ['quality',     LineChart,  'Quality'],
+        ]).map(([key, Icon, label]) => (
+          <button key={key} className={`mode-tab${subTab === key ? ' active' : ''}`}
+            onClick={() => setSubTab(key)}>
+            <Icon size={12} /> {label}
+          </button>
+        ))}
       </div>
 
-      {/* Right: compare, evaluate, retrieval */}
-      <div className="card insight-card" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-
-        {/* Compare */}
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-            <h2 style={{ margin: 0, fontSize: 14 }}><BarChart2 size={13} /> Risk Distribution</h2>
-            <button className="kb-btn" onClick={() => { refreshCompare(); refreshEval(); }}>
-              <RefreshCw size={11} /> Refresh
-            </button>
-          </div>
-          {compareData ? (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-              <div>
-                <p style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 6, fontWeight: 700 }}>
-                  PRODUCTION · n={compareData.production?.n ?? 0}
-                </p>
-                <RiskDistBar distribution={compareData.production?.risk_distribution} total={compareData.production?.n ?? 0} />
-                {compareData.production?.n > 0 && (
-                  <p style={{ fontSize: 10, color: 'var(--muted)', marginTop: 6 }}>
-                    avg conf {(compareData.production.avg_confidence * 100).toFixed(1)}%
-                    · unc {(compareData.production.avg_uncertainty * 100).toFixed(1)}%
-                  </p>
-                )}
-              </div>
-              <div>
-                <p style={{ fontSize: 10, color: '#38bdf8', marginBottom: 6, fontWeight: 700 }}>
-                  CHALLENGER · {compareData.challenger_version} · n={compareData.shadow?.n ?? 0}
-                </p>
-                <RiskDistBar distribution={compareData.shadow?.risk_distribution} total={compareData.shadow?.n ?? 0} />
-                {compareData.shadow?.n > 0 && (
-                  <p style={{ fontSize: 10, color: 'var(--muted)', marginTop: 6 }}>
-                    avg conf {(compareData.shadow.avg_confidence * 100).toFixed(1)}%
-                    · unc {(compareData.shadow.avg_uncertainty * 100).toFixed(1)}%
-                  </p>
-                )}
-              </div>
+      {/* ── Classifiers ────────────────────────────────────────────────── */}
+      {subTab === 'classifiers' && (
+        <div className="card insight-card" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+              <h2 style={{ margin: 0, fontSize: 14 }}><Activity size={13} /> Classifier Models</h2>
+              <button className="kb-btn" onClick={loadClfHistory}>
+                <RefreshCw size={11} /> Refresh
+              </button>
             </div>
-          ) : (
-            <p className="muted" style={{ fontSize: 12 }}>Run shadow analyses to populate comparison.</p>
-          )}
-        </div>
+            <ClassifierModelsPanel clfHistory={clfHistory} />
+          </div>
 
-        <div style={{ borderTop: '1px solid var(--card-border)' }} />
-
-        {/* Evaluate */}
-        <div>
-          <h2 style={{ margin: '0 0 10px', fontSize: 14 }}><TrendingUp size={13} /> Statistical Evaluation</h2>
-          {evalData ? (
-            evalData.recommendation === 'insufficient_data' ? (
-              <div style={{ padding: '8px 12px', background: '#0d1b2e', borderRadius: 6, fontSize: 12 }}>
-                <p style={{ color: '#64748b', margin: '0 0 4px' }}>Insufficient data — need ≥{evalData.min_n} shadow runs</p>
-                <p className="muted" style={{ fontSize: 10, margin: 0 }}>
-                  {evalData.n_shadow} shadow · {evalData.n_prod} production records
+          {metaWeights && (
+            <>
+              <div style={{ borderTop: '1px solid var(--card-border)' }} />
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                  <h2 style={{ margin: 0, fontSize: 14 }}><Activity size={13} /> Meta-Learner Weights</h2>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 10, color: '#475569' }}>
+                    {metaWeights.active_in_inference
+                      ? <span style={{ color: '#22c55e' }}>● active · blend {((metaWeights.inference_weight ?? 0) * 100).toFixed(0)}%</span>
+                      : <span style={{ color: '#64748b' }}>● inactive (need ≥100 real labels, have {metaWeights.n_real})</span>}
+                    <span>n_real={metaWeights.n_real} cv_acc={metaWeights.accuracy?.toFixed(3)} brier={metaWeights.brier_score?.toFixed(4)}</span>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {Object.entries(metaWeights.feature_importances ?? {})
+                    .sort(([, a], [, b]) => b - a)
+                    .map(([feat, imp]) => {
+                      const pct = imp * 100;
+                      const isRisk = feat.endsWith('_risk');
+                      const color = isRisk ? '#f97316' : feat.endsWith('_conf') ? '#38bdf8' : '#a78bfa';
+                      return (
+                        <div key={feat} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontSize: 9, color: '#64748b', width: 110, flexShrink: 0, fontFamily: 'monospace' }}>{feat}</span>
+                          <div style={{ flex: 1, height: 6, background: '#0d1b2e', borderRadius: 3, overflow: 'hidden' }}>
+                            <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: 3 }} />
+                          </div>
+                          <span style={{ fontSize: 9, fontFamily: 'monospace', color, width: 36, textAlign: 'right' }}>{pct.toFixed(1)}%</span>
+                        </div>
+                      );
+                    })}
+                </div>
+                <p style={{ fontSize: 9, color: '#334155', margin: '6px 0 0' }}>
+                  Orange = risk weight inputs · Blue = confidence inputs · Purple = derived features
                 </p>
               </div>
-            ) : (
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: recColor, padding: '3px 10px', borderRadius: 12, background: recColor + '22', border: `1px solid ${recColor}55` }}>
-                    {evalRec?.replace(/_/g, ' ').toUpperCase()}
-                  </span>
-                </div>
-                <div className="feat-table" style={{ marginBottom: 12 }}>
-                  {[
-                    ['Shadow n',      evalData.n_shadow],
-                    ['Prod n',        evalData.n_prod],
-                    ['Shadow conf',   evalData.shadow_mean_confidence != null ? `${(evalData.shadow_mean_confidence * 100).toFixed(1)}%` : '—'],
-                    ['Prod conf',     evalData.prod_mean_confidence != null ? `${(evalData.prod_mean_confidence * 100).toFixed(1)}%` : '—'],
-                    ['p-value',       evalData.p_value != null ? evalData.p_value.toFixed(4) : '—'],
-                    ['Effect (RBC)',  evalData.rank_biserial_correlation != null ? evalData.rank_biserial_correlation.toFixed(4) : '—'],
-                    ['Escalation Δ', evalData.shadow_escalation_rate != null ? `${((evalData.shadow_escalation_rate - evalData.prod_escalation_rate) * 100).toFixed(1)}pp` : '—'],
-                  ].map(([label, val]) => (
-                    <div key={label} className="feat-row">
-                      <span className="feat-key">{label}</span>
-                      <span className="feat-val">{val}</span>
-                    </div>
-                  ))}
-                </div>
-                <button className="analyze-btn" style={{ padding: '6px 14px', fontSize: 12 }}
-                  onClick={() => promote(false)} disabled={promoting || !canPromote}
-                  title={!canPromote ? (promoteResult?.promoted ? 'Already promoted' : 'Evaluation does not recommend promotion') : 'Promote challenger to production'}>
-                  {promoting ? <><Activity size={12} className="spin" /> Promoting…</> : canPromote ? 'Promote Challenger' : 'Promote (not recommended)'}
-                </button>
-                {!canPromote && !promoteResult && (
-                  <p style={{ fontSize: 10, color: 'var(--muted)', marginTop: 4 }}>
-                    Force-promote via <code style={{ fontSize: 10 }}>POST /v1/shadow/promote?force=true</code>
-                  </p>
-                )}
-                {promoteResult && (
-                  <div style={{ marginTop: 8, padding: '6px 10px', borderRadius: 6, fontSize: 11,
-                    background: promoteResult.promoted ? 'rgba(34,197,94,0.1)' : 'rgba(245,158,11,0.1)',
-                    border: `1px solid ${promoteResult.promoted ? 'rgba(34,197,94,0.3)' : 'rgba(245,158,11,0.3)'}`,
-                    color: promoteResult.promoted ? '#22c55e' : '#f59e0b' }}>
-                    {promoteResult.promoted
-                      ? `✓ Promoted at ${promoteResult.promoted_at?.slice(0, 19).replace('T', ' ')}`
-                      : `Not promoted — ${promoteResult.reason?.replace(/_/g, ' ')}`}
-                  </div>
-                )}
-                {promotionHistory.length > 0 && (
-                  <div style={{ marginTop: 8, padding: '6px 9px', borderRadius: 5, background: '#060c18', border: '1px solid #0f172a', fontSize: 9 }}>
-                    <p style={{ margin: '0 0 4px', color: '#334155', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Promotion history</p>
-                    {promotionHistory.slice(-5).reverse().map((p, i) => (
-                      <div key={i} style={{ display: 'flex', gap: 6, color: '#475569', marginBottom: 2 }}>
-                        <span style={{ color: p.auto ? '#a78bfa' : '#38bdf8' }}>{p.auto ? 'auto' : 'manual'}</span>
-                        <span>{p.promoted_at?.slice(0, 10)}</span>
-                        <span style={{ color: '#334155' }}>n={p.n_shadow}</span>
-                        {p.p_value != null && <span style={{ color: '#334155' }}>p={p.p_value?.toFixed(3)}</span>}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )
-          ) : (
-            <p className="muted" style={{ fontSize: 12 }}>Loading evaluation…</p>
+            </>
           )}
         </div>
+      )}
 
-        <div style={{ borderTop: '1px solid var(--card-border)' }} />
-
-        {/* Retrieval quality */}
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-            <h2 style={{ margin: 0, fontSize: 14 }}><Search size={13} /> Retrieval Quality</h2>
-            <button className="kb-btn" onClick={runRetrievalEval} disabled={runningRetrieval}>
-              <RefreshCw size={11} className={runningRetrieval ? 'spin' : ''} />
-              {runningRetrieval ? 'Running…' : 'Run eval'}
+      {/* ── Shadow ─────────────────────────────────────────────────────── */}
+      {subTab === 'shadow' && (
+        <div className="grid">
+          {/* Left: shadow analyze form */}
+          <div className="card input-card">
+            <div className="input-header">
+              <h2><Radio size={14} /> Shadow Analyze</h2>
+            </div>
+            <div className="stats-form">
+              <Section title="Challenger">
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <span style={{ fontSize: 11, color: 'var(--muted)' }}>Version tag</span>
+                  <input className="text-input" value={challengerVersion}
+                    onChange={e => setChallengerVersion(e.target.value)}
+                    placeholder="challenger" />
+                </label>
+              </Section>
+            </div>
+            <StatsForm stats={stats} onChange={setStats} />
+            <button className="analyze-btn" onClick={runShadow} disabled={loading}>
+              {loading ? <><Activity size={13} /> Analyzing…</> : 'Run Shadow Analyze'}
             </button>
+            {error && <pre className="error">{error}</pre>}
+            {shadowResult && (
+              <div style={{ marginTop: 10, padding: '8px 10px', background: '#0a1628', borderRadius: 6, border: '1px solid var(--card-border)', fontSize: 12 }}>
+                <span style={{ color: RISK_META[shadowResult.risk]?.color ?? '#64748b', fontWeight: 700 }}>{shadowResult.risk}</span>
+                <span className="muted" style={{ marginLeft: 8 }}>conf {(shadowResult.confidence * 100).toFixed(0)}% · stored as shadow</span>
+              </div>
+            )}
           </div>
-          {error && <p style={{ fontSize: 11, color: '#ef4444', margin: '0 0 8px' }}>{error}</p>}
-          {retrievalData ? (
+
+          {/* Right: compare + evaluate */}
+          <div className="card insight-card" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+            {/* Compare */}
             <div>
-              <div className="feat-table" style={{ marginBottom: 10 }}>
-                {[
-                  ['P@1',    retrievalData.precision_at_1],
-                  ['P@3',    retrievalData.precision_at_3],
-                  ['P@5',    retrievalData.precision_at_5],
-                  ['R@3',    retrievalData.recall_at_3],
-                  ['MRR',    retrievalData.mrr],
-                  ['NDCG@5', retrievalData.ndcg_at_5],
-                ].map(([label, val]) => {
-                  const pct = val != null ? val * 100 : null;
-                  const color = pct == null ? '#64748b' : pct >= 70 ? '#22c55e' : pct >= 45 ? '#f59e0b' : '#ef4444';
-                  return (
-                    <div key={label} className="feat-row">
-                      <span className="feat-key">{label}</span>
-                      <span className="feat-val" style={{ color, fontFamily: 'monospace' }}>
-                        {pct != null ? `${pct.toFixed(1)}%` : '—'}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                <h2 style={{ margin: 0, fontSize: 14 }}><BarChart2 size={13} /> Risk Distribution</h2>
+                <button className="kb-btn" onClick={() => { refreshCompare(); refreshEval(); }}>
+                  <RefreshCw size={11} /> Refresh
+                </button>
+              </div>
+              {compareData ? (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                  <div>
+                    <p style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 6, fontWeight: 700 }}>
+                      PRODUCTION · n={compareData.production?.n ?? 0}
+                    </p>
+                    <RiskDistBar distribution={compareData.production?.risk_distribution} total={compareData.production?.n ?? 0} />
+                    {compareData.production?.n > 0 && (
+                      <p style={{ fontSize: 10, color: 'var(--muted)', marginTop: 6 }}>
+                        avg conf {(compareData.production.avg_confidence * 100).toFixed(1)}%
+                        · unc {(compareData.production.avg_uncertainty * 100).toFixed(1)}%
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <p style={{ fontSize: 10, color: '#38bdf8', marginBottom: 6, fontWeight: 700 }}>
+                      CHALLENGER · {compareData.challenger_version} · n={compareData.shadow?.n ?? 0}
+                    </p>
+                    <RiskDistBar distribution={compareData.shadow?.risk_distribution} total={compareData.shadow?.n ?? 0} />
+                    {compareData.shadow?.n > 0 && (
+                      <p style={{ fontSize: 10, color: 'var(--muted)', marginTop: 6 }}>
+                        avg conf {(compareData.shadow.avg_confidence * 100).toFixed(1)}%
+                        · unc {(compareData.shadow.avg_uncertainty * 100).toFixed(1)}%
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <p className="muted" style={{ fontSize: 12 }}>Run shadow analyses to populate comparison.</p>
+              )}
+            </div>
+
+            <div style={{ borderTop: '1px solid var(--card-border)' }} />
+
+            {/* Evaluate */}
+            <div>
+              <h2 style={{ margin: '0 0 10px', fontSize: 14 }}><TrendingUp size={13} /> Statistical Evaluation</h2>
+              {evalData ? (
+                evalData.recommendation === 'insufficient_data' ? (
+                  <div style={{ padding: '8px 12px', background: '#0d1b2e', borderRadius: 6, fontSize: 12 }}>
+                    <p style={{ color: '#64748b', margin: '0 0 4px' }}>Insufficient data — need ≥{evalData.min_n} shadow runs</p>
+                    <p className="muted" style={{ fontSize: 10, margin: 0 }}>
+                      {evalData.n_shadow} shadow · {evalData.n_prod} production records
+                    </p>
+                  </div>
+                ) : (
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: recColor, padding: '3px 10px', borderRadius: 12, background: recColor + '22', border: `1px solid ${recColor}55` }}>
+                        {evalRec?.replace(/_/g, ' ').toUpperCase()}
                       </span>
+                    </div>
+                    <div className="feat-table" style={{ marginBottom: 12 }}>
+                      {[
+                        ['Shadow n',      evalData.n_shadow],
+                        ['Prod n',        evalData.n_prod],
+                        ['Shadow conf',   evalData.shadow_mean_confidence != null ? `${(evalData.shadow_mean_confidence * 100).toFixed(1)}%` : '—'],
+                        ['Prod conf',     evalData.prod_mean_confidence != null ? `${(evalData.prod_mean_confidence * 100).toFixed(1)}%` : '—'],
+                        ['p-value',       evalData.p_value != null ? evalData.p_value.toFixed(4) : '—'],
+                        ['Effect (RBC)',  evalData.rank_biserial_correlation != null ? evalData.rank_biserial_correlation.toFixed(4) : '—'],
+                        ['Escalation Δ', evalData.shadow_escalation_rate != null ? `${((evalData.shadow_escalation_rate - evalData.prod_escalation_rate) * 100).toFixed(1)}pp` : '—'],
+                      ].map(([label, val]) => (
+                        <div key={label} className="feat-row">
+                          <span className="feat-key">{label}</span>
+                          <span className="feat-val">{val}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <button className="analyze-btn" style={{ padding: '6px 14px', fontSize: 12 }}
+                      onClick={() => promote(false)} disabled={promoting || !canPromote}
+                      title={!canPromote ? (promoteResult?.promoted ? 'Already promoted' : 'Evaluation does not recommend promotion') : 'Promote challenger to production'}>
+                      {promoting ? <><Activity size={12} className="spin" /> Promoting…</> : canPromote ? 'Promote Challenger' : 'Promote (not recommended)'}
+                    </button>
+                    {!canPromote && !promoteResult && (
+                      <p style={{ fontSize: 10, color: 'var(--muted)', marginTop: 4 }}>
+                        Force-promote via <code style={{ fontSize: 10 }}>POST /v1/shadow/promote?force=true</code>
+                      </p>
+                    )}
+                    {promoteResult && (
+                      <div style={{ marginTop: 8, padding: '6px 10px', borderRadius: 6, fontSize: 11,
+                        background: promoteResult.promoted ? 'rgba(34,197,94,0.1)' : 'rgba(245,158,11,0.1)',
+                        border: `1px solid ${promoteResult.promoted ? 'rgba(34,197,94,0.3)' : 'rgba(245,158,11,0.3)'}`,
+                        color: promoteResult.promoted ? '#22c55e' : '#f59e0b' }}>
+                        {promoteResult.promoted
+                          ? `✓ Promoted at ${promoteResult.promoted_at?.slice(0, 19).replace('T', ' ')}`
+                          : `Not promoted — ${promoteResult.reason?.replace(/_/g, ' ')}`}
+                      </div>
+                    )}
+                    {promotionHistory.length > 0 && (
+                      <div style={{ marginTop: 8, padding: '6px 9px', borderRadius: 5, background: '#060c18', border: '1px solid #0f172a', fontSize: 9 }}>
+                        <p style={{ margin: '0 0 4px', color: '#334155', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Promotion history</p>
+                        {promotionHistory.slice(-5).reverse().map((p, i) => (
+                          <div key={i} style={{ display: 'flex', gap: 6, color: '#475569', marginBottom: 2 }}>
+                            <span style={{ color: p.auto ? '#a78bfa' : '#38bdf8' }}>{p.auto ? 'auto' : 'manual'}</span>
+                            <span>{p.promoted_at?.slice(0, 10)}</span>
+                            <span style={{ color: '#334155' }}>n={p.n_shadow}</span>
+                            {p.p_value != null && <span style={{ color: '#334155' }}>p={p.p_value?.toFixed(3)}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              ) : (
+                <p className="muted" style={{ fontSize: 12 }}>Loading evaluation…</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Performance ────────────────────────────────────────────────── */}
+      {subTab === 'performance' && (
+        <div className="card insight-card" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+              <h2 style={{ margin: 0, fontSize: 14 }}><TrendingUp size={13} /> Live Performance</h2>
+              <button className="kb-btn" onClick={loadLivePerf} disabled={loadingPerf}>
+                <RefreshCw size={11} className={loadingPerf ? 'spin' : ''} /> Refresh
+              </button>
+            </div>
+            <LivePerformanceCard data={livePerf} />
+          </div>
+
+          <div style={{ borderTop: '1px solid var(--card-border)' }} />
+
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 10 }}>
+              <h2 style={{ margin: 0, fontSize: 14 }}><CheckSquare size={13} /> Predictions vs Outcomes</h2>
+            </div>
+            <PredictionOutcomeTable />
+          </div>
+
+          <div style={{ borderTop: '1px solid var(--card-border)' }} />
+
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+              <h2 style={{ margin: 0, fontSize: 14 }}><Database size={13} /> Outcome Labeling</h2>
+            </div>
+            <OutcomeLabelingCard />
+          </div>
+        </div>
+      )}
+
+      {/* ── Quality ────────────────────────────────────────────────────── */}
+      {subTab === 'quality' && (
+        <div className="card insight-card" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+              <h2 style={{ margin: 0, fontSize: 14 }}><Search size={13} /> Retrieval Quality</h2>
+              <button className="kb-btn" onClick={runRetrievalEval} disabled={runningRetrieval}>
+                <RefreshCw size={11} className={runningRetrieval ? 'spin' : ''} />
+                {runningRetrieval ? 'Running…' : 'Run eval'}
+              </button>
+            </div>
+            {error && <p style={{ fontSize: 11, color: '#ef4444', margin: '0 0 8px' }}>{error}</p>}
+            {retrievalData ? (
+              <div>
+                <div className="feat-table" style={{ marginBottom: 10 }}>
+                  {[
+                    ['P@1',    retrievalData.precision_at_1],
+                    ['P@3',    retrievalData.precision_at_3],
+                    ['P@5',    retrievalData.precision_at_5],
+                    ['R@3',    retrievalData.recall_at_3],
+                    ['MRR',    retrievalData.mrr],
+                    ['NDCG@5', retrievalData.ndcg_at_5],
+                  ].map(([label, val]) => {
+                    const pct = val != null ? val * 100 : null;
+                    const color = pct == null ? '#64748b' : pct >= 70 ? '#22c55e' : pct >= 45 ? '#f59e0b' : '#ef4444';
+                    return (
+                      <div key={label} className="feat-row">
+                        <span className="feat-key">{label}</span>
+                        <span className="feat-val" style={{ color, fontFamily: 'monospace' }}>
+                          {pct != null ? `${pct.toFixed(1)}%` : '—'}
+                        </span>
                     </div>
                   );
                 })}
@@ -5246,92 +5364,8 @@ function ModelLabPanel({ version }) {
           <QualityTrendChart history={qualityHistory} />
         </div>
 
-        <div style={{ borderTop: '1px solid var(--card-border)' }} />
-
-        {/* Classifier models */}
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-            <h2 style={{ margin: 0, fontSize: 14 }}><Activity size={13} /> Classifier Models</h2>
-            <button className="kb-btn" onClick={loadClfHistory}>
-              <RefreshCw size={11} /> Refresh
-            </button>
-          </div>
-          <ClassifierModelsPanel clfHistory={clfHistory} />
         </div>
-
-        <div style={{ borderTop: '1px solid var(--card-border)' }} />
-
-        {/* Meta-learner weights */}
-        {metaWeights && (
-          <>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                <h2 style={{ margin: 0, fontSize: 14 }}><Activity size={13} /> Meta-Learner Weights</h2>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 10, color: '#475569' }}>
-                  {metaWeights.active_in_inference
-                    ? <span style={{ color: '#22c55e' }}>● active in inference</span>
-                    : <span style={{ color: '#64748b' }}>● inactive (need ≥20 real labels, have {metaWeights.n_real})</span>}
-                  <span>n_real={metaWeights.n_real} cv_acc={metaWeights.accuracy?.toFixed(3)}</span>
-                </div>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                {Object.entries(metaWeights.feature_importances ?? {})
-                  .sort(([, a], [, b]) => b - a)
-                  .map(([feat, imp]) => {
-                    const pct = imp * 100;
-                    const isRisk = feat.endsWith('_risk');
-                    const color = isRisk ? '#f97316' : feat.endsWith('_conf') ? '#38bdf8' : '#a78bfa';
-                    return (
-                      <div key={feat} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ fontSize: 9, color: '#64748b', width: 110, flexShrink: 0, fontFamily: 'monospace' }}>{feat}</span>
-                        <div style={{ flex: 1, height: 6, background: '#0d1b2e', borderRadius: 3, overflow: 'hidden' }}>
-                          <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: 3 }} />
-                        </div>
-                        <span style={{ fontSize: 9, fontFamily: 'monospace', color, width: 36, textAlign: 'right' }}>{pct.toFixed(1)}%</span>
-                      </div>
-                    );
-                  })}
-              </div>
-              <p style={{ fontSize: 9, color: '#334155', margin: '6px 0 0' }}>
-                Orange = risk weight inputs · Blue = confidence inputs · Purple = derived features
-              </p>
-            </div>
-            <div style={{ borderTop: '1px solid var(--card-border)' }} />
-          </>
-        )}
-
-        {/* Live performance */}
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-            <h2 style={{ margin: 0, fontSize: 14 }}><TrendingUp size={13} /> Live Performance</h2>
-            <button className="kb-btn" onClick={loadLivePerf} disabled={loadingPerf}>
-              <RefreshCw size={11} className={loadingPerf ? 'spin' : ''} /> Refresh
-            </button>
-          </div>
-          <LivePerformanceCard data={livePerf} />
-        </div>
-
-        <div style={{ borderTop: '1px solid var(--card-border)' }} />
-
-        {/* Prediction vs outcome */}
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', marginBottom: 10 }}>
-            <h2 style={{ margin: 0, fontSize: 14 }}><CheckSquare size={13} /> Predictions vs Outcomes</h2>
-          </div>
-          <PredictionOutcomeTable />
-        </div>
-
-        <div style={{ borderTop: '1px solid var(--card-border)' }} />
-
-        {/* Outcome labeling */}
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-            <h2 style={{ margin: 0, fontSize: 14 }}><Database size={13} /> Outcome Labeling</h2>
-          </div>
-          <OutcomeLabelingCard />
-        </div>
-
-      </div>
+      )}
     </div>
   );
 }
@@ -5784,7 +5818,7 @@ function FlywheelStatusCard() {
                     {exists
                       ? (active
                           ? `active · real ${real}${metaMetrics ? '  ' + metaMetrics : ''}`
-                          : `inactive · need ${Math.max(0, 20 - real)} more labels${metaMetrics ? '  ' + metaMetrics : ''}`)
+                          : `inactive · need ${Math.max(0, 100 - real)} more labels${metaMetrics ? '  ' + metaMetrics : ''}`)
                       : 'run make fit-meta'}
                   </span>
                 </div>
