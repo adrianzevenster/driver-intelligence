@@ -147,3 +147,33 @@ def load_last_report() -> dict | None:
         return json.loads(_REPORT_PATH.read_text())
     except Exception:
         return None
+
+
+# Cache for circuit_precision_lookup — reloaded on file mtime change.
+_CIRCUIT_PRECISION_CACHE: dict[str, float] = {}
+_CIRCUIT_PRECISION_MTIME: float = 0.0
+_CIRCUIT_PRECISION_OVERALL: float = 0.28
+_MIN_CIRCUIT_N = 500  # minimum labeled examples to trust a circuit-level precision
+
+
+def circuit_precision_lookup(track_id: str) -> float:
+    """Return historical precision for *track_id* from the cached backtest report.
+
+    Uses the overall precision as a fallback for unknown/sparse circuits.
+    Reloads from disk when backtest_report.json changes.
+    """
+    global _CIRCUIT_PRECISION_CACHE, _CIRCUIT_PRECISION_MTIME, _CIRCUIT_PRECISION_OVERALL
+    try:
+        mtime = _REPORT_PATH.stat().st_mtime
+        if mtime != _CIRCUIT_PRECISION_MTIME:
+            data = json.loads(_REPORT_PATH.read_text())
+            _CIRCUIT_PRECISION_OVERALL = data.get("overall_precision") or 0.28
+            _CIRCUIT_PRECISION_CACHE = {
+                s["track_id"]: s["precision"]
+                for s in data.get("sessions", [])
+                if s.get("n_total", 0) >= _MIN_CIRCUIT_N and s.get("precision") is not None
+            }
+            _CIRCUIT_PRECISION_MTIME = mtime
+    except Exception:
+        pass
+    return _CIRCUIT_PRECISION_CACHE.get(track_id or "", _CIRCUIT_PRECISION_OVERALL)

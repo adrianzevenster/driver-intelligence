@@ -290,6 +290,7 @@ def blend_with_transfer(
     brier_fn=multiclass_brier,
     weight_cap: float = 5.0,
     n_splits: int = 5,
+    transfer_gate: float = 0.01,
 ) -> dict:
     """Blend a synthetic prior with real flywheel labels via continuous sample
     weighting (see real_sample_weight) and report the synthetic-only "prior"
@@ -300,23 +301,48 @@ def blend_with_transfer(
     and prior_cv here is the actual, measurable lift from transfer learning
     onto real race outcomes, rather than an assumption that blending helped.
 
+    transfer_gate: if the blended CV accuracy falls more than this below the
+        synthetic-only prior, the real labels are hurting — fall back to the
+        synthetic prior rather than shipping a degraded model. Set to 0 or None
+        to disable the gate.
+
     Returns:
-        {"X", "y", "sample_weight", "real_weight", "prior_cv"} where
+        {"X", "y", "sample_weight", "real_weight", "prior_cv", "transfer_gated"} where
         sample_weight is None when n_real is below the floor (no blending —
         X/y are just the synthetic prior) and prior_cv is the output of
         cross_val_eval on the synthetic-only data (or None if that itself
-        couldn't be cross-validated).
+        couldn't be cross-validated). transfer_gated=True when the gate fires.
     """
     prior_cv = cross_val_eval(build_pipeline, X_synth, y_synth, brier_fn, n_splits=n_splits)
 
     weight = real_sample_weight(n_real, cap=weight_cap)
     if weight <= 0.0:
-        return {"X": X_synth, "y": y_synth, "sample_weight": None, "real_weight": 0.0, "prior_cv": prior_cv}
+        return {"X": X_synth, "y": y_synth, "sample_weight": None, "real_weight": 0.0, "prior_cv": prior_cv, "transfer_gated": False}
 
     X = np.vstack([X_synth, X_real])
     y = np.concatenate([y_synth, y_real])
     sample_weight = np.concatenate([np.ones(len(y_synth)), np.full(len(y_real), weight)])
-    return {"X": X, "y": y, "sample_weight": sample_weight, "real_weight": float(weight), "prior_cv": prior_cv}
+
+    if transfer_gate and prior_cv is not None:
+        blended_cv = cross_val_eval(build_pipeline, X, y, brier_fn, n_splits=n_splits, sample_weight=sample_weight)
+        if blended_cv is not None and blended_cv["cv_accuracy"] < prior_cv["cv_accuracy"] - transfer_gate:
+            logger.info(
+                "blend_with_transfer gate fired: blended_cv=%.4f prior_cv=%.4f drop=%.4f > gate=%.4f — reverting to synthetic-only",
+                blended_cv["cv_accuracy"], prior_cv["cv_accuracy"],
+                prior_cv["cv_accuracy"] - blended_cv["cv_accuracy"], transfer_gate,
+            )
+            return {"X": X_synth, "y": y_synth, "sample_weight": None, "real_weight": 0.0, "prior_cv": prior_cv, "transfer_gated": True}
+
+    return {"X": X, "y": y, "sample_weight": sample_weight, "real_weight": float(weight), "prior_cv": prior_cv, "transfer_gated": False}
+
+
+def circuit_prec_for_track(track_id: str) -> float:
+    """Return historical backtest precision for *track_id*, defaulting to 0.28."""
+    try:
+        from f1di.evaluation.race_backtest import circuit_precision_lookup
+        return circuit_precision_lookup(track_id or "")
+    except Exception:
+        return 0.28
 
 
 def record_history(

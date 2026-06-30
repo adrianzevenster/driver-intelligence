@@ -29,6 +29,12 @@ _META_PATH = _CALIBRATION_DIR / "meta_learner.pkl"
 _meta_cache: object = None
 _meta_mtime: float = 0.0
 
+# Per-circuit confidence gate: circuits below this historical precision require
+# higher confidence before emitting WARNING/CRITICAL (linearly scaled up to 0.20
+# extra confidence at zero precision). Circuits above this gate are unaffected.
+_CIRCUIT_PRECISION_GATE = 0.35
+_CIRCUIT_CONFIDENCE_UPLIFT_MAX = 0.20
+
 
 def _get_meta_learner():
     global _meta_cache, _meta_mtime
@@ -139,7 +145,7 @@ class InferenceOrchestrator:
                     evidence.append(item)
                     seen.add(item.source_id)
 
-        policy = self._policy(audience, confidence, risk)
+        policy = self._policy(audience, confidence, risk, window.track_id or "")
         return DriverInsight(
             insight_id=str(uuid.uuid4()),
             session_id=window.session_id,
@@ -192,8 +198,24 @@ class InferenceOrchestrator:
         )
         return result if result else fallback
 
-    def _policy(self, audience: InsightAudience, confidence: float, risk: RiskLevel) -> str:
+    def _policy(self, audience: InsightAudience, confidence: float, risk: RiskLevel, track_id: str = "") -> str:
         if risk in {RiskLevel.WARNING, RiskLevel.CRITICAL}:
+            if track_id:
+                try:
+                    from f1di.evaluation.race_backtest import circuit_precision_lookup
+                    precision = circuit_precision_lookup(track_id)
+                    if precision < _CIRCUIT_PRECISION_GATE:
+                        # Scale confidence requirement up linearly with precision gap.
+                        uplift = (_CIRCUIT_PRECISION_GATE - precision) / _CIRCUIT_PRECISION_GATE * _CIRCUIT_CONFIDENCE_UPLIFT_MAX
+                        needed = settings.confidence_min_engineer + uplift
+                        if confidence < needed:
+                            logger.debug(
+                                "circuit_gate suppressed %s circuit=%s precision=%.3f confidence=%.3f needed=%.3f",
+                                risk.value, track_id, precision, confidence, needed,
+                            )
+                            return "SUPPRESS"
+                except Exception:
+                    pass
             return "SHOW"
         if audience == InsightAudience.DRIVER and confidence < settings.confidence_min_driver:
             return "ENGINEER_ONLY"

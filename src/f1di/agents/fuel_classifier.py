@@ -17,7 +17,7 @@ from pathlib import Path
 
 import numpy as np
 
-from f1di.agents.classifier_utils import _CALIBRATION_DIR
+from f1di.agents.classifier_utils import _CALIBRATION_DIR, circuit_prec_for_track
 
 logger = logging.getLogger("f1di.agents.fuel_classifier")
 _CLASSIFIER_PATH = _CALIBRATION_DIR / "fuel_classifier.pkl"
@@ -33,6 +33,7 @@ FEATURE_NAMES: list[str] = [
     "circuit_avg_speed_kph",
     "circuit_type_enc",
     "race_laps_total",
+    "circuit_precision_prior",
 ]
 
 _LABEL_MAP: dict[int, str] = {0: "INFO", 1: "WATCH", 2: "WARNING"}
@@ -64,6 +65,7 @@ def features_to_array(features) -> np.ndarray:
         features.circuit_avg_speed_kph,
         features.circuit_type_enc,
         features.race_laps_total,
+        features.circuit_precision_prior,
     ], dtype=np.float64)
 
 
@@ -198,7 +200,8 @@ def generate_synthetic(n: int = 900, seed: int = 42) -> tuple[np.ndarray, np.nda
         circuit_speed = float(rng.choice([140.0, 175.0, 190.0, 200.0, 205.0, 210.0, 215.0, 220.0, 225.0, 235.0, 250.0]))
         circuit_type  = float(rng.choice([0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]))
         race_laps     = float(rng.integers(50, 79))
-        X.append([throttle, ers_net, soc, laps_rem, phase, stint_fr, smoothness, circuit_speed, circuit_type, race_laps])
+        circuit_prec  = float(rng.choice([0.088, 0.094, 0.119, 0.121, 0.152, 0.346, 0.413, 0.424, 0.440, 0.616]))
+        X.append([throttle, ers_net, soc, laps_rem, phase, stint_fr, smoothness, circuit_speed, circuit_type, race_laps, circuit_prec])
         y.append(_synthetic_label(throttle, ers_net, soc, laps_rem, phase, smoothness, circuit_speed, stint_fr))
     return np.array(X, dtype=np.float64), np.array(y, dtype=np.int32)
 
@@ -253,6 +256,7 @@ def _load_labeled_from_db() -> tuple[np.ndarray, np.ndarray]:
             float(feats.get("circuit_avg_speed_kph", 210.0)),
             float(feats.get("circuit_type_enc", 1.0)),
             float(feats.get("race_laps_total", 57.0)),
+            circuit_prec_for_track(ins.track_id or ""),
         ])
         y.append(true_label)
 

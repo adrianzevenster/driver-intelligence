@@ -76,6 +76,19 @@ class RaceFeatures:
     circuit_avg_speed_kph: float = 210.0
     circuit_type_enc: float = 1.0  # 0.0=street, 1.0=permanent
     race_laps_total: float = 57.0
+    # Historical WARNING/CRITICAL precision for this circuit from backtest_report.json.
+    # Gives classifiers a direct learnable signal for circuit-level alert reliability.
+    # Defaults to overall mean (0.28) for unknown circuits.
+    circuit_precision_prior: float = 0.28
+
+
+def _circuit_precision(track: str) -> float:
+    """Return historical backtest precision for *track* (normalised name)."""
+    try:
+        from f1di.evaluation.race_backtest import circuit_precision_lookup
+        return circuit_precision_lookup(track)
+    except Exception:
+        return 0.28
 
 
 def slope(values: list[float]) -> float:
@@ -159,4 +172,5 @@ def extract_features(window: TelemetryWindow) -> RaceFeatures:
         circuit_avg_speed_kph=_CIRCUIT_AVG_SPEED.get(track, 210.0),
         circuit_type_enc=_CIRCUIT_TYPE.get(track, 1.0),
         race_laps_total=float(total_laps),
+        circuit_precision_prior=_circuit_precision(track),
     )

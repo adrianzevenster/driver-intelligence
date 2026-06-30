@@ -3226,5 +3226,313 @@
     "versioned_path": "/home/adrian/PycharmProjects/driver-intelligence/data/calibration/telemetry_classifier_20260629T141511Z.pkl",
     "blocked": false,
     "block_threshold": 0.02
+  },
+  {
+    "fitted_at": "2026-06-30T14:02:21Z",
+    "agent": "tire",
+    "model_version": "hgb-v1",
+    "model_type": "HistGradientBoosting",
+    "accuracy": 0.9463,
+    "brier_score": 0.0916,
+    "n_train": 800,
+    "n_real": 20623,
+    "classes": [
+      "INFO",
+      "WATCH",
+      "WARNING",
+      "CRITICAL"
+    ],
+    "cv_n_splits": 5,
+    "cv_accuracy_std": 0.0075,
+    "cv_brier_std": 0.0074,
+    "cv_fold_accuracies": [
+      0.95,
+      0.9375,
+      0.9375,
+      0.95,
+      0.9563
+    ],
+    "cv_fold_briers": [
+      0.0952,
+      0.0977,
+      0.0984,
+      0.079,
+      0.0876
+    ],
+    "real_sample_weight": 0.0,
+    "prior_cv_accuracy": 0.9463,
+    "transfer_lift": 0.0,
+    "versioned_path": "/home/adrian/PycharmProjects/driver-intelligence/data/calibration/tire_classifier_20260630T140221Z.pkl",
+    "blocked": false,
+    "block_threshold": 0.02
+  },
+  {
+    "fitted_at": "2026-06-30T14:02:41Z",
+    "agent": "tire",
+    "model_version": "hgb-v1",
+    "model_type": "HistGradientBoosting",
+    "accuracy": 0.9463,
+    "brier_score": 0.0916,
+    "n_train": 800,
+    "n_real": 20623,
+    "classes": [
+      "INFO",
+      "WATCH",
+      "WARNING",
+      "CRITICAL"
+    ],
+    "cv_n_splits": 5,
+    "cv_accuracy_std": 0.0075,
+    "cv_brier_std": 0.0074,
+    "cv_fold_accuracies": [
+      0.95,
+      0.9375,
+      0.9375,
+      0.95,
+      0.9563
+    ],
+    "cv_fold_briers": [
+      0.0952,
+      0.0977,
+      0.0984,
+      0.079,
+      0.0876
+    ],
+    "real_sample_weight": 0.0,
+    "prior_cv_accuracy": 0.9463,
+    "transfer_lift": 0.0,
+    "versioned_path": "/home/adrian/PycharmProjects/driver-intelligence/data/calibration/tire_classifier_20260630T140241Z.pkl",
+    "blocked": false,
+    "block_threshold": 0.02
+  },
+  {
+    "fitted_at": "2026-06-30T14:02:58Z",
+    "agent": "battery",
+    "model_version": "lr-v1",
+    "model_type": "LogisticRegression",
+    "accuracy": 0.947,
+    "brier_score": 0.0774,
+    "n_train": 21223,
+    "n_real": 20623,
+    "classes": [
+      "INFO",
+      "WATCH",
+      "WARNING"
+    ],
+    "cv_n_splits": 5,
+    "cv_accuracy_std": 0.0028,
+    "cv_brier_std": 0.0036,
+    "cv_fold_accuracies": [
+      0.947,
+      0.9475,
+      0.9418,
+      0.95,
+      0.9489
+    ],
+    "cv_fold_briers": [
+      0.0786,
+      0.0754,
+      0.0837,
+      0.0729,
+      0.0767
+    ],
+    "real_sample_weight": 20.0,
+    "prior_cv_accuracy": 0.8767,
+    "transfer_lift": 0.0704,
+    "versioned_path": "/home/adrian/PycharmProjects/driver-intelligence/data/calibration/battery_classifier_20260630T140258Z.pkl",
+    "blocked": false,
+    "block_threshold": 0.02
+  },
+  {
+    "fitted_at": "2026-06-30T14:03:11Z",
+    "agent": "battery",
+    "model_version": "lr-v1",
+    "model_type": "LogisticRegression",
+    "accuracy": 0.947,
+    "brier_score": 0.0774,
+    "n_train": 21223,
+    "n_real": 20623,
+    "classes": [
+      "INFO",
+      "WATCH",
+      "WARNING"
+    ],
+    "cv_n_splits": 5,
+    "cv_accuracy_std": 0.0028,
+    "cv_brier_std": 0.0036,
+    "cv_fold_accuracies": [
+      0.947,
+      0.9475,
+      0.9418,
+      0.95,
+      0.9489
+    ],
+    "cv_fold_briers": [
+      0.0786,
+      0.0754,
+      0.0837,
+      0.0729,
+      0.0767
+    ],
+    "real_sample_weight": 20.0,
+    "prior_cv_accuracy": 0.8767,
+    "transfer_lift": 0.0704,
+    "versioned_path": "/home/adrian/PycharmProjects/driver-intelligence/data/calibration/battery_classifier_20260630T140311Z.pkl",
+    "blocked": false,
+    "block_threshold": 0.02
+  },
+  {
+    "fitted_at": "2026-06-30T14:03:13Z",
+    "agent": "weather",
+    "model_version": "lr-v1",
+    "model_type": "LogisticRegression",
+    "accuracy": 0.9433,
+    "brier_score": 0.0804,
+    "n_train": 600,
+    "n_real": 20623,
+    "classes": [
+      "INFO",
+      "WATCH",
+      "WARNING"
+    ],
+    "cv_n_splits": 5,
+    "cv_accuracy_std": 0.0133,
+    "cv_brier_std": 0.0105,
+    "cv_fold_accuracies": [
+      0.9417,
+      0.9583,
+      0.925,
+      0.9583,
+      0.9333
+    ],
+    "cv_fold_briers": [
+      0.0822,
+      0.067,
+      0.0935,
+      0.0697,
+      0.0896
+    ],
+    "real_sample_weight": 0.0,
+    "prior_cv_accuracy": 0.9433,
+    "transfer_lift": 0.0,
+    "versioned_path": "/home/adrian/PycharmProjects/driver-intelligence/data/calibration/weather_classifier_20260630T140313Z.pkl",
+    "blocked": false,
+    "block_threshold": 0.02
+  },
+  {
+    "fitted_at": "2026-06-30T14:03:18Z",
+    "agent": "safety_car",
+    "model_version": "hgb-v1",
+    "model_type": "HistGradientBoosting",
+    "accuracy": 0.9762,
+    "brier_score": 0.0449,
+    "n_train": 800,
+    "n_real": 20603,
+    "classes": [
+      "INFO",
+      "WATCH",
+      "WARNING",
+      "CRITICAL"
+    ],
+    "cv_n_splits": 5,
+    "cv_accuracy_std": 0.0047,
+    "cv_brier_std": 0.0117,
+    "cv_fold_accuracies": [
+      0.975,
+      0.9688,
+      0.9812,
+      0.9812,
+      0.975
+    ],
+    "cv_fold_briers": [
+      0.0458,
+      0.0666,
+      0.0327,
+      0.0375,
+      0.042
+    ],
+    "real_sample_weight": 0.0,
+    "prior_cv_accuracy": 0.9762,
+    "transfer_lift": 0.0,
+    "versioned_path": "/home/adrian/PycharmProjects/driver-intelligence/data/calibration/safety_car_classifier_20260630T140318Z.pkl",
+    "blocked": false,
+    "block_threshold": 0.02
+  },
+  {
+    "fitted_at": "2026-06-30T14:03:21Z",
+    "agent": "telemetry",
+    "model_version": "lr-v1",
+    "model_type": "LogisticRegression",
+    "accuracy": 0.9932,
+    "brier_score": 0.0099,
+    "n_train": 21423,
+    "n_real": 20623,
+    "classes": [
+      "INFO",
+      "WATCH",
+      "WARNING",
+      "CRITICAL"
+    ],
+    "cv_n_splits": 5,
+    "cv_accuracy_std": 0.0005,
+    "cv_brier_std": 0.0006,
+    "cv_fold_accuracies": [
+      0.9935,
+      0.9932,
+      0.9932,
+      0.9939,
+      0.9923
+    ],
+    "cv_fold_briers": [
+      0.0099,
+      0.0097,
+      0.0099,
+      0.009,
+      0.0107
+    ],
+    "real_sample_weight": 20.0,
+    "prior_cv_accuracy": 0.9138,
+    "transfer_lift": 0.0795,
+    "versioned_path": "/home/adrian/PycharmProjects/driver-intelligence/data/calibration/telemetry_classifier_20260630T140321Z.pkl",
+    "blocked": false,
+    "block_threshold": 0.02
+  },
+  {
+    "fitted_at": "2026-06-30T14:03:29Z",
+    "agent": "fuel",
+    "model_version": "hgb-v1",
+    "model_type": "HistGradientBoosting",
+    "accuracy": 0.9157,
+    "brier_score": 0.1201,
+    "n_train": 21203,
+    "n_real": 20603,
+    "classes": [
+      "INFO",
+      "WATCH",
+      "WARNING"
+    ],
+    "cv_n_splits": 5,
+    "cv_accuracy_std": 0.0055,
+    "cv_brier_std": 0.0056,
+    "cv_fold_accuracies": [
+      0.9111,
+      0.9179,
+      0.9229,
+      0.9189,
+      0.9078
+    ],
+    "cv_fold_briers": [
+      0.1263,
+      0.1179,
+      0.1135,
+      0.1155,
+      0.1273
+    ],
+    "real_sample_weight": 20.0,
+    "prior_cv_accuracy": 0.8667,
+    "transfer_lift": 0.0491,
+    "versioned_path": "/home/adrian/PycharmProjects/driver-intelligence/data/calibration/fuel_classifier_20260630T140329Z.pkl",
+    "blocked": false,
+    "block_threshold": 0.02
   }
 ]

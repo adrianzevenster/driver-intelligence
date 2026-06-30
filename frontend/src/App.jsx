@@ -4049,12 +4049,20 @@ function ClassifierModelsPanel({ clfHistory }) {
                   {snap.n_train != null && <span>train {snap.n_train}</span>}
                 </div>
               </div>
-              {snap.transfer_lift != null && (
-                <div style={{ marginTop: 3, fontSize: 10, fontFamily: 'monospace', color: snap.transfer_lift >= 0 ? '#4ade80' : '#f59e0b' }}
-                  title={`synthetic-only prior would score ${snap.prior_cv_accuracy?.toFixed(3)} — real labels weighted ${snap.real_sample_weight?.toFixed(2)}x a synthetic row`}>
-                  transfer lift {snap.transfer_lift >= 0 ? '+' : ''}{(snap.transfer_lift * 100).toFixed(1)}pp vs prior-only ({snap.prior_cv_accuracy?.toFixed(3)}, weight {snap.real_sample_weight?.toFixed(2)}x)
-                </div>
-              )}
+              {snap.transfer_lift != null && (() => {
+                const gated = snap.transfer_lift === 0 && snap.n_real > 0 && snap.real_sample_weight === 0;
+                return gated ? (
+                  <div style={{ marginTop: 3, fontSize: 10, fontFamily: 'monospace', color: '#f59e0b' }}
+                    title={`Real labels dropped CV ${((snap.prior_cv_accuracy - snap.accuracy) * 100).toFixed(1)}pp below synthetic-only prior — transfer gated, model uses synthetic weights only`}>
+                    transfer gated — real labels hurt (synthetic-only prior {snap.prior_cv_accuracy?.toFixed(3)})
+                  </div>
+                ) : (
+                  <div style={{ marginTop: 3, fontSize: 10, fontFamily: 'monospace', color: snap.transfer_lift >= 0 ? '#4ade80' : '#f59e0b' }}
+                    title={`synthetic-only prior would score ${snap.prior_cv_accuracy?.toFixed(3)} — real labels weighted ${snap.real_sample_weight?.toFixed(2)}x a synthetic row`}>
+                    transfer lift {snap.transfer_lift >= 0 ? '+' : ''}{(snap.transfer_lift * 100).toFixed(1)}pp vs prior-only ({snap.prior_cv_accuracy?.toFixed(3)}, weight {snap.real_sample_weight?.toFixed(2)}x)
+                  </div>
+                );
+              })()}
               {snap.cv_fold_accuracies && <FoldSpread accuracies={snap.cv_fold_accuracies} mean={snap.accuracy} />}
               <PerClassMetricsTable perClass={snap.cv_per_class} />
               {tested && (
@@ -4887,6 +4895,7 @@ function ModelLabPanel({ version }) {
   const [qualityHistory, setQualityHistory] = useState([]);
   const [clfHistory, setClfHistory]         = useState([]);
   const [livePerf, setLivePerf]             = useState(null);
+  const [backtestReport, setBacktestReport] = useState(null);
   const [metaWeights, setMetaWeights]       = useState(null);
   const [loadingPerf, setLoadingPerf]       = useState(false);
   const [loading, setLoading]               = useState(false);
@@ -4942,6 +4951,7 @@ function ModelLabPanel({ version }) {
     fetch('/api/v1/eval/retrieval').then(r => r.ok ? r.json() : null).then(d => { if (d) setRetrievalData(d); }).catch(() => {});
     fetch('/api/v1/shadow/promotion-history').then(r => r.ok ? r.json() : []).then(d => setPromotionHistory(d)).catch(() => {});
     fetch('/api/v1/ml/meta-weights').then(r => r.ok ? r.json() : null).then(d => { if (d) setMetaWeights(d); }).catch(() => {});
+    fetch('/api/v1/ml/backtest').then(r => r.ok ? r.json() : null).then(d => { if (d) setBacktestReport(d); }).catch(() => {});
     const id = setInterval(loadLivePerf, 60000);
     return () => clearInterval(id);
   }, []);
@@ -5235,6 +5245,54 @@ function ModelLabPanel({ version }) {
           </div>
 
           <div style={{ borderTop: '1px solid var(--card-border)' }} />
+
+          {/* Per-circuit backtest precision */}
+          {backtestReport && (
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                <h2 style={{ margin: 0, fontSize: 14 }}>
+                  <BarChart2 size={13} /> Circuit Precision
+                  <span style={{ marginLeft: 8, fontSize: 11, color: '#64748b', fontWeight: 400 }}>
+                    {backtestReport.n_sessions} sessions · overall {(backtestReport.overall_precision * 100).toFixed(1)}%
+                  </span>
+                </h2>
+                <span style={{ fontSize: 10, color: backtestReport.trend === 'improving' ? '#4ade80' : backtestReport.trend === 'degrading' ? '#f87171' : '#64748b', fontFamily: 'monospace' }}>
+                  {backtestReport.trend}
+                </span>
+              </div>
+              <div className="feat-table">
+                {[...backtestReport.sessions]
+                  .sort((a, b) => (b.precision ?? 0) - (a.precision ?? 0))
+                  .map(s => {
+                    const pct = s.precision != null ? s.precision * 100 : null;
+                    const below = pct != null && pct < backtestReport.alert_threshold * 100;
+                    const gated = pct != null && s.precision < 0.35;
+                    const barW  = pct != null ? Math.round(pct * 1.2) : 0;
+                    const barC  = pct == null ? '#334155' : pct >= 35 ? '#22c55e' : pct >= 20 ? '#f59e0b' : '#ef4444';
+                    return (
+                      <div key={s.session_id} className="feat-row" style={{ alignItems: 'center' }}>
+                        <span className="feat-key" style={{ minWidth: 100 }}>
+                          {s.track_id}
+                          {gated && <span style={{ marginLeft: 5, fontSize: 9, color: '#f59e0b', fontFamily: 'monospace' }}>gated</span>}
+                        </span>
+                        <span style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ display: 'inline-block', width: barW, height: 5, borderRadius: 2, background: barC }} />
+                          <span style={{ fontFamily: 'monospace', fontSize: 11, color: below ? '#f87171' : '#94a3b8' }}>
+                            {pct != null ? `${pct.toFixed(1)}%` : '—'}
+                          </span>
+                          <span style={{ fontSize: 10, color: '#475569' }}>n={s.n_total}</span>
+                        </span>
+                      </div>
+                    );
+                  })}
+              </div>
+              <div style={{ marginTop: 6, fontSize: 10, color: '#475569', fontFamily: 'monospace' }}>
+                alert threshold {(backtestReport.alert_threshold * 100).toFixed(0)}% · gated = confidence uplift active
+              </div>
+            </div>
+          )}
+
+          {backtestReport && <div style={{ borderTop: '1px solid var(--card-border)' }} />}
 
           <div>
             <div style={{ display: 'flex', alignItems: 'center', marginBottom: 10 }}>
