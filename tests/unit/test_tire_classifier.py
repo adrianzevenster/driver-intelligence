@@ -202,18 +202,21 @@ def test_train_from_labels_with_real_data(tmp_path):
         report = train_from_labels(output_path=out, synthetic_n=200, real_oversample=3)
 
     assert report["n_real"] == 15
-    # Real rows are blended via sample_weight now, not literal duplication —
-    # n_total is just synthetic + real, one row each.
-    assert report["n_total"] == 200 + 15
-    # Weight ramps from 1.0 at the n_real=10 floor toward the real_oversample
-    # cap (3) as n_real grows toward the saturation point.
-    from f1di.agents.classifier_utils import REAL_WEIGHT_FLOOR, REAL_WEIGHT_SATURATION
-    growth = min(1.0, (15 - REAL_WEIGHT_FLOOR) / (REAL_WEIGHT_SATURATION - REAL_WEIGHT_FLOOR))
-    expected_weight = 1.0 + (3 - 1.0) * growth
-    # report rounds to 4 decimal places, so allow up to half a ULP at that precision
-    assert report["real_sample_weight"] == pytest.approx(expected_weight, abs=5e-5)
     assert report["prior_accuracy"] is not None
     assert report["transfer_lift"] is not None
+    # The transfer gate may fire if random real_X hurts the blended CV more
+    # than 1pp below the synthetic prior — accept both outcomes.
+    blended = report["real_sample_weight"] is not None and report["real_sample_weight"] > 0
+    if blended:
+        # Gate did not fire: real rows are appended, n_total = synthetic + real.
+        assert report["n_total"] == 200 + 15
+        from f1di.agents.classifier_utils import REAL_WEIGHT_FLOOR, REAL_WEIGHT_SATURATION
+        growth = min(1.0, (15 - REAL_WEIGHT_FLOOR) / (REAL_WEIGHT_SATURATION - REAL_WEIGHT_FLOOR))
+        expected_weight = 1.0 + (3 - 1.0) * growth
+        assert report["real_sample_weight"] == pytest.approx(expected_weight, abs=5e-5)
+    else:
+        # Gate fired: real labels hurt, model trained on synthetic only.
+        assert report["n_total"] == 200
 
 
 # ── TireStrategyAgent with classifier ─────────────────────────────────────

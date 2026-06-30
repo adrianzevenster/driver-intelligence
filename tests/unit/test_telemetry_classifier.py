@@ -110,6 +110,9 @@ class TestSaveWithSnapshot:
         X, y = generate_synthetic(n=300)
         clf = TelemetryClassifier().fit(X, y)
         clf.accuracy = accuracy
+        # Null out std so save_with_snapshot uses the flat min_accuracy_delta
+        # threshold rather than the std-based widener, which shifts with feature count.
+        clf.cv_accuracy_std = None
         return clf
 
     def test_first_save_writes_live_and_versioned(self, tmp_path):
