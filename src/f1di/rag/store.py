@@ -10,6 +10,23 @@ from f1di.domain.schemas import RetrievedEvidence
 
 TOKEN_RE = re.compile(r"[a-zA-Z0-9_]+")
 
+# Multiplicative score prior by source_id prefix.  Curated circuit/topic docs
+# (silverstone_track, monaco_ers, etc.) receive 1.0.  Raw fastf1 session docs
+# share vocabulary with every strategy query and consistently outrank curated
+# knowledge on BM25 alone — dampen them.  Circuit guides duplicate specific
+# track docs and cause ties; apply a mild penalty so the specific doc wins.
+_SOURCE_PRIORS: dict[str, float] = {
+    "fastf1_": 0.35,
+    "circuit_guides_": 0.65,
+}
+
+
+def _source_prior(source_id: str) -> float:
+    for prefix, weight in _SOURCE_PRIORS.items():
+        if source_id.startswith(prefix):
+            return weight
+    return 1.0
+
 
 def tokenize(text: str) -> list[str]:
     return [t.lower() for t in TOKEN_RE.findall(text)]
@@ -86,9 +103,10 @@ class HybridMemoryRetriever:
             if q_emb is not None:
                 import numpy as np
                 cosine = float(np.dot(q_emb, self._doc_embeddings[idx]))
-                score = 0.6 * sparse_score + 0.4 * max(0.0, cosine)
+                score = 0.35 * sparse_score + 0.65 * max(0.0, cosine)
             else:
                 score = sparse_score
+            score *= _source_prior(doc.source_id)
             if score > 0:
                 scored.append((score, idx, doc))
 
