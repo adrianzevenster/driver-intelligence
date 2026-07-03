@@ -4276,7 +4276,7 @@ function LivePerformanceCard({ data }) {
         {/* diagonal reference line (perfect calibration) */}
         <line x1={0} y1={RH - 4} x2={RW} y2={4} stroke="#ffffff18" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
         {reliability.map((b, i) => {
-          const xPos  = i * (RW / 10) + 2;
+          const xPos  = b.bucket_min * RW + 2;
           const barH  = b.actual_accuracy * (RH - 8);
           const y     = RH - 4 - barH;
           const gap   = b.actual_accuracy - b.mean_confidence;
