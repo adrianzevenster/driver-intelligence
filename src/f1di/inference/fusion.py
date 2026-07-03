@@ -199,7 +199,9 @@ class InferenceOrchestrator:
         return result if result else fallback
 
     def _policy(self, audience: InsightAudience, confidence: float, risk: RiskLevel, track_id: str = "") -> str:
-        if risk in {RiskLevel.WARNING, RiskLevel.CRITICAL}:
+        if risk == RiskLevel.CRITICAL:
+            return "SHOW"
+        if risk == RiskLevel.WARNING:
             if track_id:
                 try:
                     from f1di.evaluation.race_backtest import circuit_precision_lookup
