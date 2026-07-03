@@ -21,7 +21,6 @@ def _make_memory_retriever(settings=None):
 
 def make_retriever():
     from f1di.config.settings import settings
-    from f1di.rag.store import HybridMemoryRetriever
 
     if settings.vector_backend == "qdrant":
         try:
