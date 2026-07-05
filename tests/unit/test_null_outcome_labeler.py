@@ -12,7 +12,6 @@ def _make_session_id(year: int, round_num: int) -> str:
 def test_label_quiet_stints_no_insights():
     """label_quiet_stints returns 0 when no insights exist for the round."""
     from f1di.data.outcome_labeler import label_quiet_stints
-    # Use a round number that will never have data in the test DB
     result = label_quiet_stints(9999, 99)
     assert result == 0
 
@@ -30,7 +29,7 @@ def test_label_quiet_stints_skips_recent():
             driver_id="VER",
             track_id="silverstone",
             risk="INFO",
-            policy="SUPPRESS",
+            policy="INFO",
             confidence=0.4,
             uncertainty=0.6,
             audience="DRIVER",
@@ -46,8 +45,8 @@ def test_label_quiet_stints_skips_recent():
     assert result == 0
 
 
-def test_label_quiet_stints_labels_old_suppress():
-    """Old SUPPRESS insights with no feedback get labeled as correct."""
+def test_label_quiet_stints_labels_old_info():
+    """Old INFO insights with no feedback get labeled as correct."""
     from f1di.storage.database import db_session
     from f1di.storage.models import FeedbackRecord, InsightRecord
 
@@ -59,7 +58,7 @@ def test_label_quiet_stints_labels_old_suppress():
             driver_id="HAM",
             track_id="silverstone",
             risk="INFO",
-            policy="SUPPRESS",
+            policy="INFO",
             confidence=0.35,
             uncertainty=0.65,
             audience="DRIVER",
@@ -81,6 +80,39 @@ def test_label_quiet_stints_labels_old_suppress():
     assert fb.submitted_by == "null_outcome"
 
 
+def test_label_quiet_stints_skips_suppress():
+    """SUPPRESS insights are excluded — they are system-internal and not feedback candidates."""
+    from f1di.storage.database import db_session
+    from f1di.storage.models import FeedbackRecord, InsightRecord
+
+    iid = str(uuid.uuid4())
+    with db_session() as session:
+        ins = InsightRecord(
+            insight_id=iid,
+            session_id=_make_session_id(9999, 95),
+            driver_id="NOR",
+            track_id="monza",
+            risk="INFO",
+            policy="SUPPRESS",
+            confidence=0.3,
+            uncertainty=0.7,
+            audience="DRIVER",
+            recommendation="Suppressed.",
+            latency_ms=40.0,
+            created_at=datetime.datetime.utcnow() - datetime.timedelta(hours=5),
+        )
+        session.add(ins)
+        session.commit()
+
+    from f1di.data.outcome_labeler import label_quiet_stints
+    result = label_quiet_stints(9999, 95)
+    assert result == 0  # SUPPRESS must be skipped
+
+    with db_session() as session:
+        fb = session.query(FeedbackRecord).filter_by(insight_id=iid).first()
+    assert fb is None
+
+
 def test_label_quiet_stints_no_double_label():
     """Insights that already have feedback are not double-labeled."""
     from f1di.storage.database import db_session
@@ -93,8 +125,8 @@ def test_label_quiet_stints_no_double_label():
             session_id=_make_session_id(9999, 96),
             driver_id="LEC",
             track_id="monaco",
-            risk="INFO",
-            policy="SUPPRESS",
+            risk="LOW",
+            policy="INFO",
             confidence=0.3,
             uncertainty=0.7,
             audience="DRIVER",

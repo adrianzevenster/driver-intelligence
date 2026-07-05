@@ -310,6 +310,51 @@ def alert_rate_series(days: int = 30) -> list[dict]:
         return []
 
 
+def recall_proxy_data() -> dict:
+    """Estimate recall as the fraction of confirmed incidents that received WARNING/CRITICAL.
+
+    Among all human-labeled positives (correct=True, not null_outcome), what fraction
+    were surfaced at WARNING or CRITICAL severity? Low values suggest the system is
+    under-alerting or mis-sizing alerts on real incidents.
+
+    Note: this is a survivorship proxy — truly missed incidents (no insight generated)
+    are invisible to the DB and would make true recall lower than this estimate.
+    """
+    try:
+        from sqlalchemy import select
+        from f1di.storage.database import db_session
+        from f1di.storage.models import FeedbackRecord, InsightRecord
+    except Exception:
+        return {"recall_proxy": None, "n_confirmed": 0}
+
+    try:
+        with db_session() as session:
+            rows = session.execute(
+                select(InsightRecord.risk)
+                .join(FeedbackRecord, FeedbackRecord.insight_id == InsightRecord.insight_id)
+                .where(
+                    FeedbackRecord.correct == True,  # noqa: E712
+                    FeedbackRecord.submitted_by != "null_outcome",
+                    InsightRecord.shadow == False,  # noqa: E712
+                )
+            ).all()
+    except Exception as exc:
+        logger.warning("recall_proxy_data failed: %s", exc)
+        return {"recall_proxy": None, "n_confirmed": 0}
+
+    if not rows:
+        return {"recall_proxy": None, "n_confirmed": 0}
+
+    confirmed_risks = [r for (r,) in rows]
+    n_confirmed = len(confirmed_risks)
+    n_high = sum(1 for r in confirmed_risks if r in ("WARNING", "CRITICAL", "WATCH"))
+    return {
+        "recall_proxy": round(n_high / n_confirmed, 4),
+        "n_confirmed": n_confirmed,
+        "n_high_risk": n_high,
+    }
+
+
 def check_precision_degradation(
     threshold: float = 0.60,
     drop_pp: float = 0.10,
@@ -413,11 +458,13 @@ def retrain(
 
     # --- read previous ECE for lineage record ---
     prev_ece: float | None = None
+    prev_ece_method: str | None = None
     prev_model: str | None = None
     if quality_path.exists():
         try:
             prev = json.loads(quality_path.read_text())
             prev_ece = prev.get("ece")
+            prev_ece_method = prev.get("ece_method")
             prev_model = prev.get("model_path")
         except Exception:
             pass
@@ -432,9 +479,16 @@ def retrain(
     _file_op("write feedback snapshot", snapshot_path, _write_snapshot)
 
     # --- train ---
+    # Hold out the last 20% of real feedback for ECE comparison so both old and new
+    # models are measured on the same distribution — synthetic ECE is not comparable
+    # because the new model is partially fit on real data while the old one was not.
+    n_holdout = max(5, len(pairs) // 5)
+    train_pairs = pairs[:-n_holdout]
+    holdout_pairs = pairs[-n_holdout:]
+
     X_syn, y_syn = generate_calibration_dataset(n_races=30, seed=42)
-    X_fb = [p[0] for p in pairs]
-    y_fb = [p[1] for p in pairs]
+    X_fb = [p[0] for p in train_pairs]
+    y_fb = [p[1] for p in train_pairs]
     X = X_syn + X_fb * 3
     y = y_syn + y_fb * 3
 
@@ -444,13 +498,23 @@ def retrain(
     versioned_path = calibrator_path.parent / f"isotonic_{ts}.pkl"
     _file_op("write versioned calibrator", versioned_path, lambda: calibrator.save(versioned_path))
 
-    ece = calibration_ece(calibrator, n_races=15, seed=999)
-    brier = calibration_brier(calibrator, n_races=15, seed=999)
+    # ECE and Brier on real holdout — same distribution across retrains.
+    X_ho = [p[0] for p in holdout_pairs]
+    y_ho = [p[1] for p in holdout_pairs]
+    ho_preds = list(calibrator._model.predict(X_ho)) if calibrator._model is not None else X_ho
+    ece = float(sum(abs(c - l) for c, l in zip(ho_preds, y_ho)) / len(ho_preds))
+    brier = float(sum((c - l) ** 2 for c, l in zip(ho_preds, y_ho)) / len(ho_preds))
 
     # --- quality regression guard ---
     # Block the live copy if ECE degrades more than 1 pp vs the previous run.
+    # Only compare when both runs used the real-holdout method — synthetic ECE
+    # is not comparable and would produce spurious blocks.
     # The versioned pkl is always written for audit; only the live copy is held back.
-    regression_detected = prev_ece is not None and ece > prev_ece + 0.01
+    regression_detected = (
+        prev_ece is not None
+        and prev_ece_method == "real_holdout"
+        and ece > prev_ece + 0.01
+    )
     if not regression_detected:
         _promote_live_model(versioned_path, calibrator_path)
     else:
@@ -470,6 +534,7 @@ def retrain(
     fitted_at = f"{ts[:4]}-{ts[4:6]}-{ts[6:8]}T{ts[9:11]}:{ts[11:13]}:{ts[13:15]}Z"
     quality = {
         "ece": ece,
+        "ece_method": "real_holdout",
         "brier_score": brier,
         "fitted_at": fitted_at,
         "model_path": str(versioned_path),

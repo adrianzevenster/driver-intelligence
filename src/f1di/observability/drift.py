@@ -133,19 +133,15 @@ class FeatureDriftTracker:
             except Exception:
                 pass
             logger.warning(
-                "concept_drift_suspected: %d drift-triggered retrains in 24h without clearing — "
-                "feature baseline has likely shifted (new circuit, compound gen, regulation change). "
-                "Reseeding drift baseline. Investigate before the next retrain cycle.",
+                "concept_drift_suspected: %d drift-triggered retrains in 24h — "
+                "baseline frozen until manual review. Likely cause: new circuit, "
+                "compound generation, or regulation change. Check feature distributions "
+                "before clearing the drift stamp.",
                 len(recent),
             )
-            # Force-reseed baseline from the current buffer so the tracker adapts
-            # to the new distribution rather than continuing to alarm against the old one.
-            self._recompute_baseline()
-            try:
-                _DRIFT_RETRAIN_STAMP.parent.mkdir(parents=True, exist_ok=True)
-                _DRIFT_RETRAIN_STAMP.touch()
-            except OSError:
-                pass
+            # Freeze: do NOT recompute baseline from the drifted buffer. Reseeding here
+            # would silently absorb a real distribution shift, masking it from operators.
+            # A human should review and explicitly clear the stamp when the shift is understood.
             return
 
         # Record this retrain in the history, then trigger.
@@ -251,31 +247,66 @@ class FeatureDriftTracker:
         }
 
     def seed_from_db(self, limit: int = 200) -> int:
-        """Seed baseline from stored telemetry rows. Returns count seeded."""
+        """Seed baseline from stored telemetry rows. Returns count seeded.
+
+        Rows are sorted by (session_id, driver_id, lap) and grouped so that
+        per-lap slopes (wear, SoC) can be computed from consecutive observations
+        within the same driver stint.
+        """
         try:
+            from collections import defaultdict as _dd
             from f1di.storage.database import db_session
             from f1di.storage.models import TelemetrySampleRecord
             from sqlalchemy import select
             with db_session() as session:
                 rows = list(session.scalars(
                     select(TelemetrySampleRecord)
-                    .order_by(TelemetrySampleRecord.created_at.desc())
+                    .order_by(
+                        TelemetrySampleRecord.session_id,
+                        TelemetrySampleRecord.driver_id,
+                        TelemetrySampleRecord.lap,
+                    )
                     .limit(limit)
                 ))
+
+            # Group and sort by (session_id, driver_id) to compute slopes.
+            groups: dict = _dd(list)
             for row in rows:
-                obs = {
-                    "fl_wear": row.tire_wear_fl,
-                    "fr_wear": row.tire_wear_fr,
-                    "rear_wear_mean": (row.tire_wear_rl + row.tire_wear_rr) / 2,
-                    "battery_soc": row.battery_soc,
-                    "rain_intensity": row.rain_intensity,
-                    "grip_estimate": row.grip_estimate,
-                    "mean_speed_kph": row.speed_kph,
-                }
-                self._buffer.append(obs)
-                if row.track_id:
-                    track_buf = self._track_buffers.setdefault(row.track_id, deque(maxlen=self._buffer.maxlen))
-                    track_buf.append(obs)
+                groups[(row.session_id, row.driver_id)].append(row)
+
+            for group_rows in groups.values():
+                group_rows.sort(key=lambda r: r.lap)
+                for i, row in enumerate(group_rows):
+                    if i > 0:
+                        prev = group_rows[i - 1]
+                        delta_lap = max(row.lap - prev.lap, 1)
+                        fl_slope = (row.tire_wear_fl - prev.tire_wear_fl) / delta_lap
+                        fr_slope = (row.tire_wear_fr - prev.tire_wear_fr) / delta_lap
+                        rear_now = (row.tire_wear_rl + row.tire_wear_rr) / 2.0
+                        rear_prev = (prev.tire_wear_rl + prev.tire_wear_rr) / 2.0
+                        rear_slope = (rear_now - rear_prev) / delta_lap
+                        soc_slope = (row.battery_soc - prev.battery_soc) / delta_lap
+                    else:
+                        fl_slope = fr_slope = rear_slope = soc_slope = 0.0
+
+                    obs = {
+                        "fl_wear": row.tire_wear_fl,
+                        "fr_wear": row.tire_wear_fr,
+                        "rear_wear_mean": (row.tire_wear_rl + row.tire_wear_rr) / 2.0,
+                        "fl_wear_slope": fl_slope,
+                        "fr_wear_slope": fr_slope,
+                        "rear_wear_slope": rear_slope,
+                        "battery_soc": row.battery_soc,
+                        "battery_soc_slope": soc_slope,
+                        "rain_intensity": row.rain_intensity,
+                        "grip_estimate": row.grip_estimate,
+                        "mean_speed_kph": row.speed_kph,
+                    }
+                    self._buffer.append(obs)
+                    if row.track_id:
+                        track_buf = self._track_buffers.setdefault(row.track_id, deque(maxlen=self._buffer.maxlen))
+                        track_buf.append(obs)
+
             self._recompute_baseline()
             for track_id in list(self._track_buffers):
                 if len(self._track_buffers[track_id]) >= self._min_baseline:

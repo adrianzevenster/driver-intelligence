@@ -1850,12 +1850,13 @@ def live_performance() -> dict:
         pass
 
     since_7d = _datetime.datetime.utcnow() - _datetime.timedelta(days=7)
-    from f1di.confidence.online import alert_rate_series, per_driver_precision
+    from f1di.confidence.online import alert_rate_series, per_driver_precision, recall_proxy_data
     from f1di.evaluation.synthetic_audit import load_last_audit
     return {
         "agent_accuracy": per_agent_accuracy(),
         "agent_accuracy_7d": per_agent_accuracy(since=since_7d),
         "rolling_precision": rolling_precision_series(days=14),
+        "recall_proxy": recall_proxy_data(),
         "ece_history": ece_history,
         "drift": get_tracker().status(),
         "judge_correlation": judge_corr,
@@ -2466,7 +2467,7 @@ async def session_replay_round(
             loop = asyncio.get_event_loop()
             rep = await loop.run_in_executor(None, lambda: label_race(year, round_num))
             label_report = {
-                "examined": rep.n_examined,
+                "examined": rep.n_insights_examined,
                 "correct": rep.n_labeled_correct,
                 "incorrect": rep.n_labeled_incorrect,
                 "no_match": rep.n_no_match,

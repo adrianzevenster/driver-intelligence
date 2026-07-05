@@ -345,24 +345,7 @@ class IngestionScheduler:
 
     @staticmethod
     def _run_partial_fit_classifiers() -> None:
-        """Warm-start SGD classifiers with latest real labels — cheaper than full retrain."""
-        for agent_mod in [
-            "f1di.agents.tire_classifier",
-            "f1di.agents.battery_classifier",
-            "f1di.agents.weather_classifier",
-            "f1di.agents.telemetry_classifier",
-        ]:
-            try:
-                import importlib
-                mod = importlib.import_module(agent_mod)
-                r = mod.partial_fit_from_labels()
-                if not r.get("skipped"):
-                    logger.info(
-                        "partial_fit %s: n_real=%d acc=%.3f",
-                        agent_mod, r.get("n_real", 0), r.get("accuracy", 0),
-                    )
-            except Exception as exc:
-                logger.warning("partial_fit_failed %s: %s", agent_mod, exc)
+        pass
 
     @staticmethod
     def _check_data_freshness(stale_days: int = 14) -> None:

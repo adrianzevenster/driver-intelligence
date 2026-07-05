@@ -181,6 +181,7 @@ def _load_labeled_from_db() -> tuple[np.ndarray, np.ndarray]:
             rows = session.execute(
                 select(FeedbackRecord, InsightRecord)
                 .outerjoin(InsightRecord, FeedbackRecord.insight_id == InsightRecord.insight_id)
+                .where(InsightRecord.findings_json.contains('"agent": "weather"'))
             ).all()
     except Exception as exc:
         logger.warning("weather_classifier DB query failed: %s", exc)
@@ -204,7 +205,7 @@ def _load_labeled_from_db() -> tuple[np.ndarray, np.ndarray]:
             continue
         feats = wx.get("features", {})
         pred_label = _LABEL_INV.get(wx.get("risk", ins.risk), 0)
-        true_label = pred_label if is_correct else max(0, pred_label - 1)
+        true_label = pred_label if is_correct else 0
         X.append([
             float(feats.get("rain_intensity", 0.0)),
             float(feats.get("grip_estimate", 0.85)),
@@ -229,9 +230,9 @@ def train_from_labels(
     synthetic_n: int = 600,
     model_type: str = DEFAULT_MODEL_TYPE,
 ) -> dict:
-    X_s, y_s = generate_synthetic(n=synthetic_n)
     X_r, y_r = _load_labeled_from_db()
     n_real = len(y_r)
+    X_s, y_s = generate_synthetic(n=max(synthetic_n, n_real * 10))
 
     from f1di.agents.classifier_utils import blend_with_transfer
     blend = blend_with_transfer(
@@ -267,43 +268,3 @@ def train_from_labels(
     }
 
 
-_INCREMENTAL_PATH = _CALIBRATION_DIR / "weather_incremental.pkl"
-
-
-def partial_fit_from_labels(output_path: Path = _INCREMENTAL_PATH) -> dict:
-    """Incrementally update an SGDClassifier with new real labels (warm-start)."""
-    import pickle as _pickle
-    from sklearn.linear_model import SGDClassifier
-    from sklearn.metrics import accuracy_score
-    from sklearn.preprocessing import StandardScaler
-
-    X_real, y_real = _load_labeled_from_db()
-    if len(y_real) < 4:
-        return {"skipped": True, "reason": "< 4 real labels"}
-
-    all_classes = np.array(sorted(_LABEL_MAP.keys()), dtype=np.int32)
-
-    clf, scaler = None, None
-    if output_path.exists():
-        try:
-            with open(output_path, "rb") as fh:
-                clf, scaler = _pickle.load(fh)
-        except Exception:
-            clf, scaler = None, None
-
-    if clf is None:
-        scaler = StandardScaler()
-        clf = SGDClassifier(loss="log_loss", random_state=42, max_iter=1)
-        X_syn, y_syn = generate_synthetic(n=400, seed=0)
-        X_all = np.vstack([X_syn, X_real])
-        y_all = np.concatenate([y_syn, y_real])
-        clf.partial_fit(scaler.fit_transform(X_all), y_all, classes=all_classes)
-    else:
-        clf.partial_fit(scaler.transform(X_real), y_real)
-
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(output_path, "wb") as fh:
-        _pickle.dump((clf, scaler), fh)
-
-    acc = float(accuracy_score(y_real, clf.predict(scaler.transform(X_real))))
-    return {"n_real": len(y_real), "accuracy": acc, "incremental": True}

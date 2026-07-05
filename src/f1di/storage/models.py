@@ -48,6 +48,7 @@ class InsightRecord(Base):
 
 class FeedbackRecord(Base):
     __tablename__ = "feedback"
+    __table_args__ = (UniqueConstraint("insight_id", "submitted_by", name="uq_feedback_insight_submitter"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     insight_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)

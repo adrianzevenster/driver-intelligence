@@ -368,7 +368,7 @@ def _load_labeled_from_db() -> tuple[np.ndarray, np.ndarray]:
         except Exception:
             continue
 
-        iso_conf = float(ins.confidence)
+        iso_conf = float(ins.raw_score if ins.raw_score is not None else ins.confidence)
 
         from f1di.confidence.calibration import RISK_WEIGHT
         from f1di.domain.schemas import RiskLevel

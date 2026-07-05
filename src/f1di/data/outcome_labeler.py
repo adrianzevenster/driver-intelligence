@@ -286,11 +286,8 @@ def label_quiet_stints(year: int, round_num: int) -> int:
                     .where(
                         InsightRecord.session_id.like(f"{prefix}%"),
                         InsightRecord.created_at <= cutoff,
-                    )
-                    .where(
-                        (InsightRecord.risk == "LOW")
-                        | (InsightRecord.policy == "SUPPRESS")
-                        | (InsightRecord.risk == "INFO")
+                        InsightRecord.policy != "SUPPRESS",
+                        InsightRecord.risk.in_(["LOW", "INFO"]),
                     )
                 )
                 insights = db.execute(stmt).scalars().all()
@@ -318,9 +315,14 @@ def label_quiet_stints(year: int, round_num: int) -> int:
                 try:
                     db.commit()
                 except Exception as exc:
-                    logger.warning("label_quiet_stints commit failed: %s", exc)
-                    db.rollback()
-                    n_written = 0
+                    from sqlalchemy.exc import IntegrityError
+                    if isinstance(exc, IntegrityError):
+                        db.rollback()
+                        n_written = 0
+                    else:
+                        logger.warning("label_quiet_stints commit failed: %s", exc)
+                        db.rollback()
+                        n_written = 0
     except Exception as exc:
         logger.error("label_quiet_stints db error year=%s round=%s: %s", year, round_num, exc)
         return 0
@@ -566,7 +568,7 @@ def _label_race_inner(fastf1, canonical_track_id, year: int, round_num: int, *, 
                         severity = max(m[2] for m in matching)
                         rating = 5 if severity >= 0.85 else 4
                         n_correct += 1
-                    elif all(
+                    elif driver_incidents and all(
                         inc_lap > lap + _FALSE_ALARM_WINDOW_LAPS
                         for inc_lap, _, _ in driver_incidents
                         if inc_lap >= lap

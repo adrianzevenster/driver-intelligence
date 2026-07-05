@@ -153,13 +153,15 @@ def load_last_report() -> dict | None:
 _CIRCUIT_PRECISION_CACHE: dict[str, float] = {}
 _CIRCUIT_PRECISION_MTIME: float = 0.0
 _CIRCUIT_PRECISION_OVERALL: float = 0.28
-_MIN_CIRCUIT_N = 500  # minimum labeled examples to trust a circuit-level precision
+_MIN_CIRCUIT_N = 50  # minimum examples to include a circuit; Laplace shrinks sparse ones
+_LAPLACE_ALPHA = 50.0  # prior strength — equivalent to 50 pseudo-observations at overall mean
 
 
 def circuit_precision_lookup(track_id: str) -> float:
-    """Return historical precision for *track_id* from the cached backtest report.
+    """Return Laplace-smoothed historical precision for *track_id* from the cached backtest report.
 
-    Uses the overall precision as a fallback for unknown/sparse circuits.
+    Smooths toward overall precision with strength _LAPLACE_ALPHA, so sparse circuits
+    blend toward the fleet prior rather than using raw noisy estimates.
     Reloads from disk when backtest_report.json changes.
     """
     global _CIRCUIT_PRECISION_CACHE, _CIRCUIT_PRECISION_MTIME, _CIRCUIT_PRECISION_OVERALL
@@ -167,12 +169,18 @@ def circuit_precision_lookup(track_id: str) -> float:
         mtime = _REPORT_PATH.stat().st_mtime
         if mtime != _CIRCUIT_PRECISION_MTIME:
             data = json.loads(_REPORT_PATH.read_text())
-            _CIRCUIT_PRECISION_OVERALL = data.get("overall_precision") or 0.28
-            _CIRCUIT_PRECISION_CACHE = {
-                s["track_id"]: s["precision"]
-                for s in data.get("sessions", [])
-                if s.get("n_total", 0) >= _MIN_CIRCUIT_N and s.get("precision") is not None
-            }
+            overall = data.get("overall_precision") or 0.28
+            _CIRCUIT_PRECISION_OVERALL = overall
+            cache: dict[str, float] = {}
+            for s in data.get("sessions", []):
+                n = s.get("n_total", 0)
+                prec = s.get("precision")
+                if n < _MIN_CIRCUIT_N or prec is None:
+                    continue
+                # Shrink toward overall: weight = n / (n + alpha)
+                weight = n / (n + _LAPLACE_ALPHA)
+                cache[s["track_id"]] = weight * prec + (1.0 - weight) * overall
+            _CIRCUIT_PRECISION_CACHE = cache
             _CIRCUIT_PRECISION_MTIME = mtime
     except Exception:
         pass

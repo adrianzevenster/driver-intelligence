@@ -250,6 +250,7 @@ def _load_labeled_from_db() -> tuple[np.ndarray, np.ndarray]:
             stmt = (
                 select(FeedbackRecord, InsightRecord)
                 .outerjoin(InsightRecord, FeedbackRecord.insight_id == InsightRecord.insight_id)
+                .where(InsightRecord.findings_json.contains('"agent": "tire_strategy"'))
             )
             rows = session.execute(stmt).all()
     except Exception as exc:
@@ -277,8 +278,7 @@ def _load_labeled_from_db() -> tuple[np.ndarray, np.ndarray]:
 
         feats = tire.get("features", {})
         pred_label = _LABEL_INV.get(tire.get("risk", ins.risk), 0)
-        # False prediction → downgrade one level (too alarming)
-        true_label = pred_label if is_correct else max(0, pred_label - 1)
+        true_label = pred_label if is_correct else 0
 
         X_rows.append([
             float(feats.get("wear_pressure", 0.0)),
@@ -319,9 +319,9 @@ def train_from_labels(
     threshold. `real_oversample` is now the weight cap a real row asymptotes
     to as more labels accumulate, not a literal repeat count.
     """
-    X_synth, y_synth = generate_synthetic(n=synthetic_n)
     X_real, y_real = _load_labeled_from_db()
     n_real = len(y_real)
+    X_synth, y_synth = generate_synthetic(n=max(synthetic_n, n_real * 10))
 
     from f1di.agents.classifier_utils import blend_with_transfer
     blend = blend_with_transfer(
@@ -375,49 +375,3 @@ def train_from_labels(
     }
 
 
-_INCREMENTAL_PATH = _CALIBRATION_DIR / "tire_incremental.pkl"
-
-
-def partial_fit_from_labels(output_path: Path = _INCREMENTAL_PATH) -> dict:
-    """Incrementally update an SGDClassifier with new real labels (warm-start).
-
-    Faster than train_from_labels — nudges the incremental model without rebuilding
-    the full HGBT from scratch.  The scheduler still runs train_from_labels on a
-    longer cycle to keep the primary model fresh.
-    """
-    import pickle as _pickle
-    from sklearn.linear_model import SGDClassifier
-    from sklearn.metrics import accuracy_score
-    from sklearn.preprocessing import StandardScaler
-
-    X_real, y_real = _load_labeled_from_db()
-    if len(y_real) < 4:
-        return {"skipped": True, "reason": "< 4 real labels"}
-
-    all_classes = np.array(sorted(_LABEL_MAP.keys()), dtype=np.int32)
-
-    if output_path.exists():
-        try:
-            with open(output_path, "rb") as fh:
-                clf, scaler = _pickle.load(fh)
-        except Exception:
-            clf, scaler = None, None
-    else:
-        clf, scaler = None, None
-
-    if clf is None:
-        scaler = StandardScaler()
-        clf = SGDClassifier(loss="log_loss", random_state=42, max_iter=1)
-        X_syn, y_syn = generate_synthetic(n=400, seed=0)
-        X_all = np.vstack([X_syn, X_real])
-        y_all = np.concatenate([y_syn, y_real])
-        clf.partial_fit(scaler.fit_transform(X_all), y_all, classes=all_classes)
-    else:
-        clf.partial_fit(scaler.transform(X_real), y_real)
-
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(output_path, "wb") as fh:
-        _pickle.dump((clf, scaler), fh)
-
-    acc = float(accuracy_score(y_real, clf.predict(scaler.transform(X_real))))
-    return {"n_real": len(y_real), "accuracy": acc, "incremental": True}

@@ -221,6 +221,7 @@ def _load_labeled_from_db() -> tuple[np.ndarray, np.ndarray]:
             rows = session.execute(
                 select(FeedbackRecord, InsightRecord)
                 .outerjoin(InsightRecord, FeedbackRecord.insight_id == InsightRecord.insight_id)
+                .where(InsightRecord.findings_json.contains('"agent": "fuel"'))
             ).all()
     except Exception as exc:
         logger.warning("fuel_classifier DB query failed: %s", exc)
@@ -244,7 +245,7 @@ def _load_labeled_from_db() -> tuple[np.ndarray, np.ndarray]:
             continue
         feats = fuel.get("features", {})
         pred_label = _LABEL_INV.get(fuel.get("risk", ins.risk), 0)
-        true_label = pred_label if is_correct else max(0, pred_label - 1)
+        true_label = pred_label if is_correct else 0
         X.append([
             float(feats.get("throttle_mean", 72.0)),
             float(feats.get("ers_net_deploy_kw", 40.0)),
@@ -271,9 +272,9 @@ def train_from_labels(
     synthetic_n: int = 600,
     model_type: str = DEFAULT_MODEL_TYPE,
 ) -> dict:
-    X_s, y_s = generate_synthetic(n=synthetic_n)
     X_r, y_r = _load_labeled_from_db()
     n_real = len(y_r)
+    X_s, y_s = generate_synthetic(n=max(synthetic_n, n_real * 10))
 
     from f1di.agents.classifier_utils import blend_with_transfer
     blend = blend_with_transfer(
