@@ -4168,7 +4168,8 @@ function LivePerformanceCard({ data }) {
 
   const agentsAll   = Object.entries(data.agent_accuracy ?? {});
   const agents7d    = Object.entries(data.agent_accuracy_7d ?? {});
-  const displayAgents = agents7d.length ? agents7d : agentsAll;
+  const agents7dActive = agents7d.filter(([, s]) => s.n_total > 0);
+  const displayAgents = agents7dActive.length ? agents7d : agentsAll;
   const allAgentNames = [...new Set([
     ...agentsAll.map(([a]) => a),
     ...agents7d.map(([a]) => a),
@@ -4210,8 +4211,9 @@ function LivePerformanceCard({ data }) {
 
   // ── Rolling precision multi-line chart ────────────────────────────────────
   let rollingChart = null;
-  if (rolling.length >= 2) {
-    const dates   = [...new Set(rolling.map(r => r.date))].sort();
+  const rollingDates = [...new Set(rolling.map(r => r.date))].sort();
+  if (rollingDates.length >= 2) {
+    const dates   = rollingDates;
     const agents  = [...new Set(rolling.map(r => r.agent))].sort();
     const CW = 1000, CH = 100;
     const xScale = dates.length > 1 ? CW / (dates.length - 1) : CW;
@@ -4330,7 +4332,7 @@ function LivePerformanceCard({ data }) {
       {/* Per-agent precision bars (7d window, fallback all-time) */}
       <div>
         <p style={{ fontSize: 10, color: 'var(--muted)', margin: '0 0 8px', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
-          Per-agent precision {agents7d.length ? '(last 7 days)' : '(all time)'}
+          Per-agent precision {agents7dActive.length ? '(last 7 days)' : '(all time)'}
         </p>
         {displayAgents.length === 0 ? (
           <p className="muted" style={{ fontSize: 11 }}>No labeled outcomes yet.</p>
