@@ -443,11 +443,7 @@ def retrain(
         return {"skipped": True, "n_feedback": len(pairs), "reason": "insufficient_feedback"}
 
     from f1di.confidence.calibration import ConfidenceCalibrator
-    from f1di.confidence.fitting import (
-        calibration_brier,
-        calibration_ece,
-        generate_calibration_dataset,
-    )
+    from f1di.confidence.fitting import generate_calibration_dataset
 
     ts = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
     _file_op(
@@ -502,8 +498,8 @@ def retrain(
     X_ho = [p[0] for p in holdout_pairs]
     y_ho = [p[1] for p in holdout_pairs]
     ho_preds = list(calibrator._model.predict(X_ho)) if calibrator._model is not None else X_ho
-    ece = float(sum(abs(c - l) for c, l in zip(ho_preds, y_ho)) / len(ho_preds))
-    brier = float(sum((c - l) ** 2 for c, l in zip(ho_preds, y_ho)) / len(ho_preds))
+    ece = float(sum(abs(c - label) for c, label in zip(ho_preds, y_ho)) / len(ho_preds))
+    brier = float(sum((c - label) ** 2 for c, label in zip(ho_preds, y_ho)) / len(ho_preds))
 
     # --- quality regression guard ---
     # Block the live copy if ECE degrades more than 1 pp vs the previous run.

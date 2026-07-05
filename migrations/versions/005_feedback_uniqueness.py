@@ -9,9 +9,8 @@ Create Date: 2026-07-05
 """
 from __future__ import annotations
 
-import sqlalchemy as sa
 from alembic import op
-from sqlalchemy import inspect, text
+from sqlalchemy import text
 
 
 revision: str = "005"
@@ -22,7 +21,6 @@ depends_on = None
 
 def upgrade() -> None:
     bind = op.get_bind()
-    inspector = inspect(bind)
 
     # Remove duplicate rows before adding the constraint (keep the latest per pair).
     bind.execute(text(
