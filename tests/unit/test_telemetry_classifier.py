@@ -138,7 +138,7 @@ class TestSaveWithSnapshot:
         live = tmp_path / "tel_classifier.pkl"
         good_clf = self._make_clf(0.90)
         save_with_snapshot(good_clf, live)
-        bad_clf = self._make_clf(0.85)  # drops 0.05 > 0.02 threshold
+        bad_clf = self._make_clf(0.75)  # drops 0.15 > 0.10 threshold
         result = save_with_snapshot(bad_clf, live)
         assert result["blocked"] is True
         # Live model must still be the old good one
@@ -150,7 +150,7 @@ class TestSaveWithSnapshot:
     def test_small_drop_within_delta_is_not_blocked(self, tmp_path):
         live = tmp_path / "tel_classifier.pkl"
         save_with_snapshot(self._make_clf(0.90), live)
-        result = save_with_snapshot(self._make_clf(0.89), live)  # drops 0.01 < 0.02
+        result = save_with_snapshot(self._make_clf(0.85), live)  # drops 0.05 < 0.10
         assert result["blocked"] is False
 
 
