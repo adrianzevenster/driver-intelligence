@@ -51,15 +51,26 @@ def _format_message(insight: DriverInsight) -> str:
     return _format_plain(insight)
 
 
+def _agent_summary_tokens(findings: list) -> str:
+    parts = []
+    for f in findings:
+        emoji = _RISK_EMOJI.get(f.risk, "")
+        if f.risk == RiskLevel.INFO:
+            parts.append(f"{f.agent}(ok)")
+        else:
+            parts.append(f"{f.agent}{emoji}")
+    return ", ".join(parts) if parts else "—"
+
+
 def _format_plain(insight: DriverInsight) -> str:
     emoji = _RISK_EMOJI.get(insight.risk, "🔔")
     rec = textwrap.shorten(insight.recommendation, width=280, placeholder="…")
-    agents_fired = [f.agent for f in insight.findings if f.risk not in {RiskLevel.INFO}]
+    agents_str = _agent_summary_tokens(insight.findings)
     return (
         f"{emoji} F1DI Alert — {insight.risk.value}\n"
         f"Driver: {insight.driver_id} | Session: {insight.session_id}\n"
         f"Confidence: {insight.confidence:.0%} | Policy: {insight.policy}\n"
-        f"Agents: {', '.join(agents_fired) or '—'}\n\n"
+        f"Agents: {agents_str}\n\n"
         f"{rec}"
     )
 
@@ -68,7 +79,7 @@ def _format_html(insight: DriverInsight) -> str:
     color = _RISK_COLORS.get(insight.risk, "#64748b")
     emoji = _RISK_EMOJI.get(insight.risk, "🔔")
     rec = textwrap.shorten(insight.recommendation, width=400, placeholder="…")
-    agents_fired = [f.agent for f in insight.findings if f.risk not in {RiskLevel.INFO}]
+    agents_str = _agent_summary_tokens(insight.findings)
     rows = "".join(
         f"<tr><td style='padding:4px 8px;color:#94a3b8;'>{f.agent}</td>"
         f"<td style='padding:4px 8px;'>{f.summary}</td></tr>"
@@ -85,7 +96,7 @@ def _format_html(insight: DriverInsight) -> str:
     <p style="margin:4px 0;color:#94a3b8;font-size:12px;">
       Confidence: <strong style="color:#e2e8f0;">{insight.confidence:.0%}</strong> &nbsp;|&nbsp;
       Policy: <strong style="color:#e2e8f0;">{insight.policy}</strong> &nbsp;|&nbsp;
-      Agents: <strong style="color:#e2e8f0;">{', '.join(agents_fired) or '—'}</strong>
+      Agents: <strong style="color:#e2e8f0;">{agents_str}</strong>
     </p>
   </div>
   <p style="color:#e2e8f0;margin-bottom:16px;">{rec}</p>

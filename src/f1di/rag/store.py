@@ -20,7 +20,9 @@ _BM25_B  = 0.75
 # knowledge on BM25 alone — dampen them.  Circuit guides duplicate specific
 # track docs and cause ties; apply a mild penalty so the specific doc wins.
 _SOURCE_PRIORS: dict[str, float] = {
-    "fastf1_": 0.35,
+    "fastf1_":       0.35,
+    "openf1_":       0.35,
+    "uploaded_text_": 0.05,
     "circuit_guides_": 0.65,
 }
 
@@ -73,6 +75,8 @@ _CIRCUIT_BOOST = 2.0   # applied when query names the circuit and doc matches
 _TOPIC_SUFFIX_SIGNALS: dict[str, set[str]] = {
     "_ers":     {"ers", "battery", "soc", "harvest", "regeneration", "deployment", "electric"},
     "_weather": {"rain", "wet", "intermediate", "crosswind", "weather", "humidity", "tropical", "pluie", "gusts"},
+    "_track":   {"apex", "hairpin", "chicane", "kerb", "sector", "corner", "lockup", "camber",
+                 "undulation", "banked", "braking", "throttle", "traction", "degradation", "wear"},
 }
 _TOPIC_BOOST = 1.3
 

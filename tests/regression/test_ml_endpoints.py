@@ -187,8 +187,9 @@ def test_retrain_regression_guard_blocks_live_model(tmp_path):
     live_pkl = cal_dir / "isotonic.pkl"
     history_path = cal_dir / "model_history.json"
 
-    # prev_ece deliberately tiny — any real calibrator ECE will exceed it by >0.01
-    quality_path.write_text(json.dumps({"ece": 0.0001, "model_path": "old.pkl"}))
+    # prev_ece deliberately tiny — any real calibrator ECE will exceed it by >0.01.
+    # ece_method must match "real_holdout" or the guard skips the comparison.
+    quality_path.write_text(json.dumps({"ece": 0.0001, "ece_method": "real_holdout", "model_path": "old.pkl"}))
 
     _pairs = [(0.5, 1.0)] * 22  # 22 pairs, above the default min_feedback=20
 

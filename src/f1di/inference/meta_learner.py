@@ -121,7 +121,9 @@ class MetaLearner:
 
     def fit(self, X: np.ndarray, y: np.ndarray, n_real: int = 0, sample_weight: np.ndarray | None = None) -> "MetaLearner":
         from sklearn.metrics import accuracy_score
-        X_s = self._scaler.fit_transform(X)
+        from f1di.agents.classifier_utils import fit_weighted_scaler
+        fit_weighted_scaler(self._scaler, X, sample_weight)
+        X_s = self._scaler.transform(X)
         self._model.fit(X_s, y, sample_weight=sample_weight)
         self.n_train = int(len(y))
         self.n_real = n_real

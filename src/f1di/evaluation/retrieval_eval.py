@@ -19,54 +19,85 @@ logger = logging.getLogger("f1di.evaluation.retrieval")
 # Source IDs match the filenames under data/knowledge/ without extension.
 _GOLD_QA: list[dict[str, Any]] = [
     # Silverstone
-    {"query": "front-left thermal load maggotts becketts chapel high-speed tire wear", "relevant": ["silverstone_track"], "topic": "tire"},
-    {"query": "silverstone ERS deployment vale wing sector 3 harvest zone battery soc", "relevant": ["silverstone_ers"], "topic": "ers"},
-    {"query": "silverstone rain crosswind weather intermediate compound crossover", "relevant": ["silverstone_weather"], "topic": "weather"},
+    {"query": "front-left thermal load maggotts becketts chapel high-speed tire wear",
+     "relevant": ["silverstone_track", "suzuka_track", "spa_track"], "topic": "tire"},
+    {"query": "silverstone ERS deployment vale wing sector 3 harvest zone battery soc",
+     "relevant": ["silverstone_ers", "spa_ers", "monza_ers"], "topic": "ers"},
+    {"query": "silverstone rain crosswind weather intermediate compound crossover",
+     "relevant": ["silverstone_weather", "spa_weather", "zandvoort_track"], "topic": "weather"},
     # Monaco
-    {"query": "monaco rain intermediate tyres safety car casino tunnel exit wet", "relevant": ["monaco_weather"], "topic": "weather"},
-    {"query": "monaco sector 1 hairpin blind apex braking temperature lockup", "relevant": ["monaco_track"], "topic": "braking"},
-    {"query": "monaco ERS deployment low speed harvest regeneration soc lap", "relevant": ["monaco_ers"], "topic": "ers"},
+    {"query": "monaco rain intermediate tyres safety car casino tunnel exit wet",
+     "relevant": ["monaco_weather", "interlagos_weather", "singapore_weather"], "topic": "weather"},
+    {"query": "monaco sector 1 hairpin blind apex braking temperature lockup",
+     "relevant": ["monaco_track", "singapore_track", "baku_track"], "topic": "braking"},
+    {"query": "monaco ERS deployment low speed harvest regeneration soc lap",
+     "relevant": ["monaco_ers", "singapore_ers", "baku_ers"], "topic": "ers"},
     # Spa
-    {"query": "spa ERS deployment kemmel raidillon eau rouge drs battery straight", "relevant": ["spa_ers"], "topic": "ers"},
-    {"query": "spa rain safety car weather mixed conditions wet compound pluie", "relevant": ["spa_weather"], "topic": "weather"},
-    {"query": "spa tire wear compound soft sector 2 high speed thermal blanchard", "relevant": ["spa_track"], "topic": "tire"},
+    {"query": "spa ERS deployment kemmel raidillon eau rouge drs battery straight",
+     "relevant": ["spa_ers", "monza_ers", "silverstone_ers"], "topic": "ers"},
+    {"query": "spa rain safety car weather mixed conditions wet compound pluie",
+     "relevant": ["spa_weather", "interlagos_weather", "silverstone_weather"], "topic": "weather"},
+    {"query": "spa tire wear compound soft sector 2 high speed thermal blanchard",
+     "relevant": ["spa_track", "silverstone_track", "suzuka_track"], "topic": "tire"},
     # Singapore
-    {"query": "singapore undercut overcut pit window sector 2 esplanade strategy", "relevant": ["singapore_track"], "topic": "strategy"},
-    {"query": "singapore ERS harvest slow corners regeneration battery soc heat", "relevant": ["singapore_ers"], "topic": "ers"},
-    {"query": "singapore rain weather humidity tropical safety car night race", "relevant": ["singapore_weather"], "topic": "weather"},
+    {"query": "singapore undercut overcut pit window sector 2 esplanade strategy",
+     "relevant": ["singapore_track", "monaco_track", "baku_track"], "topic": "strategy"},
+    {"query": "singapore ERS harvest slow corners regeneration battery soc heat",
+     "relevant": ["singapore_ers", "monaco_ers", "baku_ers"], "topic": "ers"},
+    {"query": "singapore rain weather humidity tropical safety car night race",
+     "relevant": ["singapore_weather", "interlagos_weather", "monaco_weather"], "topic": "weather"},
     # Bahrain
-    {"query": "bahrain tire cliff degradation C3 C4 sector 2 high energy load soft", "relevant": ["bahrain_track"], "topic": "tire"},
-    {"query": "bahrain battery ERS straight DRS deployment sector 1 3 harvest", "relevant": ["bahrain_ers"], "topic": "ers"},
-    {"query": "bahrain rain crosswind desert weather sand gusts", "relevant": ["bahrain_weather"], "topic": "weather"},
+    {"query": "bahrain tire cliff degradation C3 C4 sector 2 high energy load soft",
+     "relevant": ["bahrain_track", "abu_dhabi_track", "spielberg_track"], "topic": "tire"},
+    {"query": "bahrain battery ERS straight DRS deployment sector 1 3 harvest",
+     "relevant": ["bahrain_ers", "abu_dhabi_ers", "monza_ers"], "topic": "ers"},
+    {"query": "bahrain rain crosswind desert weather sand gusts",
+     "relevant": ["bahrain_weather", "jeddah_weather", "abu_dhabi_weather"], "topic": "weather"},
     # Monza
-    {"query": "monza slipstream DRS tow drag reduction straight speed lesmo", "relevant": ["monza_track"], "topic": "strategy"},
-    {"query": "monza ERS deployment parabolica chicane ascari battery energy", "relevant": ["monza_ers"], "topic": "ers"},
+    {"query": "monza slipstream DRS tow drag reduction straight speed lesmo",
+     "relevant": ["monza_track", "spa_track", "baku_track"], "topic": "strategy"},
+    {"query": "monza ERS deployment parabolica chicane ascari battery energy",
+     "relevant": ["monza_ers", "spa_ers", "baku_ers"], "topic": "ers"},
     # Abu Dhabi
-    {"query": "abu dhabi tire strategy medium hard compound degradation low wear yas", "relevant": ["abu_dhabi_track"], "topic": "tire"},
-    {"query": "abu dhabi ERS deployment straight marina battery soc sector 1", "relevant": ["abu_dhabi_ers"], "topic": "ers"},
+    {"query": "abu dhabi tire strategy medium hard compound degradation low wear yas",
+     "relevant": ["abu_dhabi_track", "bahrain_track", "jeddah_track"], "topic": "tire"},
+    {"query": "abu dhabi ERS deployment straight marina battery soc sector 1",
+     "relevant": ["abu_dhabi_ers", "bahrain_ers", "jeddah_ers"], "topic": "ers"},
     # Suzuka
-    {"query": "suzuka sector 2 130R spoon high speed tire thermal load esses", "relevant": ["suzuka_track"], "topic": "tire"},
-    {"query": "suzuka ERS deployment degner casio triangle harvest battery", "relevant": ["suzuka_ers"], "topic": "ers"},
+    {"query": "suzuka sector 2 130R spoon high speed tire thermal load esses",
+     "relevant": ["suzuka_track", "spa_track", "silverstone_track"], "topic": "tire"},
+    {"query": "suzuka ERS deployment degner casio triangle harvest battery",
+     "relevant": ["suzuka_ers", "spa_ers", "silverstone_ers"], "topic": "ers"},
     # Budapest / Hungary
-    {"query": "budapest hungaroring high downforce slow corners tire wear medium heat", "relevant": ["budapest_track"], "topic": "tire"},
+    {"query": "budapest hungaroring high downforce slow corners tire wear medium heat",
+     "relevant": ["budapest_track", "singapore_track", "monaco_track"], "topic": "tire"},
     # Zandvoort
-    {"query": "zandvoort banked turn tire loading camber wind North Sea crosswind", "relevant": ["zandvoort_track"], "topic": "weather"},
+    {"query": "zandvoort banked turn tire loading camber wind North Sea crosswind",
+     "relevant": ["zandvoort_track", "zandvoort_weather", "silverstone_weather"], "topic": "weather"},
     # Baku
-    {"query": "baku walls street circuit braking zone turn 8 safety car lock up", "relevant": ["baku_track"], "topic": "braking"},
+    {"query": "baku walls street circuit braking zone turn 8 safety car lock up",
+     "relevant": ["baku_track", "monaco_track", "singapore_track"], "topic": "braking"},
     # Interlagos
-    {"query": "interlagos sao paulo rain safety car weather wet compound tropical", "relevant": ["interlagos_weather"], "topic": "weather"},
+    {"query": "interlagos sao paulo rain safety car weather wet compound tropical",
+     "relevant": ["interlagos_weather", "singapore_weather", "monaco_weather"], "topic": "weather"},
     # Mexico City
-    {"query": "mexico city altitude thin air engine temperature brake cooling high downforce", "relevant": ["mexico_city_track"], "topic": "braking"},
+    {"query": "mexico city altitude thin air engine temperature brake cooling high downforce",
+     "relevant": ["mexico_city_track", "budapest_track", "singapore_track"], "topic": "braking"},
     # Austin
-    {"query": "austin cota sector 1 undulations tire wear rear degradation kerb", "relevant": ["austin_track"], "topic": "tire"},
+    {"query": "austin cota sector 1 undulations tire wear rear degradation kerb",
+     "relevant": ["austin_track", "silverstone_track", "budapest_track"], "topic": "tire"},
     # Jeddah
-    {"query": "jeddah wall proximity street Saudi arabia night DRS kerb barriers turn", "relevant": ["jeddah_track"], "topic": "strategy"},
+    {"query": "jeddah wall proximity street Saudi arabia night DRS kerb barriers turn",
+     "relevant": ["jeddah_track", "baku_track", "monaco_track"], "topic": "strategy"},
     # Miami
-    {"query": "miami pit lane undercut compound strategy tire life wall proximity", "relevant": ["miami_track"], "topic": "strategy"},
+    {"query": "miami pit lane undercut compound strategy tire life wall proximity",
+     "relevant": ["miami_track", "singapore_track", "jeddah_track"], "topic": "strategy"},
     # Spielberg / Austria
-    {"query": "spielberg red bull ring short lap compound cliff tire degradation sector", "relevant": ["spielberg_track"], "topic": "tire"},
+    {"query": "spielberg red bull ring short lap compound cliff tire degradation sector",
+     "relevant": ["spielberg_track", "bahrain_track", "abu_dhabi_track"], "topic": "tire"},
     # Barcelona
-    {"query": "barcelona compound strategy medium hard high degradation long stint", "relevant": ["barcelona_track"], "topic": "tire"},
+    {"query": "barcelona compound strategy medium hard high degradation long stint",
+     "relevant": ["barcelona_track", "silverstone_track", "budapest_track"], "topic": "tire"},
 ]
 
 

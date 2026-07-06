@@ -1,1 +1,0 @@
-Soft tyre degradation at Silverstone is high in sector 2 due to high-speed corners. Front-left blister risk after lap 15. Consider undercutting at lap 18.

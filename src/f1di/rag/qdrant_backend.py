@@ -5,6 +5,10 @@ from typing import Any, Iterable
 
 from f1di.domain.schemas import RetrievedEvidence
 
+# Fetch this many candidates from Qdrant before re-ranking with source priors.
+# Prevents ingested data chunks from crowding out curated knowledge docs.
+_RERANK_FETCH_FACTOR = 4
+
 
 class QdrantHybridRetriever:
     def __init__(
@@ -85,10 +89,13 @@ class QdrantHybridRetriever:
         filters: dict[str, str] | None = None,
     ) -> list[RetrievedEvidence]:
         from qdrant_client.models import FieldCondition, Filter, MatchValue
+        from f1di.rag.store import _source_prior, _structural_boost, tokenize
 
         if not query.strip():
             return []
 
+        q_terms = set(tokenize(query))
+        fetch_k = top_k * _RERANK_FETCH_FACTOR
         query_emb = self._encoder.encode([query], normalize_embeddings=True)[0]
 
         qdrant_filter = None
@@ -104,7 +111,7 @@ class QdrantHybridRetriever:
             response = self.client.query_points(
                 collection_name=self.collection,
                 query=query_emb.tolist(),
-                limit=top_k,
+                limit=fetch_k,
                 query_filter=qdrant_filter,
                 with_payload=True,
             )
@@ -113,21 +120,34 @@ class QdrantHybridRetriever:
             try:
                 results = self._rest_search(
                     query_emb.tolist(),
-                    top_k,
+                    fetch_k,
                     filters,
                 )
             except Exception:
                 return []
+
+        reranked = sorted(
+            results,
+            key=lambda r: r.score
+                * _source_prior(r.payload.get("source_id", ""))
+                * _structural_boost(r.payload.get("source_id", ""), q_terms),
+            reverse=True,
+        )
 
         return [
             RetrievedEvidence(
                 source_id=r.payload["source_id"],
                 title=r.payload["title"],
                 text=r.payload["text"][:900],
-                score=round(r.score, 6),
+                score=round(
+                    r.score
+                    * _source_prior(r.payload.get("source_id", ""))
+                    * _structural_boost(r.payload.get("source_id", ""), q_terms),
+                    6,
+                ),
                 metadata={k[5:]: v for k, v in r.payload.items() if k.startswith("meta_")},
             )
-            for r in results
+            for r in reranked[:top_k]
         ]
 
     def _rest_search(

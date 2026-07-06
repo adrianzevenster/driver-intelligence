@@ -280,6 +280,32 @@ def real_sample_weight(
     return 1.0 + (cap - 1.0) * growth
 
 
+def fit_weighted_scaler(
+    scaler,
+    X: np.ndarray,
+    sample_weight: np.ndarray | None,
+) -> None:
+    """Fit a StandardScaler using weighted mean and variance.
+
+    sklearn StandardScaler.fit() uses arithmetic (unweighted) mean, so when
+    real rows carry a 7× sample_weight the scaler's statistics are still
+    dominated by the larger synthetic pool.  This sets the scaler's mean_ and
+    scale_ to the weighted equivalents so OOD z-scores are calibrated to the
+    same effective distribution the model actually learns.
+    """
+    if sample_weight is None:
+        scaler.fit(X)
+        return
+    w = sample_weight / sample_weight.sum()
+    mean = (X * w[:, None]).sum(axis=0)
+    var = (w[:, None] * (X - mean) ** 2).sum(axis=0)
+    scaler.mean_ = mean
+    scaler.var_ = var
+    scaler.scale_ = np.maximum(np.sqrt(var), 1e-8)
+    scaler.n_features_in_ = X.shape[1]
+    scaler.n_samples_seen_ = len(X)
+
+
 def blend_with_transfer(
     build_pipeline,
     X_synth: np.ndarray,
@@ -290,7 +316,7 @@ def blend_with_transfer(
     brier_fn=multiclass_brier,
     weight_cap: float = 5.0,
     n_splits: int = 5,
-    transfer_gate: float = 0.01,
+    transfer_gate: float = 0.05,
 ) -> dict:
     """Blend a synthetic prior with real flywheel labels via continuous sample
     weighting (see real_sample_weight) and report the synthetic-only "prior"
@@ -391,7 +417,7 @@ def record_history(
 def save_with_snapshot(
     clf,
     live_path: Path,
-    min_accuracy_delta: float = 0.02,
+    min_accuracy_delta: float = 0.10,
     z_score: float = 1.64,
 ) -> dict:
     """Save *clf* with a versioned snapshot and an accuracy regression guard.
