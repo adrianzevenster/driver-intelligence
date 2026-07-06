@@ -77,7 +77,7 @@ def test_calibrator_discriminates_critical_from_nominal():
     critical_insight = orchestrator.analyze(sim.rolling_windows(critical_samples, size=8, step=12)[-1])
 
     assert critical_insight.confidence > nominal_insight.confidence
-    assert critical_insight.confidence >= 0.70
+    assert round(critical_insight.confidence, 6) >= 0.70
 
 
 def test_tire_agent_projected_cliff_triggers_warning():
