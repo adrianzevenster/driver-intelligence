@@ -475,9 +475,13 @@ def retrain(
     _file_op("write feedback snapshot", snapshot_path, _write_snapshot)
 
     # --- train ---
-    # Hold out the last 20% of real feedback for ECE comparison so both old and new
-    # models are measured on the same distribution — synthetic ECE is not comparable
-    # because the new model is partially fit on real data while the old one was not.
+    # Shuffle with a fixed seed before splitting so the holdout reflects the
+    # true label distribution rather than the most recent sessions, which may
+    # be systematically more wrong during distribution-shift events (e.g. new
+    # regulations).  Fixed seed keeps the holdout consistent across retrain
+    # runs so ECE comparisons remain apples-to-apples.
+    import random as _random
+    _random.Random(42).shuffle(pairs)
     n_holdout = max(5, len(pairs) // 5)
     train_pairs = pairs[:-n_holdout]
     holdout_pairs = pairs[-n_holdout:]
@@ -498,7 +502,26 @@ def retrain(
     X_ho = [p[0] for p in holdout_pairs]
     y_ho = [p[1] for p in holdout_pairs]
     ho_preds = list(calibrator._model.predict(X_ho)) if calibrator._model is not None else X_ho
-    ece = float(sum(abs(c - label) for c, label in zip(ho_preds, y_ho)) / len(ho_preds))
+
+    # Standard binned ECE: weighted mean of |avg_confidence - fraction_correct| per bucket.
+    # MAE against binary labels is not ECE — its floor is ~0.44 for a 67%-precision
+    # system and it would always look "bad" even when calibration is perfect.
+    def _binned_ece(preds: list, labels: list, n_bins: int = 10) -> float:
+        from collections import defaultdict
+        bins: dict = defaultdict(lambda: {"sum_conf": 0.0, "n_correct": 0, "n": 0})
+        for p, lbl in zip(preds, labels):
+            bucket = min(int(p * n_bins), n_bins - 1)
+            bins[bucket]["sum_conf"] += p
+            bins[bucket]["n_correct"] += int(lbl > 0.5)
+            bins[bucket]["n"] += 1
+        N = len(preds)
+        return float(sum(
+            (b["n"] / N) * abs(b["sum_conf"] / b["n"] - b["n_correct"] / b["n"])
+            for b in bins.values()
+            if b["n"] > 0
+        ))
+
+    ece = _binned_ece(ho_preds, y_ho)
     brier = float(sum((c - label) ** 2 for c, label in zip(ho_preds, y_ho)) / len(ho_preds))
 
     # --- quality regression guard ---
