@@ -352,14 +352,13 @@ def train_from_labels(
     clf.real_sample_weight = blend["real_weight"]
     clf.prior_cv_accuracy = blend["prior_cv"]["cv_accuracy"] if blend["prior_cv"] else None
 
-    from f1di.agents.classifier_utils import save_with_snapshot, record_history, per_class_report, cross_val_eval
+    from f1di.agents.classifier_utils import save_with_snapshot, record_history
     snap = save_with_snapshot(clf, output_path)
     record_history(clf, agent="tire", versioned_path=snap["versioned_path"], blocked=snap["blocked"], history_path=output_path.parent / "model_history.json", threshold=snap.get("threshold"))
 
     transfer_lift = (
         round(clf.accuracy - clf.prior_cv_accuracy, 4) if clf.prior_cv_accuracy is not None else None
     )
-    _cv = cross_val_eval(clf._build_pipeline, X, y, _multiclass_brier, sample_weight=sample_weight, collect_predictions=True)
     return {
         "n_synthetic": len(y_synth),
         "n_real": n_real,
@@ -367,7 +366,7 @@ def train_from_labels(
         "accuracy": round(clf.accuracy, 4),
         "classes": clf.classes_,
         "class_distribution": class_dist,
-        "per_class": per_class_report(_cv, _LABEL_MAP),
+        "per_class": clf.cv_per_class,
         "output_path": str(output_path),
         "snapshot_blocked": snap["blocked"],
         "versioned_path": snap["versioned_path"],

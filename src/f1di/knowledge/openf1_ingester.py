@@ -29,7 +29,9 @@ def _get(endpoint: str, **params) -> list[dict]:
 
 
 def fetch_race_sessions(year: int, n: int) -> list[dict]:
+    today = str(date.today())
     sessions = _get("sessions", year=year, session_name="Race")
+    sessions = [s for s in sessions if s.get("date_start", "")[:10] <= today]
     sessions.sort(key=lambda s: s["date_start"], reverse=True)
     return sessions[:n]
 

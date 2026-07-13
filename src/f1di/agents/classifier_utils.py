@@ -316,7 +316,7 @@ def blend_with_transfer(
     brier_fn=multiclass_brier,
     weight_cap: float = 5.0,
     n_splits: int = 5,
-    transfer_gate: float = 0.05,
+    transfer_gate: float = 0.01,
 ) -> dict:
     """Blend a synthetic prior with real flywheel labels via continuous sample
     weighting (see real_sample_weight) and report the synthetic-only "prior"
@@ -417,7 +417,7 @@ def record_history(
 def save_with_snapshot(
     clf,
     live_path: Path,
-    min_accuracy_delta: float = 0.10,
+    min_accuracy_delta: float = 0.02,
     z_score: float = 1.64,
 ) -> dict:
     """Save *clf* with a versioned snapshot and an accuracy regression guard.
