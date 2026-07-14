@@ -537,6 +537,8 @@ def _label_race_inner(fastf1, canonical_track_id, year: int, round_num: int, *, 
     # session key directly: session_id = f"openf1_{session_key}".
     if openf1_session_key:
         candidate_prefixes.append(f"openf1_{openf1_session_key}")
+    # Generic live-race session used by dev/test runs — always include as fallback.
+    candidate_prefixes.append("live-race")
     n_correct = 0
     n_incorrect = 0
     n_no_match = 0

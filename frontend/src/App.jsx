@@ -4761,6 +4761,7 @@ function OutcomeLabelingCard() {
   const [roundNum, setRoundNum] = useState(1);
   const [dryRun, setDryRun]     = useState(true);
   const [running, setRunning]   = useState(false);
+  const [resetting, setResetting] = useState(false);
   const [result, setResult]     = useState(null);
   const [summary, setSummary]   = useState(null);
   const [error, setError]       = useState('');
@@ -4770,6 +4771,16 @@ function OutcomeLabelingCard() {
     if (r?.ok) setSummary(await r.json());
   }
   useEffect(() => { loadSummary(); }, []);
+
+  async function resetHistory() {
+    setResetting(true); setError('');
+    const r = await fetch('/api/v1/outcomes/reset-history', { method: 'POST', headers: authHeaders() }).catch(() => null);
+    if (!r?.ok) {
+      const msg = await r?.text().catch(() => '');
+      setError(r?.status === 401 ? 'Auth required — set your API key in Settings.' : `Reset failed ${r?.status}: ${msg}`);
+    }
+    setResetting(false);
+  }
 
   async function runLabeler() {
     setRunning(true); setResult(null); setError('');
@@ -4839,6 +4850,11 @@ function OutcomeLabelingCard() {
         <button className="kb-btn" onClick={runLabeler} disabled={running}
           style={{ fontSize: 11, padding: '4px 14px', color: running ? '#64748b' : dryRun ? '#93c5fd' : '#4ade80', borderColor: running ? '#334155' : dryRun ? '#3b82f6' : '#166534' }}>
           {running ? <><Activity size={11} className="spin" style={{ marginRight: 4 }} />Running…</> : dryRun ? 'Preview' : 'Label race'}
+        </button>
+        <button className="kb-btn" onClick={resetHistory} disabled={resetting}
+          title="Clear the scheduler's tracking file so it re-attempts all past rounds on next cycle"
+          style={{ fontSize: 11, padding: '4px 10px', color: resetting ? '#64748b' : '#f59e0b', borderColor: resetting ? '#334155' : '#78350f' }}>
+          {resetting ? 'Resetting…' : 'Reset history'}
         </button>
       </div>
       {error && <p style={{ fontSize: 10, color: '#ef4444', marginTop: 4 }}>{error}</p>}

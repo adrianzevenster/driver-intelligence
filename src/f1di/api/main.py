@@ -2818,6 +2818,23 @@ def label_race_outcomes(
     return jsonable_encoder(_json_ready(asdict(result)))
 
 
+@app.post("/v1/outcomes/reset-history")
+def reset_outcome_history(key: str | None = Security(_api_key_header)) -> dict:
+    """Delete the scheduler's outcome-labeled tracking file.
+
+    Forces the next scheduler cycle to re-attempt all past rounds.
+    Useful when rounds were incorrectly marked as 'done' before their
+    insights existed (old bug where incidents_found > 0 was sufficient).
+    """
+    _require_api_key(key)
+    from f1di.agents.classifier_utils import _CALIBRATION_DIR
+    path = _CALIBRATION_DIR / "outcome_labeled.json"
+    existed = path.exists()
+    if existed:
+        path.unlink()
+    return {"reset": existed, "message": "Scheduler will re-attempt all rounds on next cycle." if existed else "File did not exist."}
+
+
 @app.get("/v1/outcomes/summary")
 def outcome_summary() -> dict:
     """Return a summary of outcome-labeled feedback records."""

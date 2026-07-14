@@ -221,11 +221,12 @@ class IngestionScheduler:
                         year, round_num,
                         report.n_labeled_correct, report.n_labeled_incorrect, report.n_no_match,
                     )
-                    # Mark as done only when FastF1 loaded successfully (incidents list
-                    # is populated even for clean races; empty means the load failed).
-                    if n_new > 0 or len(report.incidents_found) > 0:
+                    # Mark done if insights were found in the DB (even if all already labeled).
+                    # Only keep retrying when n_insights_examined == 0 — that means
+                    # no insights existed yet at label time (timing issue); retry until they appear.
+                    if n_new > 0 or report.n_insights_examined > 0:
                         labeled.add((year, round_num))
-                        new_labels_total += n_new
+                    new_labels_total += n_new
                     try:
                         from f1di.data.outcome_labeler import label_quiet_stints
                         n_quiet = label_quiet_stints(year, round_num)
@@ -586,7 +587,19 @@ class IngestionScheduler:
             past = schedule[schedule["EventDate"].astype(str) <= str(_date.today())]
             return [int(r) for r in past["RoundNumber"].tolist()]
         except Exception:
-            return list(range(1, 9))
+            pass
+        # FastF1 unavailable — ask OpenF1 directly (works from server IPs).
+        try:
+            from datetime import date as _date
+            from f1di.data.outcome_labeler import _openf1_get
+            sessions = _openf1_get("sessions", year=year, session_name="Race")
+            today = str(_date.today())
+            past = [s for s in sessions if s.get("date_start", "9999") <= today]
+            if past:
+                return list(range(1, len(past) + 1))
+        except Exception:
+            pass
+        return list(range(1, 9))
 
     @staticmethod
     def _ingesters():

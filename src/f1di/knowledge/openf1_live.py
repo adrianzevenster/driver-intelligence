@@ -11,6 +11,7 @@ replay (pass lap_number → window scoped to that lap).
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any
 
 import httpx
@@ -21,7 +22,7 @@ from f1di.knowledge.track_ids import canonical as canonical_track_id
 logger = logging.getLogger(__name__)
 
 _BASE = "https://api.openf1.org/v1"
-_TIMEOUT = 8.0
+_TIMEOUT = 15.0
 
 _WEAR_RATE: dict[str, float] = {
     "SOFT": 0.028,
@@ -42,19 +43,26 @@ class OpenF1Blocked(RuntimeError):
 
 def _get(path: str, **params: Any) -> list[dict]:
     url = f"{_BASE}/{path}"
-    try:
-        r = httpx.get(url, params=params, timeout=_TIMEOUT)
-        if r.status_code in (401, 403) or (
-            r.status_code == 422 and "Live F1 session" in r.text
-        ):
-            raise OpenF1Blocked(r.json().get("detail", "OpenF1 access restricted during live session"))
-        r.raise_for_status()
-        return r.json()
-    except OpenF1Blocked:
-        raise
-    except Exception as exc:
-        logger.warning("openf1_live_fetch_failed", extra={"path": path, "error": str(exc)})
-        return []
+    for attempt in range(4):
+        try:
+            r = httpx.get(url, params=params, timeout=_TIMEOUT)
+            if r.status_code == 429:
+                wait = 2 ** attempt
+                logger.warning("openf1_rate_limited", extra={"path": path, "attempt": attempt, "wait": wait})
+                time.sleep(wait)
+                continue
+            if r.status_code in (401, 403) or (
+                r.status_code == 422 and "Live F1 session" in r.text
+            ):
+                raise OpenF1Blocked(r.json().get("detail", "OpenF1 access restricted during live session"))
+            r.raise_for_status()
+            return r.json()
+        except OpenF1Blocked:
+            raise
+        except Exception as exc:
+            logger.warning("openf1_live_fetch_failed", extra={"path": path, "error": str(exc)})
+            return []
+    return []
 
 
 def _get_since(path: str, date_gte: str, **params: Any) -> list[dict]:
@@ -78,13 +86,21 @@ def _get_since(path: str, date_gte: str, **params: Any) -> list[dict]:
     safe_date = date_gte.split("+")[0].rstrip("Z")
     qs = "&".join(f"{k}={v}" for k, v in params.items())
     url = f"{_BASE}/{path}?{qs}&date>={safe_date}"
-    try:
-        with _urlreq.urlopen(url, timeout=int(_TIMEOUT)) as resp:  # noqa: S310
-            data = _j.loads(resp.read())
-            if data:
-                return data
-    except Exception as exc:
-        logger.warning("openf1_live_fetch_since_failed", extra={"path": path, "error": str(exc)})
+    for attempt in range(4):
+        try:
+            with _urlreq.urlopen(url, timeout=int(_TIMEOUT)) as resp:  # noqa: S310
+                data = _j.loads(resp.read())
+                if data:
+                    return data
+                break
+        except Exception as exc:
+            if "429" in str(exc):
+                wait = 2 ** attempt
+                logger.warning("openf1_rate_limited_since", extra={"path": path, "attempt": attempt, "wait": wait})
+                time.sleep(wait)
+                continue
+            logger.warning("openf1_live_fetch_since_failed", extra={"path": path, "error": str(exc)})
+            break
     # Fallback: full fetch via _get (testable via mock) filtered in Python.
     return [r for r in _get(path, **params) if r.get("date", "") >= date_gte]
 
@@ -210,15 +226,15 @@ def build_window(
 
     # ── Build samples ─────────────────────────────────────────────────────────
     samples: list[TelemetrySample] = []
-    speeds = [float(r.get("speed", 200)) for r in car_rows]
+    speeds = [float(r.get("speed") or 200) for r in car_rows]
 
     for i, row in enumerate(car_rows):
-        speed = float(row.get("speed", 200))
-        throttle = min(100.0, max(0.0, float(row.get("throttle", 50))))
-        brake = int(row.get("brake", 0))
-        drs = int(row.get("drs", 0))
-        rpm = float(row.get("rpm", 10000))
-        gear = int(row.get("n_gear", 6))
+        speed = float(row.get("speed") or 200)
+        throttle = min(100.0, max(0.0, float(row.get("throttle") or 50)))
+        brake = int(row.get("brake") or 0)
+        drs = int(row.get("drs") or 0)
+        rpm = float(row.get("rpm") or 10000)
+        gear = int(row.get("n_gear") or 6)
 
         braking = brake > 0
         prev_speed = speeds[max(0, i - 1)]
