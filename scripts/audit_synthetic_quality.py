@@ -122,8 +122,8 @@ def audit_agent(agent: str, mod_name: str, min_real: int) -> dict | None:
 
 
 def main(min_real: int) -> None:
-    from f1di.storage.database import init_db
-    init_db()
+    from f1di.storage.database import get_engine
+    get_engine()
 
     print(f"\n{_BOLD}Synthetic label quality audit{_RESET}")
     print(f"Min real labels to audit: {min_real}\n")
